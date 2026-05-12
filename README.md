@@ -1,0 +1,51 @@
+# 个人工作报告邮件助手
+
+这个本地网站会自动读取上级目录里的 `周报` 文件夹，识别最新周报和最新出差报告，生成邮件主题、正文，并把报告文件作为附件发送。
+
+现在也支持按引导表单新建标准文件：
+
+- 周报：复制最近的 `.xlsx` 周报模板，写入“本周工作总结 / 重点工作跟进 / 下周工作计划”
+- 出差报告：复制最近的 `.docx` 出差报告模板，写入报告人、部门、地点、时间、目的、行程、详情、问题、建议
+- 新生成的文件会放到 `generated` 文件夹，并自动设为当前邮件附件
+
+## 启动
+
+```bash
+cd /Users/zhouyingchao/Documents/codex/personal-work-site
+python3 app.py
+```
+
+打开：
+
+```text
+http://127.0.0.1:8765
+```
+
+## 邮箱配置
+
+复制一份配置文件：
+
+```bash
+cp config.example.json config.json
+```
+
+然后把 `config.json` 里的邮箱信息改成自己的。建议使用邮箱的 SMTP 授权码，不要使用网页登录密码。
+
+也可以用环境变量配置：
+
+```bash
+export SMTP_HOST=smtp.example.com
+export SMTP_PORT=587
+export SMTP_USER=your-email@example.com
+export SMTP_PASSWORD=your-smtp-authorization-code
+export SMTP_FROM=your-email@example.com
+python3 app.py
+```
+
+如果没有配置 SMTP，点击发送时不会真的发出邮件，会在 `drafts` 文件夹里生成 `.eml` 邮件草稿。
+
+## 文件规则
+
+- 周报：文件名包含 `工作周报`，格式为 `.xlsx` 或 `.xls`
+- 出差报告：文件名以 `出差报告` 开头，格式为 `.docx` 或 `.md`
+- 附件会使用 `周报` 文件夹里的原始文件

@@ -1,0 +1,15 @@
+{
+  "leader_email": "leader@example.com",
+  "cc": "",
+  "sender_name": "周颖超",
+  "weekly_greeting": "领导您好：",
+  "trip_greeting": "领导您好：",
+  "signature": "周颖超",
+  "smtp_host": "smtp.example.com",
+  "smtp_port": 587,
+  "smtp_user": "your-email@example.com",
+  "smtp_password": "your-smtp-authorization-code",
+  "smtp_from": "your-email@example.com",
+  "smtp_tls": true,
+  "smtp_ssl": false
+}

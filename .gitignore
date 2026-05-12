@@ -1,0 +1,5 @@
+config.json
+drafts/
+generated/
+.pycache-root/
+__pycache__/
