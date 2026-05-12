@@ -49,3 +49,53 @@ python3 app.py
 - 周报：文件名包含 `工作周报`，格式为 `.xlsx` 或 `.xls`
 - 出差报告：文件名以 `出差报告` 开头，格式为 `.docx` 或 `.md`
 - 附件会使用 `周报` 文件夹里的原始文件
+
+## 部署
+
+### 方式一：直接后台运行（推荐本地/测试）
+
+```bash
+./start.sh
+```
+
+停止：
+
+```bash
+kill $(cat app.pid)
+```
+
+### 方式二：macOS 开机自启
+
+```bash
+cp deploy/com.personal.work-site.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.personal.work-site.plist
+launchctl start com.personal.work-site
+```
+
+查看日志：
+
+```bash
+tail -f app.log
+```
+
+### 方式三：Linux 服务器（systemd）
+
+```bash
+sudo cp deploy/personal-work-site.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable personal-work-site
+sudo systemctl start personal-work-site
+```
+
+查看状态：
+
+```bash
+sudo systemctl status personal-work-site
+```
+
+### 方式四：Docker（可选）
+
+```bash
+docker build -t personal-work-site .
+docker run -d -p 8765:8765 -v $(pwd)/config.json:/app/config.json personal-work-site
+```

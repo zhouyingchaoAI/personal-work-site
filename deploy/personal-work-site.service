@@ -1,0 +1,15 @@
+[Unit]
+Description=个人工作报告邮件助手
+After=network.target
+
+[Service]
+Type=simple
+User=%I
+WorkingDirectory=/opt/personal-work-site
+ExecStart=/usr/bin/python3 app.py
+Restart=always
+RestartSec=5
+Environment="PORT=8765"
+
+[Install]
+WantedBy=multi-user.target
