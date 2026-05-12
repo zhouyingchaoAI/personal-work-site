@@ -2247,28 +2247,20 @@ def app_html():
       <h2>导航</h2>
       <div class="task-grid">
         <button class="task-card active" type="button" data-task="weekly">
-          <span class="task-name">填写周报</span>
-          <span class="task-desc">按上周模板预填本周总结、重点跟进和下周计划。</span>
+          <span class="task-name">周报助手</span>
+          <span class="task-desc">填写周报、发送邮件、管理历史周报。</span>
         </button>
         <button class="task-card" type="button" data-task="trip">
-          <span class="task-name">填写出差报告</span>
-          <span class="task-desc">录入出差地点、时间、目的、行程和总结内容。</span>
-        </button>
-        <button class="task-card" type="button" data-task="mail">
-          <span class="task-name">发送报告邮件</span>
-          <span class="task-desc">选择已有或新生成的报告，生成正文并发送或保存草稿。</span>
-        </button>
-        <button class="task-card" type="button" data-task="upload">
-          <span class="task-name">上传历史报告</span>
-          <span class="task-desc">上传自己的历史周报和出差报告，作为后续预填和附件来源。</span>
-        </button>
-        <button class="task-card admin-only hidden" type="button" data-task="config">
-          <span class="task-name">系统配置</span>
-          <span class="task-desc">管理员配置 NewAPI 地址、Key、模型和默认优化提示词。</span>
+          <span class="task-name">出差报告助手</span>
+          <span class="task-desc">填写出差报告、发送邮件、管理历史出差报告。</span>
         </button>
         <button class="task-card" type="button" data-task="mailconfig">
           <span class="task-name">邮件配置</span>
           <span class="task-desc">配置自己的发件邮箱、周报/出差报告收件人和抄送人。</span>
+        </button>
+        <button class="task-card admin-only hidden" type="button" data-task="config">
+          <span class="task-name">系统配置</span>
+          <span class="task-desc">管理员配置 NewAPI 地址、Key、模型和默认优化提示词。</span>
         </button>
       </div>
     </section>
@@ -2355,37 +2347,6 @@ def app_html():
           <textarea id="tripSuggestions"></textarea>
         </div>
         <div class="edit-card-grid" id="tripCards"></div>
-      </div>
-      </div>
-      <div class="task-panel hidden" id="uploadPanel">
-      <div class="guide">
-        <div class="row">
-          <div>
-            <label>上传类型</label>
-            <select id="uploadKind">
-              <option value="weekly">历史周报（.xlsx / .xls）</option>
-              <option value="trip">历史出差报告（.docx / .md）</option>
-            </select>
-          </div>
-          <div>
-            <label>选择文件</label>
-            <input id="uploadFiles" type="file" multiple accept=".xlsx,.xls,.docx,.md" />
-          </div>
-        </div>
-        <div class="toolbar">
-          <button id="uploadButton" type="button">上传到历史报告库</button>
-        </div>
-        <div class="hint">上传后的文件会保存到当前用户的个人历史报告空间，并自动出现在“发送报告邮件”的报告列表中。</div>
-        <div class="upload-list" id="uploadList"></div>
-        <div class="history-tools">
-          <h2 style="margin:0">历史报告管理</h2>
-          <select id="historyKind">
-            <option value="all">全部</option>
-            <option value="weekly">周报</option>
-            <option value="trip">出差报告</option>
-          </select>
-        </div>
-        <div class="history-list" id="historyList"></div>
       </div>
       </div>
       <div class="task-panel hidden" id="configPanel">
@@ -2548,6 +2509,37 @@ def app_html():
       </div>
       </div>
       </div>
+      <div class="task-panel hidden" id="uploadPanel">
+      <div class="guide">
+        <div class="row">
+          <div>
+            <label>上传类型</label>
+            <select id="uploadKind">
+              <option value="weekly">历史周报（.xlsx / .xls）</option>
+              <option value="trip">历史出差报告（.docx / .md）</option>
+            </select>
+          </div>
+          <div>
+            <label>选择文件</label>
+            <input id="uploadFiles" type="file" multiple accept=".xlsx,.xls,.docx,.md" />
+          </div>
+        </div>
+        <div class="toolbar">
+          <button id="uploadButton" type="button">上传到历史报告库</button>
+        </div>
+        <div class="hint">上传后的文件会保存到当前用户的个人历史报告空间，并自动出现在“发送报告邮件”的报告列表中。</div>
+        <div class="upload-list" id="uploadList"></div>
+        <div class="history-tools">
+          <h2 style="margin:0">历史报告管理</h2>
+          <select id="historyKind">
+            <option value="all">全部</option>
+            <option value="weekly">周报</option>
+            <option value="trip">出差报告</option>
+          </select>
+        </div>
+        <div class="history-list" id="historyList"></div>
+      </div>
+      </div>
       <div id="status" class="status"></div>
     </section>
   </main>
@@ -2663,22 +2655,28 @@ def app_html():
       document.querySelectorAll('.task-card').forEach(card => {
         card.classList.toggle('active', card.dataset.task === task);
       });
+      const isAssistant = task === 'weekly' || task === 'trip';
       el('weeklyPanel').classList.toggle('hidden', task !== 'weekly');
       el('tripPanel').classList.toggle('hidden', task !== 'trip');
-      el('mailPanel').classList.toggle('hidden', task !== 'mail');
-      el('uploadPanel').classList.toggle('hidden', task !== 'upload');
+      el('mailPanel').classList.toggle('hidden', !isAssistant);
+      el('uploadPanel').classList.toggle('hidden', !isAssistant);
       el('configPanel').classList.toggle('hidden', task !== 'config');
       el('mailConfigPanel').classList.toggle('hidden', task !== 'mailconfig');
-      el('generateToolbar').classList.toggle('hidden', task === 'mail' || task === 'upload' || task === 'config' || task === 'mailconfig');
-      const titles = { weekly: '填写周报', trip: '填写出差报告', mail: '发送报告邮件', upload: '上传历史报告', config: '系统配置', mailconfig: '邮件配置' };
+      el('generateToolbar').classList.toggle('hidden', !isAssistant);
+      const titles = { weekly: '周报助手', trip: '出差报告助手', config: '系统配置', mailconfig: '邮件配置' };
       el('taskTitle').textContent = titles[task] || '内容填写';
-      if (task === 'weekly' || task === 'trip') {
+      if (isAssistant) {
         el('kind').value = task;
-      }
-      if (task === 'mail') {
+        el('mailKind').value = task;
+        el('uploadKind').value = task;
+        el('historyKind').value = task;
+        const hideEl = (sel) => { if (sel) sel.style.display = 'none'; };
+        const hidePrevLabel = (sel) => { const lab = sel?.previousElementSibling; if (lab && lab.tagName === 'LABEL') lab.style.display = 'none'; };
+        hideEl(el('mailKind')); hidePrevLabel(el('mailKind'));
+        hideEl(el('uploadKind')); hidePrevLabel(el('uploadKind'));
+        const historyTools = el('historyKind')?.closest('.history-tools');
+        if (historyTools) historyTools.style.display = 'none';
         renderReports();
-      }
-      if (task === 'upload') {
         renderHistoryReports();
       }
       if (task === 'mailconfig') {
@@ -3095,15 +3093,16 @@ def app_html():
       state.reports = data.reports;
       window.latestWeekly = data.latest_weekly;
       window.latestTrip = data.latest_trip;
+      const task = state.task || 'weekly';
       if (!options.preserveSelection) {
-        state.selected = data.latest_weekly;
-        el('mailKind').value = 'weekly';
+        state.selected = task === 'weekly' ? data.latest_weekly : data.latest_trip;
+        el('mailKind').value = task;
       }
-      setTask(state.task || 'weekly');
+      setTask(task);
       renderReports();
       renderHistoryReports();
       if (!options.preserveSelection && state.selected) {
-        await loadDraft('weekly', state.selected);
+        await loadDraft(task, state.selected);
       }
     }
 
@@ -3344,17 +3343,16 @@ def app_html():
         setTask(task);
         if (task === 'weekly') {
           await loadWeeklyPrefill();
+          const generated = state.reports.find(r => r.kind === 'weekly' && r.generated);
+          const latest = generated?.name || window.latestWeekly;
+          await loadDraft('weekly', latest || '');
         } else if (task === 'trip') {
           await loadTripPrefill();
-        } else if (task === 'mail') {
-          const kind = el('mailKind').value;
-          const generated = state.reports.find(r => r.kind === kind && r.generated);
-          const latest = generated?.name || (kind === 'weekly' ? window.latestWeekly : window.latestTrip);
-          await loadDraft(kind, latest || '');
-        } else if (task === 'upload') {
-          renderHistoryReports();
-          el('status').textContent = '';
-          el('status').className = 'status';
+          const generated = state.reports.find(r => r.kind === 'trip' && r.generated);
+          const latest = generated?.name || window.latestTrip;
+          await loadDraft('trip', latest || '');
+        } else if (task === 'mailconfig') {
+          loadMailConfig();
         } else if (task === 'config') {
           await loadAdminConfig();
         }
@@ -3553,7 +3551,12 @@ def app_html():
         el('status').className = 'status ok';
         el('uploadFiles').value = '';
         await loadReports({ preserveSelection: true });
-        setTask('upload');
+        if (state.task === 'weekly' || state.task === 'trip') {
+          renderHistoryReports();
+          renderReports();
+        } else {
+          setTask('weekly');
+        }
       } catch (err) {
         el('status').textContent = err.message;
         el('status').className = 'status err';
