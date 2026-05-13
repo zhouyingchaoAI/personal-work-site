@@ -3,3 +3,9 @@ drafts/
 generated/
 .pycache-root/
 __pycache__/
+.DS_Store
+app.log
+app.pid
+SCRIPT
+ui_upgrade.py
+user_data/
