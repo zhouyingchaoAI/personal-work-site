@@ -35,6 +35,8 @@ DRAFT_DIR = BASE_DIR / "drafts"
 GENERATED_DIR = BASE_DIR / "generated"
 USER_DATA_DIR = BASE_DIR / "user_data"
 CONFIG_PATH = BASE_DIR / "config.json"
+AGENT_CONFIG_PATH = BASE_DIR / "agent_config.json"
+APP_RELATIVE_PATH = "/personal-office-assistant"
 SESSIONS = {}
 DEFAULT_ASSISTANT_PROMPT = (
     "请帮我优化下面的工作内容，要求：\n"
@@ -127,6 +129,19 @@ def read_config():
 
 def write_config(config):
     CONFIG_PATH.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def read_agent_config():
+    if not AGENT_CONFIG_PATH.exists():
+        return {}
+    try:
+        return json.loads(AGENT_CONFIG_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def write_agent_config(cfg):
+    AGENT_CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def public_user(user):
@@ -223,13 +238,19 @@ def save_user_mail_config(username, payload):
     settings = config.setdefault("user_mail_settings", {}).setdefault(username, {})
     fields = ["user_email", "weekly_to", "weekly_cc", "trip_to", "trip_cc", "smtp_user", "smtp_from", "imap_user"]
     for field in fields:
-        settings[field] = str(payload.get(field, "") or "").strip()
+        if field in payload:
+            settings[field] = str(payload.get(field, "") or "").strip()
     if payload.get("smtp_password"):
         settings["smtp_password"] = str(payload.get("smtp_password") or "").strip()
     if payload.get("imap_password"):
         settings["imap_password"] = str(payload.get("imap_password") or "").strip()
     if payload.get("email_signature") is not None:
         settings["email_signature"] = str(payload.get("email_signature") or "").strip()
+    if settings.get("user_email"):
+        settings["smtp_from"] = settings.get("smtp_from") or settings["user_email"]
+        settings["smtp_user"] = settings.get("smtp_user") or settings["user_email"]
+    if settings.get("smtp_user"):
+        settings["imap_user"] = settings.get("imap_user") or settings["smtp_user"]
     write_config(config)
     clear_mail_cache(username)
     result = user_mail_config(username)
@@ -299,10 +320,8 @@ def user_list(caller_username):
     config = read_config()
     caller_role = _caller_role(caller_username)
     users = config.get("users", [])
-    if caller_role == "superadmin":
+    if caller_role in ("superadmin", "admin"):
         return [public_user(u) for u in users]
-    elif caller_role == "admin":
-        return [public_user(u) for u in users if u.get("role") == "member"]
     return []
 
 
@@ -538,6 +557,7 @@ def report_files(username=None):
                     "path": str(path),
                     "mtime": path.stat().st_mtime,
                     "sort_key": parse_weekly_date(path.name),
+                    "deletable": bool(username),
                 }
             )
         elif path.name.startswith("出差报告") and lower in {".docx", ".md"}:
@@ -548,6 +568,7 @@ def report_files(username=None):
                     "path": str(path),
                     "mtime": path.stat().st_mtime,
                     "sort_key": parse_trip_date(path.name),
+                    "deletable": bool(username),
                 }
             )
     return files
@@ -576,6 +597,7 @@ def generated_files(username=None):
                 "mtime": path.stat().st_mtime,
                 "sort_key": (9999, int(path.stat().st_mtime)),
                 "generated": True,
+                "deletable": bool(username),
             }
         )
     return files
@@ -592,6 +614,20 @@ def newest(kind, username=None, fallback_shared=False):
     items = [item for item in report_files(username) if item["kind"] == kind]
     if not items and fallback_shared and username:
         items = [item for item in report_files(None) if item["kind"] == kind]
+    if not items:
+        return None
+    return sorted(items, key=lambda item: (item["sort_key"], item["mtime"]), reverse=True)[0]
+
+
+def newest_any(kind, username=None, fallback_shared=False):
+    items = [item for item in all_files(username) if item["kind"] == kind]
+    if not items and fallback_shared and username:
+        items = [item for item in all_files(None) if item["kind"] == kind]
+    if not items and kind == "weekly":
+        for fallback_user in ("zhouyingchao", "admin"):
+            items = [item for item in all_files(fallback_user) if item["kind"] == kind]
+            if items:
+                break
     if not items:
         return None
     return sorted(items, key=lambda item: (item["sort_key"], item["mtime"]), reverse=True)[0]
@@ -821,6 +857,25 @@ def format_weekly_body(path):
             v = ws.cell(r, c).value
             return str(v).strip() if v else ""
 
+        def find_row(label, fallback):
+            for r in range(1, ws.max_row + 1):
+                if label in get(r, 2):
+                    return r
+            return fallback
+
+        def valid_data_row(cat, content):
+            if not cat and not content:
+                return False
+            invalid = {"工作分类", "工作内容", "一、本周工作总结", "二、重点工作跟进", "三、下周工作计划"}
+            return cat not in invalid and content not in invalid
+
+        summary_title_row = find_row("一、本周工作总结", 3)
+        follow_title_row = find_row("二、重点工作跟进", 9)
+        next_title_row = find_row("三、下周工作计划", 16)
+        summary_range = range(summary_title_row + 2, follow_title_row)
+        follow_range = range(follow_title_row + 2, next_title_row)
+        next_range = range(next_title_row + 2, ws.max_row + 1)
+
         # ===== 纯文本版本 =====
         lines = []
         title = get(2, 2)
@@ -828,14 +883,14 @@ def format_weekly_body(path):
             lines.append(title)
             lines.append("")
 
-        # 一、本周工作总结 (行5-8): B=工作分类 C=工作内容 E=完成情况 F=后续计划
+        # 一、本周工作总结: B=工作分类 C=工作内容 E=完成情况 F=后续计划
         lines.append("一、本周工作总结")
-        for row in range(5, 9):
+        for row in summary_range:
             cat = get(row, 2)
             content = get(row, 3)
             status = get(row, 5)
             plan = get(row, 6)
-            if not cat and not content:
+            if not valid_data_row(cat, content):
                 continue
             if cat:
                 lines.append(f"【{cat}】")
@@ -850,14 +905,14 @@ def format_weekly_body(path):
                 lines.append(f"  后续计划：{plan}")
             lines.append("")
 
-        # 二、重点工作跟进 (行11-15): B=工作分类 C=工作内容 D=当前进展 F=困难与求助
+        # 二、重点工作跟进: B=工作分类 C=工作内容 D=当前进展 F=困难与求助
         lines.append("二、重点工作跟进")
-        for row in range(11, 16):
+        for row in follow_range:
             cat = get(row, 2)
             content = get(row, 3)
             progress = get(row, 4)
             difficulty = get(row, 6)
-            if not cat and not content:
+            if not valid_data_row(cat, content):
                 continue
             if cat:
                 lines.append(f"【{cat}】")
@@ -872,13 +927,13 @@ def format_weekly_body(path):
                 lines.append(f"  困难与求助：{difficulty}")
             lines.append("")
 
-        # 三、下周工作计划 (行18-20): B=工作分类 C=工作内容 F=困难与求助
+        # 三、下周工作计划: B=工作分类 C=工作内容 F=困难与求助
         lines.append("三、下周工作计划")
-        for row in range(18, 21):
+        for row in next_range:
             cat = get(row, 2)
             content = get(row, 3)
             difficulty = get(row, 6)
-            if not cat and not content:
+            if not valid_data_row(cat, content):
                 continue
             if cat:
                 lines.append(f"【{cat}】")
@@ -922,35 +977,35 @@ def format_weekly_body(path):
         # 本周工作总结
         h.append('<p style="font-size:14px;font-weight:bold;margin:12px 0 6px 0;">一、本周工作总结</p>')
         summary_rows = []
-        for row in range(5, 9):
+        for row in summary_range:
             cat = get(row, 2)
             content = get(row, 3)
             status = get(row, 5)
             plan = get(row, 6)
-            if cat or content:
+            if valid_data_row(cat, content):
                 summary_rows.append([cat, content, status, plan])
         h.append(make_table(["工作分类", "工作内容", "完成情况", "后续计划"], summary_rows))
 
         # 重点工作跟进
         h.append('<p style="font-size:14px;font-weight:bold;margin:12px 0 6px 0;">二、重点工作跟进</p>')
         follow_rows = []
-        for row in range(11, 16):
+        for row in follow_range:
             cat = get(row, 2)
             content = get(row, 3)
             progress = get(row, 4)
             difficulty = get(row, 6)
-            if cat or content:
+            if valid_data_row(cat, content):
                 follow_rows.append([cat, content, progress, difficulty])
         h.append(make_table(["工作分类", "工作内容", "当前进展", "困难与求助"], follow_rows))
 
         # 下周工作计划
         h.append('<p style="font-size:14px;font-weight:bold;margin:12px 0 6px 0;">三、下周工作计划</p>')
         next_rows = []
-        for row in range(18, 21):
+        for row in next_range:
             cat = get(row, 2)
             content = get(row, 3)
             difficulty = get(row, 6)
-            if cat or content:
+            if valid_data_row(cat, content):
                 next_rows.append([cat, content, difficulty])
         h.append(make_table(["工作分类", "工作内容", "困难与求助"], next_rows))
 
@@ -1682,55 +1737,40 @@ def optimize_text(payload):
 
 
 WEEKLY_AGENT_SYSTEM = (
-    "你是\"周报协同助手\"，像一位贴身秘书一样通过对话帮用户直接操作周报表单。\\n\\n"
-    "工作模式：\\n"
-    "- 你不是在\"采访\"用户，而是在\"协同编辑\"表单。\\n"
-    "- 每次对话都会把当前表单的完整数据发给你，你必须返回操作后的完整数据。\\n"
-    "- 用户说\"新增/添加/来一条\"，你就往对应数组末尾追加一条（内容从用户描述提取）。\\n"
-    "- 用户说\"修改/更新/把第X条\"，你就修改对应索引的数据（用户说的第1条对应数组索引0）。\\n"
-    "- 用户说\"删除/去掉/移除第X条\"，你就从数组中删掉对应索引。\\n"
-    "- 用户提供了具体值，直接写入对应字段。\\n"
-    "- 如果用户没有明确操作意图，友好地列出当前记录并询问：\"要新增、修改还是删除？\"\\n"
-    "- 不要编造用户没有提供的信息；未提及的字段保持原值。\\n\\n"
-    "数据格式（每次返回都必须包含完整数组）：\\n"
-    "- weekly_summary: [{category, content, status}]\\n"
-    "- weekly_follow: [{category, content, progress}]\\n"
-    "- weekly_next: [{category, content, difficulty}]\\n\\n"
-    "返回格式（严格的JSON，不要markdown代码块，不要额外文字）：\\n"
-    '{"done":false,"reply":"你的回复","weekly_summary":[],"weekly_follow":[],"weekly_next":[]}'
+    "你是\"周报助手\"犇犇，通过对话帮用户填写和发送周报。\\n\\n"
+    "工作流（必须按顺序执行）：\\n"
+    "1. 获取日期：如需要当前日期或本周周期，调用 utils.get_date 获取。\\n"
+    "2. 生成草稿：用户一旦提供了本周工作内容（哪怕只有几条），立即调用 weekly.compose 整理成周报结构。不要过度追问。\\n"
+    "3. 生成预览：用户说\"预览/生成附件/确认\"后，调用 weekly.preview 生成 Excel、预览图和邮件草稿。\\n"
+    "4. 发送邮件：用户明确说\"确认发送/可以发/发吧\"后，调用 weekly.send_confirmed 发送邮件。\\n\\n"
+    "注意事项：\\n"
+    "- 不要编造用户没有提供的信息；没有的信息留空即可。\\n"
+    "- 用户只要说了工作内容，哪怕很简短，也立即调用 weekly.compose，不要反复追问。\\n"
+    "- 每一步先向用户说明你在做什么，再调用 Skill。\\n"
+    "- 调用 weekly.preview 时，period 字段格式为 YYYY.MM.DD-YYYY.MM.DD。\\n"
+    "- 如果用户只说了\"帮我写周报\"但完全没提工作内容，才需要询问。"
 )
 
 TRIP_AGENT_SYSTEM = (
-    "你是\"出差报告协同助手\"，像一位贴身秘书一样通过对话帮用户直接操作出差报告表单。\\n\\n"
-    "工作模式：\\n"
-    "- 你不是在\"采访\"用户，而是在\"协同编辑\"表单。\\n"
-    "- 每次对话都会把当前表单的完整数据发给你，你必须返回操作后的完整数据。\\n"
-    "- 用户说\"地点改为青岛\"，你就把 location 改为\"青岛\"。\\n"
-    "- 用户说\"补充行程\"，你就引导并更新 itinerary。\\n"
-    "- 用户提供了具体值，直接写入对应字段。\\n"
-    "- 如果用户没有明确操作意图，列出当前已填字段并询问想补充什么。\\n"
-    "- 不要编造用户没有提供的信息；未提及的字段保持原值。\\n\\n"
-    "字段（每次返回都必须包含完整字段）：\\n"
-    "reporter, department, location, trip_start, trip_end, purpose, itinerary, details, issues, suggestions\\n\\n"
-    "返回格式（严格的JSON，不要markdown代码块，不要额外文字）：\\n"
-    '{"done":false,"reply":"你的回复","reporter":"","department":"","location":"","trip_start":"","trip_end":"","purpose":"","itinerary":"","details":"","issues":"","suggestions":""}'
+    "你是\"出差报告助手\"犇犇，通过对话帮用户填写和发送出差报告。\\n\\n"
+    "工作流（必须按顺序执行）：\\n"
+    "1. 收集信息：引导用户提供出差时间、地点、目的、行程等。如需要当前日期，先调用 utils.get_date。\\n"
+    "2. 生成报告：信息完整后，调用 document.generate 生成正式出差报告 Word 文件。\\n"
+    "3. 发送邮件：用户确认后，发送邮件（如系统支持）。\\n\\n"
+    "注意事项：\\n"
+    "- 不要编造用户没有提供的信息。\\n"
+    "- 每一步都要先向用户说明你在做什么，再调用 Skill。"
 )
 
 DIARY_AGENT_SYSTEM = (
-    "你是\"工作日记智能助手\"，像一位贴心的工作秘书，通过对话帮用户记录每天的工作日记。\\n\\n"
-    "工作模式：\\n"
-    "- 你可以通过自然对话了解用户今天的工作情况。\\n"
-    "- 每次对话都要返回结构化数据。\\n"
-    "- 当用户提供了足够完整的信息时，设置 done: true，并给出总结。\\n"
-    "- 如果用户只提供了部分信息，友好地追问剩余部分。\\n"
-    "- 不要编造用户没有提供的信息；未提及的字段保持原值。\\n"
-    "- 字段内容保持自然语言，不要过度结构化。\\n\\n"
-    "字段（每次返回都必须包含完整字段）：\\n"
-    "today_work: 今日完成的主要工作内容\\n"
-    "tomorrow_plan: 明天的工作计划\\n"
-    "thoughts: 工作中的思路、想法、心得、建议\\n\\n"
-    "返回格式（严格的JSON，不要markdown代码块，不要额外文字）：\\n"
-    '{"done":false,"reply":"你的回复","today_work":"","tomorrow_plan":"","thoughts":""}'
+    "你是\"工作日记助手\"犇犇，通过对话帮用户记录每天的工作日记。\\n\\n"
+    "工作流：\\n"
+    "1. 收集信息：通过自然对话了解用户今天的工作内容、明日计划和想法。\\n"
+    "2. 保存日记：信息完整后，调用 diary.save 保存到系统。\\n"
+    "3. 查看历史：用户想查看时，调用 diary.get 或 diary.list。\\n\\n"
+    "注意事项：\\n"
+    "- 不要编造用户没有提供的信息。\\n"
+    "- 日记内容保持自然语言，不要过度结构化。"
 )
 
 MAIL_AGENT_SYSTEM = (
@@ -1761,48 +1801,1051 @@ GENERAL_AGENT_SYSTEM = (
     "回答要简洁、可执行，不要编造不存在的信息。"
 )
 
+DEFAULT_AGENT_WORKFLOWS = {
+    "weekly": "1) weekly.compose 规范化并填入周报结构 → 2) weekly.preview 生成周报文件、预览图片和邮件草稿 → 3) 用户确认后 weekly.send_confirmed 发送邮件",
+    "trip": "1) trip.prefill 获取历史出差报告预填 → 2) 用户补充信息后 document.generate 生成正式报告 → 3) 发送邮件",
+    "diary": "1) diary.save 保存工作日记 → 可随时 diary.get / diary.list 查看",
+    "mailassistant": "1) mailbox.list 查看邮件 → 2) text.optimize 优化正文或起草回复",
+    "forum": "1) forum.list 查看话题 → 2) forum.add_comment 发表评论或 forum.create 发起话题",
+    "news": "1) news.list 查看每日资讯 → 2) text.optimize 提炼重点和影响",
+}
 
-def agent_chat(payload):
+AGENT_SYSTEM_PROMPTS = {
+    "weekly": WEEKLY_AGENT_SYSTEM,
+    "trip": TRIP_AGENT_SYSTEM,
+    "diary": DIARY_AGENT_SYSTEM,
+    "mailassistant": MAIL_AGENT_SYSTEM,
+    "news": NEWS_AGENT_SYSTEM,
+    "forum": FORUM_AGENT_SYSTEM,
+    "dashboard": GENERAL_AGENT_SYSTEM,
+}
+
+AGENT_WORKFLOWS = dict(DEFAULT_AGENT_WORKFLOWS)
+
+
+def load_agent_config():
+    """启动时加载 agent_config.json 并覆盖默认提示词和工作流。"""
+    global WEEKLY_AGENT_SYSTEM, TRIP_AGENT_SYSTEM, DIARY_AGENT_SYSTEM
+    global MAIL_AGENT_SYSTEM, NEWS_AGENT_SYSTEM, FORUM_AGENT_SYSTEM
+    global GENERAL_AGENT_SYSTEM, AGENT_SYSTEM_PROMPTS, AGENT_WORKFLOWS
+    cfg = read_agent_config()
+    prompts = cfg.get("prompts", {})
+    if prompts.get("weekly"):
+        WEEKLY_AGENT_SYSTEM = prompts["weekly"]
+    if prompts.get("trip"):
+        TRIP_AGENT_SYSTEM = prompts["trip"]
+    if prompts.get("diary"):
+        DIARY_AGENT_SYSTEM = prompts["diary"]
+    if prompts.get("mailassistant"):
+        MAIL_AGENT_SYSTEM = prompts["mailassistant"]
+    if prompts.get("news"):
+        NEWS_AGENT_SYSTEM = prompts["news"]
+    if prompts.get("forum"):
+        FORUM_AGENT_SYSTEM = prompts["forum"]
+    if prompts.get("dashboard"):
+        GENERAL_AGENT_SYSTEM = prompts["dashboard"]
+    AGENT_SYSTEM_PROMPTS = {
+        "weekly": WEEKLY_AGENT_SYSTEM,
+        "trip": TRIP_AGENT_SYSTEM,
+        "diary": DIARY_AGENT_SYSTEM,
+        "mailassistant": MAIL_AGENT_SYSTEM,
+        "news": NEWS_AGENT_SYSTEM,
+        "forum": FORUM_AGENT_SYSTEM,
+        "dashboard": GENERAL_AGENT_SYSTEM,
+    }
+    workflows = cfg.get("workflows", {})
+    for key, val in workflows.items():
+        if key in AGENT_WORKFLOWS and val:
+            AGENT_WORKFLOWS[key] = val
+
+
+def weekly_compose_skill_detail():
+    return {
+        "purpose": "把用户自然语言描述的工作内容整理成系统周报表单结构，支持从历史周报迁移、补全分类、优化表达、生成下周计划。",
+        "when_to_use": [
+            "用户说“帮我写周报、整理本周工作、根据这些内容生成周报”。",
+            "用户粘贴零散工作内容，需要拆分成 1、2、3、4 点。",
+            "用户要求把上周计划转成本周工作内容，或生成下一周计划。",
+            "用户希望体现工作量很多、语言简洁、无错别字。"
+        ],
+        "input_schema": {
+            "period": "周报周期，例如 2026.05.11-2026.05.15，可选",
+            "raw_work": "本周原始工作内容，自然语言或多行文本",
+            "last_week_plan": "上次周报的下周计划，可选，用于迁移到本周工作",
+            "key_work": "重点工作/关键项目，可选",
+            "next_plan": "下周计划原始描述，可选",
+            "difficulties": "困难、风险、需要协调事项，可选",
+            "style": "输出风格，可选，默认：简洁、具体、体现工作量"
+        },
+        "output_schema": {
+            "weekly_summary": [{"category": "工作分类", "content": "工作内容", "status": "完成情况", "plan": "后续计划"}],
+            "weekly_follow": [{"category": "重点工作", "content": "工作内容", "progress": "当前进展", "difficulty": "困难与求助"}],
+            "weekly_next": [{"category": "工作分类", "content": "下周计划", "difficulty": "困难与求助"}]
+        },
+        "call_example": {
+            "reply": "我来根据这些内容生成周报草稿。",
+            "skill_call": {
+                "name": "weekly.compose",
+                "arguments": {
+                    "period": "2026.05.11-2026.05.15",
+                    "raw_work": "实现平台复杂页面层次拆解；实现多模型部署管理；训练安全帽反光衣手套检测模型；完善API授权；增加权限管理；优化UI。",
+                    "key_work": "算法平台、模型服务、数据治理、多模型部署",
+                    "next_plan": "推进业务与算法服务后端联调；实现ROI滑动窗口切片和结果去重；拆分微服务架构。",
+                    "style": "体现工作量多，编号清晰，简洁明了"
+                }
+            }
+        }
+    }
+
+
+def weekly_preview_skill_detail():
+    return {
+        "purpose": "根据已规范化的周报结构生成正式周报文件、邮件草稿和周报预览图片，供用户确认。",
+        "when_to_use": [
+            "用户已提供或确认周报结构化内容，需要生成预览。",
+            "用户说“生成周报预览、让我先看看、预览没问题再发”。",
+            "大模型已经通过 weekly.compose 得到 weekly_summary、weekly_follow、weekly_next。"
+        ],
+        "input_schema": {
+            "period": "周报周期，例如 2026.05.11-2026.05.15",
+            "weekly_summary": [{"category": "工作分类", "content": "工作内容", "status": "完成情况", "plan": "后续计划"}],
+            "weekly_follow": [{"category": "重点工作", "content": "工作内容", "progress": "当前进展", "difficulty": "困难与求助"}],
+            "weekly_next": [{"category": "工作分类", "content": "下周计划", "difficulty": "困难与求助"}]
+        },
+        "output_schema": {
+            "file": "生成的周报 Excel 文件名",
+            "download_url": "周报文件下载地址",
+            "preview_image_url": "周报预览图片地址",
+            "mail_draft": "待确认的邮件草稿"
+        },
+        "call_example": {
+            "reply": "我先生成周报预览，请你确认内容和格式。",
+            "skill_call": {
+                "name": "weekly.preview",
+                "arguments": {
+                    "period": "2026.05.11-2026.05.15",
+                    "weekly_summary": [{"category": "算法平台", "content": "完成平台复杂页面层次拆解。", "status": "已完成", "plan": "持续优化交互"}],
+                    "weekly_follow": [],
+                    "weekly_next": [{"category": "联调", "content": "推进业务与算法服务后端联调。", "difficulty": ""}]
+                }
+            }
+        }
+    }
+
+
+def weekly_send_skill_detail():
+    return {
+        "purpose": "在用户明确确认周报预览无误后，发送周报邮件。",
+        "when_to_use": [
+            "用户已经查看周报预览图片并明确说“确认发送、没问题发送、可以发”。",
+            "不得在未生成预览、未确认时调用。",
+            "发送前需要已有 weekly.preview 返回的 file，或 arguments 中提供 attachment。"
+        ],
+        "input_schema": {
+            "attachment": "weekly.preview 生成的周报文件名",
+            "to": "收件人，可选；为空使用邮件配置中的周报收件人",
+            "cc": "抄送，可选；为空使用邮件配置中的周报抄送",
+            "subject": "主题，可选",
+            "body": "正文，可选"
+        },
+        "output_schema": {
+            "mode": "sent|draft",
+            "message": "发送结果"
+        },
+        "call_example": {
+            "reply": "已确认预览无误，我现在发送周报邮件。",
+            "skill_call": {
+                "name": "weekly.send_confirmed",
+                "arguments": {"attachment": "周颖超工作周报2026.05.11-2026.05.15.xlsx"}
+            }
+        }
+    }
+
+
+def skill_defs():
+    return [
+        {
+            "name": "reports.list",
+            "module": "报告",
+            "title": "查询报告列表",
+            "description": "查询当前用户的周报、出差报告、生成文件和历史报告。",
+            "parameters": {"kind": "all|weekly|trip，可选"},
+            "safe": True,
+        },
+        {
+            "name": "weekly.prefill",
+            "module": "周报",
+            "title": "获取最新周报预填",
+            "description": "读取最新历史周报，将上次下周计划迁移到本次工作内容。",
+            "parameters": {},
+            "safe": True,
+        },
+        {
+            "name": "weekly.compose",
+            "module": "周报",
+            "title": "编写/设计周报草稿",
+            "description": "调用配置的大模型 API，将原始工作内容整理成周报三段式结构：本周工作总结、重点工作跟进、下周工作计划。",
+            "parameters": {
+                "period": "周报周期，可选",
+                "raw_work": "本周原始工作内容",
+                "last_week_plan": "上次周报下周计划，可选",
+                "key_work": "重点工作，可选",
+                "next_plan": "下周计划，可选",
+                "difficulties": "困难与求助，可选",
+                "style": "输出风格，可选"
+            },
+            "safe": True,
+            "detail": weekly_compose_skill_detail(),
+        },
+        {
+            "name": "weekly.preview",
+            "module": "周报",
+            "title": "生成周报预览",
+            "description": "根据已整理的周报结构生成正式周报 Excel、邮件草稿和周报预览图片，供用户确认。",
+            "parameters": {
+                "period": "周报周期",
+                "weekly_summary": "本周工作总结数组",
+                "weekly_follow": "重点工作跟进数组",
+                "weekly_next": "下周工作计划数组"
+            },
+            "safe": False,
+            "detail": weekly_preview_skill_detail(),
+        },
+        {
+            "name": "weekly.send_confirmed",
+            "module": "周报",
+            "title": "确认后发送周报邮件",
+            "description": "仅在用户确认周报预览无误后，使用当前账号邮件配置发送周报邮件。",
+            "parameters": {
+                "attachment": "周报文件名，通常来自 weekly.preview",
+                "to": "收件人，可选",
+                "cc": "抄送，可选",
+                "subject": "主题，可选",
+                "body": "正文，可选"
+            },
+            "safe": False,
+            "detail": weekly_send_skill_detail(),
+        },
+        {
+            "name": "trip.prefill",
+            "module": "出差报告",
+            "title": "获取最新出差报告预填",
+            "description": "读取最新历史出差报告并填充当前出差报告草稿。",
+            "parameters": {},
+            "safe": True,
+        },
+        {
+            "name": "document.generate",
+            "module": "报告",
+            "title": "生成正式报告文件",
+            "description": "按模板生成周报 Excel 或出差报告 Word。",
+            "parameters": {"kind": "weekly|trip", "weekly_summary": "数组", "weekly_follow": "数组", "weekly_next": "数组", "trip fields": "出差报告字段"},
+            "safe": False,
+        },
+        {
+            "name": "text.optimize",
+            "module": "通用",
+            "title": "优化文本",
+            "description": "用配置的大模型 API 优化工作内容、邮件正文、论坛内容等文本。",
+            "parameters": {"text": "待优化文本", "prompt": "优化要求，可选"},
+            "safe": True,
+        },
+        {
+            "name": "diary.save",
+            "module": "工作日记",
+            "title": "保存工作日记",
+            "description": "保存当前用户指定日期的工作日记。",
+            "parameters": {"date": "YYYY-MM-DD", "today_work": "今日工作", "tomorrow_plan": "明日计划", "thoughts": "想法心得"},
+            "safe": False,
+        },
+        {
+            "name": "diary.get",
+            "module": "工作日记",
+            "title": "读取工作日记",
+            "description": "读取当前用户指定日期的工作日记。",
+            "parameters": {"date": "YYYY-MM-DD"},
+            "safe": True,
+        },
+        {
+            "name": "diary.list",
+            "module": "工作日记",
+            "title": "查询工作日记列表",
+            "description": "查询当前用户的工作日记列表。",
+            "parameters": {"start": "开始日期，可选", "end": "结束日期，可选"},
+            "safe": True,
+        },
+        {
+            "name": "mailbox.list",
+            "module": "邮件",
+            "title": "查看收件箱",
+            "description": "通过当前用户 IMAP 配置读取最近邮件。",
+            "parameters": {"limit": "10/20/50，可选"},
+            "safe": True,
+        },
+        {
+            "name": "mailbox.detail",
+            "module": "邮件",
+            "title": "查看邮件详情",
+            "description": "通过邮件 UID 读取邮件正文、HTML 预览和附件信息。",
+            "parameters": {"uid": "邮件 UID"},
+            "safe": True,
+        },
+        {
+            "name": "mail.send",
+            "module": "邮件",
+            "title": "发送普通邮件",
+            "description": "使用当前用户 SMTP 配置发送普通邮件。",
+            "parameters": {"to": "收件人", "cc": "抄送，可选", "subject": "主题", "body": "正文"},
+            "safe": False,
+        },
+        {
+            "name": "forum.list",
+            "module": "金点子论坛",
+            "title": "查看金点子话题",
+            "description": "查看当前用户可见的金点子论坛话题。",
+            "parameters": {},
+            "safe": True,
+        },
+        {
+            "name": "forum.create",
+            "module": "金点子论坛",
+            "title": "发布金点子话题",
+            "description": "创建新的金点子论坛话题。",
+            "parameters": {"title": "标题", "body": "内容", "tags": "标签数组，可选"},
+            "safe": False,
+        },
+        {
+            "name": "forum.comment",
+            "module": "金点子论坛",
+            "title": "发布论坛评论",
+            "description": "给指定金点子话题添加评论。",
+            "parameters": {"id": "话题 ID", "body": "评论内容"},
+            "safe": False,
+        },
+        {
+            "name": "news.latest",
+            "module": "资讯",
+            "title": "查看每日资讯",
+            "description": "查看系统生成的最新每日资讯。",
+            "parameters": {},
+            "safe": True,
+        },
+        {
+            "name": "utils.get_date",
+            "module": "通用",
+            "title": "获取日期信息",
+            "description": "获取当前日期、今天星期几、本周起止日期、本月起止日期、本季度起止日期、当前年度等日期信息，用于填写周报周期、出差时间等。",
+            "parameters": {"format": "日期格式，可选，如 YYYY.MM.DD 或 YYYY-MM-DD，默认 YYYY.MM.DD"},
+            "safe": True,
+        },
+    ]
+
+
+def skill_doc_markdown():
+    lines = [
+        "# 智能办公助手 Skill 文档",
+        "",
+        "本系统把周报、出差报告、工作日记、邮件、论坛、每日资讯等业务能力封装为可由大模型调用的 Skill。",
+        "",
+        "## 调用协议",
+        "",
+        "大模型需要调用功能时，请返回严格 JSON，不要包裹 Markdown 代码块：",
+        "",
+        '{"reply":"给用户看的说明","skill_call":{"name":"skill.name","arguments":{}}}',
+        "",
+        "如果只是普通问答，不需要调用 Skill，则直接自然语言回复即可。",
+        "",
+        "## 安全约束",
+        "",
+        "- safe=true 的 Skill 为查询、预览、优化类能力，可直接执行。",
+        "- safe=false 的 Skill 会产生写入、生成文件、发邮件或发布内容等动作；前端应在关键场景增加确认。",
+        "- 所有 Skill 默认在当前登录用户空间内执行，不能跨用户读取数据。",
+        "",
+        "## Skill 列表",
+        "",
+    ]
+    for item in skill_defs():
+        lines.extend([
+            f"### {item['name']} - {item['title']}",
+            "",
+            item["description"],
+            "",
+            f"- 安全级别：{'查询/预览' if item['safe'] else '会产生写入或外部动作'}",
+            f"- 参数：`{json.dumps(item['parameters'], ensure_ascii=False)}`",
+            "",
+        ])
+        if item.get("detail"):
+            detail = item["detail"]
+            lines.extend([
+                "#### 详细设计",
+                "",
+                f"- 用途：{detail.get('purpose', '')}",
+                "",
+                "适用场景：",
+            ])
+            lines.extend([f"- {line}" for line in detail.get("when_to_use", [])])
+            lines.extend([
+                "",
+                "输入 Schema：",
+                "",
+                "```json",
+                json.dumps(detail.get("input_schema", {}), ensure_ascii=False, indent=2),
+                "```",
+                "",
+                "输出 Schema：",
+                "",
+                "```json",
+                json.dumps(detail.get("output_schema", {}), ensure_ascii=False, indent=2),
+                "```",
+                "",
+                "调用示例：",
+                "",
+                "```json",
+                json.dumps(detail.get("call_example", {}), ensure_ascii=False, indent=2),
+                "```",
+                "",
+            ])
+    return "\n".join(lines)
+
+
+def public_skill_docs():
+    return {"ok": True, "skills": skill_defs(), "markdown": skill_doc_markdown()}
+
+
+def skill_by_name(name):
+    return next((item for item in skill_defs() if item.get("name") == name), None)
+
+
+def parse_json_object(text):
+    raw = (text or "").strip()
+    raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.I | re.S).strip()
+    try:
+        return json.loads(raw)
+    except Exception:
+        match = re.search(r"\{.*\}", raw, flags=re.S)
+        if not match:
+            raise
+        return json.loads(match.group(0))
+
+
+def normalize_weekly_rows(data):
+    def clean_rows(rows, keys):
+        result = []
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            item = {key: str(row.get(key, "") or "").strip() for key in keys}
+            if any(item.values()):
+                result.append(item)
+        return result
+
+    return {
+        "weekly_summary": clean_rows(data.get("weekly_summary", []), ["category", "content", "status", "plan"]),
+        "weekly_follow": clean_rows(data.get("weekly_follow", []), ["category", "content", "progress", "difficulty"]),
+        "weekly_next": clean_rows(data.get("weekly_next", []), ["category", "content", "difficulty"]),
+    }
+
+
+def weekly_payload_from_draft(args):
+    draft = args.get("draft") if isinstance(args.get("draft"), dict) else args
+    rows = normalize_weekly_rows(draft)
+    return {
+        "kind": "weekly",
+        "period": str(args.get("period") or draft.get("period") or datetime.now().strftime("%Y.%m.%d-%Y.%m.%d")).strip(),
+        "weekly_summary": rows["weekly_summary"],
+        "weekly_follow": rows["weekly_follow"],
+        "weekly_next": rows["weekly_next"],
+    }
+
+
+def text_wrap_units(text, max_units):
+    lines = []
+    current = ""
+    units = 0
+    for ch in str(text or ""):
+        if ch == "\n":
+            lines.append(current)
+            current = ""
+            units = 0
+            continue
+        weight = 2 if ord(ch) > 127 else 1
+        if units + weight > max_units and current:
+            lines.append(current)
+            current = ch
+            units = weight
+        else:
+            current += ch
+            units += weight
+    if current or not lines:
+        lines.append(current)
+    return lines
+
+
+def load_preview_font(size=18, bold=False):
+    try:
+        from PIL import ImageFont
+        candidates = [
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Light.ttc",
+            "/Library/Fonts/Arial Unicode.ttf",
+        ]
+        for path in candidates:
+            if Path(path).exists():
+                return ImageFont.truetype(path, size=size)
+        return ImageFont.load_default()
+    except Exception:
+        return None
+
+
+def create_weekly_preview_image(payload, output_path):
+    try:
+        from PIL import Image, ImageDraw
+    except Exception as exc:
+        raise ValueError("缺少 Pillow，无法生成周报预览图片") from exc
+
+    rows = normalize_weekly_rows(payload)
+    title_font = load_preview_font(30, True)
+    section_font = load_preview_font(22, True)
+    text_font = load_preview_font(17)
+    small_font = load_preview_font(14)
+    width = 1400
+    margin = 44
+    y = 36
+
+    def estimate_section_height(title, data, keys):
+        height = 54
+        for row in data or [{"category": "", "content": "暂无内容"}]:
+            text = " | ".join(str(row.get(k, "") or "") for k in keys)
+            height += max(72, len(text_wrap_units(text, 88)) * 23 + 34)
+        return height
+
+    total_height = 110
+    total_height += estimate_section_height("本周工作总结", rows["weekly_summary"], ["category", "content", "status", "plan"])
+    total_height += estimate_section_height("重点工作跟进", rows["weekly_follow"], ["category", "content", "progress", "difficulty"])
+    total_height += estimate_section_height("下周工作计划", rows["weekly_next"], ["category", "content", "difficulty"])
+    total_height = max(900, total_height + 80)
+
+    image = Image.new("RGB", (width, total_height), "#f4f7fb")
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle((24, 24, width - 24, total_height - 24), radius=18, fill="#ffffff", outline="#dbe5f1", width=2)
+    title = f"工作周报（{payload.get('period') or ''}）"
+    draw.text((margin, y), title, fill="#172033", font=title_font)
+    y += 58
+    draw.text((margin, y), "预览图用于确认内容，正式格式以生成的 Excel 附件为准。", fill="#64748b", font=small_font)
+    y += 38
+
+    def section(title, data, columns):
+        nonlocal y
+        draw.rounded_rectangle((margin, y, width - margin, y + 38), radius=8, fill="#eff6ff", outline="#bfdbfe")
+        draw.text((margin + 16, y + 8), title, fill="#1d4ed8", font=section_font)
+        y += 50
+        data = data or [{}]
+        for index, row in enumerate(data, 1):
+            line_parts = [f"{label}：{row.get(key, '')}" for key, label in columns if row.get(key, "")]
+            if not line_parts:
+                line_parts = ["暂无内容"]
+            wrapped = []
+            for part in line_parts:
+                wrapped.extend(text_wrap_units(part, 92))
+            card_h = max(70, len(wrapped) * 24 + 34)
+            draw.rounded_rectangle((margin, y, width - margin, y + card_h), radius=8, fill="#ffffff", outline="#dbe5f1")
+            draw.text((margin + 16, y + 14), f"{index}.", fill="#2563eb", font=text_font)
+            text_y = y + 14
+            for line in wrapped:
+                draw.text((margin + 54, text_y), line, fill="#172033", font=text_font)
+                text_y += 24
+            y += card_h + 12
+        y += 12
+
+    section("一、本周工作总结", rows["weekly_summary"], [("category", "分类"), ("content", "内容"), ("status", "完成情况"), ("plan", "后续计划")])
+    section("二、重点工作跟进", rows["weekly_follow"], [("category", "分类"), ("content", "内容"), ("progress", "进展"), ("difficulty", "困难")])
+    section("三、下周工作计划", rows["weekly_next"], [("category", "分类"), ("content", "内容"), ("difficulty", "困难")])
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    image.crop((0, 0, width, min(total_height, y + 36))).save(output_path)
+    return output_path
+
+
+def compose_weekly_skill(arguments):
+    args = arguments or {}
+    source_text = "\n".join(
+        str(args.get(key, "") or "").strip()
+        for key in ("last_week_plan", "raw_work", "key_work", "next_plan", "difficulties")
+        if str(args.get(key, "") or "").strip()
+    )
+    if not source_text:
+        raise ValueError("请提供 raw_work、last_week_plan、key_work 或 next_plan 中至少一项内容")
+
+    settings = assistant_settings()
+    prompt = (
+        "你是企业周报 Skill，负责把原始工作描述整理成系统可写入的周报 JSON。"
+        "要求：1、体现工作量和推进成果；2、语言简洁明了；3、修正错别字；4、不编造未提供事项；"
+        "5、分类尽量贴近软件/算法/数据治理/联调/架构/UI/管理等实际工作；"
+        "6、输出严格 JSON，不要 Markdown。"
+        "JSON 格式："
+        "{\"weekly_summary\":[{\"category\":\"\",\"content\":\"\",\"status\":\"\",\"plan\":\"\"}],"
+        "\"weekly_follow\":[{\"category\":\"\",\"content\":\"\",\"progress\":\"\",\"difficulty\":\"\"}],"
+        "\"weekly_next\":[{\"category\":\"\",\"content\":\"\",\"difficulty\":\"\"}]}"
+    )
+    user_content = json.dumps(
+        {
+            "period": args.get("period", ""),
+            "raw_work": args.get("raw_work", ""),
+            "last_week_plan": args.get("last_week_plan", ""),
+            "key_work": args.get("key_work", ""),
+            "next_plan": args.get("next_plan", ""),
+            "difficulties": args.get("difficulties", ""),
+            "style": args.get("style", "简洁、具体、体现工作量"),
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+    if settings["url"] and settings["key"]:
+        data = request_json(
+            settings["url"] + "/v1/chat/completions",
+            settings["key"],
+            {
+                "model": settings["model"],
+                "messages": [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": user_content},
+                ],
+                "temperature": 0.25,
+            },
+            "POST",
+            60,
+        )
+        content = data["choices"][0]["message"]["content"].strip()
+        rows = normalize_weekly_rows(parse_json_object(content))
+        return {"ok": True, "mode": "api", "model": settings["model"], "draft": rows}
+
+    optimized = local_optimize_text(source_text)
+    summary = [
+        {"category": "工作推进", "content": line, "status": "已推进", "plan": ""}
+        for line in optimized.splitlines()
+        if line.strip()
+    ]
+    return {
+        "ok": True,
+        "mode": "local_fallback",
+        "warning": "未配置大模型 API，已使用本地规则生成基础周报草稿。",
+        "draft": {"weekly_summary": summary, "weekly_follow": [], "weekly_next": []},
+    }
+
+
+def weekly_preview_skill(arguments, username):
+    payload = weekly_payload_from_draft(arguments or {})
+    path = generate_weekly(payload, username)
+    draft = compose_draft("weekly", path.name, username)
+    preview_name = path.with_suffix(".png").name
+    preview_path = user_generated_dir(username) / preview_name
+    create_weekly_preview_image(payload, preview_path)
+    return {
+        "ok": True,
+        "file": path.name,
+        "download_url": "/download?file=" + urllib.parse.quote(path.name),
+        "preview_image": preview_name,
+        "preview_image_url": "/preview-image?file=" + urllib.parse.quote(preview_name),
+        "mail_draft": draft,
+        "message": "周报预览已生成，请确认预览图片和邮件草稿；确认无误后再调用 weekly.send_confirmed。",
+    }
+
+
+def weekly_send_confirmed_skill(arguments, username):
+    args = arguments or {}
+    attachment = str(args.get("attachment", "") or "").strip()
+    if not attachment:
+        raise ValueError("请提供 weekly.preview 生成的 attachment 文件名")
+    draft = compose_draft("weekly", attachment, username)
+    payload = {
+        "to": args.get("to") or draft.get("to", ""),
+        "cc": args.get("cc") or draft.get("cc", ""),
+        "subject": args.get("subject") or draft.get("subject", ""),
+        "body": args.get("body") or draft.get("body", ""),
+        "body_html": args.get("body_html") or draft.get("body_html", ""),
+        "attachment": attachment,
+    }
+    return send_mail(payload, username)
+
+
+def get_date_skill(args):
+    from datetime import datetime, timedelta
+
+    fmt = str(args.get("format") or "YYYY.MM.DD").strip()
+    if fmt == "YYYY-MM-DD":
+        date_fmt = "%Y-%m-%d"
+    elif fmt == "YYYY/MM/DD":
+        date_fmt = "%Y/%m/%d"
+    else:
+        date_fmt = "%Y.%m.%d"
+
+    today = datetime.now()
+    weekday_names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+    weekday = weekday_names[today.weekday()]
+
+    # 本周起止（周一到周日）
+    monday = today - timedelta(days=today.weekday())
+    sunday = monday + timedelta(days=6)
+    week_start = monday.strftime(date_fmt)
+    week_end = sunday.strftime(date_fmt)
+
+    # 本月起止
+    month_start = today.replace(day=1)
+    if today.month == 12:
+        next_month = today.replace(year=today.year + 1, month=1, day=1)
+    else:
+        next_month = today.replace(month=today.month + 1, day=1)
+    month_end = next_month - timedelta(days=1)
+
+    # 本季度起止
+    quarter = (today.month - 1) // 3 + 1
+    quarter_start_month = (quarter - 1) * 3 + 1
+    quarter_start = today.replace(month=quarter_start_month, day=1)
+    if quarter == 4:
+        next_q_start = today.replace(year=today.year + 1, month=1, day=1)
+    else:
+        next_q_start = today.replace(month=quarter_start_month + 3, day=1)
+    quarter_end = next_q_start - timedelta(days=1)
+
+    # 第几周（ISO week）
+    iso_year, iso_week, _ = today.isocalendar()
+
+    return {
+        "ok": True,
+        "today": today.strftime(date_fmt),
+        "weekday": weekday,
+        "week_range": f"{week_start}-{week_end}",
+        "week_start": week_start,
+        "week_end": week_end,
+        "month_range": f"{month_start.strftime(date_fmt)}-{month_end.strftime(date_fmt)}",
+        "quarter": f"Q{quarter}",
+        "quarter_range": f"{quarter_start.strftime(date_fmt)}-{quarter_end.strftime(date_fmt)}",
+        "year": str(today.year),
+        "iso_week": f"{iso_year} 年第 {iso_week} 周",
+    }
+
+
+def execute_skill(name, arguments, username):
+    args = arguments or {}
+    if name == "utils.get_date":
+        return get_date_skill(args)
+    if name == "reports.list":
+        kind = str(args.get("kind", "all") or "all")
+        reports = all_files(username)
+        if kind in ("weekly", "trip"):
+            reports = [item for item in reports if item.get("kind") == kind]
+        return {"ok": True, "reports": reports[:50]}
+    if name == "weekly.prefill":
+        return weekly_prefill(username)
+    if name == "weekly.compose":
+        return compose_weekly_skill(args)
+    if name == "weekly.preview":
+        return weekly_preview_skill(args, username)
+    if name == "weekly.send_confirmed":
+        return weekly_send_confirmed_skill(args, username)
+    if name == "trip.prefill":
+        return trip_prefill(username)
+    if name == "document.generate":
+        return generate_document(args, username)
+    if name == "text.optimize":
+        return optimize_text(args)
+    if name == "diary.save":
+        return save_diary(args, username)
+    if name == "diary.get":
+        return get_diary(str(args.get("date", "") or ""), username)
+    if name == "diary.list":
+        return list_diaries(args, username)
+    if name == "mailbox.list":
+        return list_inbox_messages(username, args.get("limit", 20), bool(args.get("refresh", False)))
+    if name == "mailbox.detail":
+        return get_inbox_message(username, str(args.get("uid", "") or ""), bool(args.get("refresh", False)))
+    if name == "mail.send":
+        args["body_html"] = ""
+        return send_mail(args, username)
+    if name == "forum.list":
+        return forum_list_topics(username)
+    if name == "forum.create":
+        return forum_create_topic(args, username)
+    if name == "forum.comment":
+        return forum_add_comment(args, username)
+    if name == "news.latest":
+        return news_latest(False)
+    raise ValueError("未知 Skill：" + str(name))
+
+
+def skill_test(payload, username):
+    name = str(payload.get("name", "") or "").strip()
+    skill = skill_by_name(name)
+    if not skill:
+        raise ValueError("未知 Skill：" + name)
+    if not skill.get("safe") and not payload.get("confirm_unsafe"):
+        raise ValueError("该 Skill 会产生写入、生成文件、发邮件或发布内容，请勾选确认后再测试")
+
+    arguments = payload.get("arguments") or {}
+    if not isinstance(arguments, dict):
+        raise ValueError("调用参数必须是 JSON 对象")
+
+    instruction = str(payload.get("instruction", "") or "").strip()
+    model_used = ""
+    if instruction:
+        settings = assistant_settings()
+        if not settings["url"] or not settings["key"]:
+            raise ValueError("未配置 AI 接口，请先在系统配置中设置 NewAPI 地址和 Key")
+        system = (
+            "你是智能办公助手的 Skill 测试器。"
+            "请根据用户的自然语言测试要求，为指定 Skill 生成 arguments JSON 对象。"
+            "只能返回 JSON 对象本身，不要返回 Markdown，不要调用其他 Skill。"
+            "必须严格贴合 Skill 参数说明，不要编造用户没有提供的业务事实。"
+        )
+        user_prompt = (
+            "待测试 Skill：\n"
+            + json.dumps(skill, ensure_ascii=False, indent=2)
+            + "\n\n已有参数草稿：\n"
+            + json.dumps(arguments, ensure_ascii=False, indent=2)
+            + "\n\n自然语言测试要求：\n"
+            + instruction
+        )
+        data = request_json(
+            settings["url"] + "/v1/chat/completions",
+            settings["key"],
+            {
+                "model": settings["model"],
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.2,
+            },
+            "POST",
+            60,
+        )
+        content = data["choices"][0]["message"]["content"].strip()
+        generated = parse_json_object(content)
+        if not isinstance(generated, dict):
+            raise ValueError("大模型未返回有效的 arguments JSON 对象")
+        arguments = generated
+        model_used = settings["model"]
+
+    result = execute_skill(name, arguments, username)
+    return {
+        "ok": True,
+        "skill": name,
+        "model": model_used,
+        "arguments": arguments,
+        "result": result,
+    }
+
+
+def _extract_balanced_json(text):
+    start = text.find("{")
+    if start == -1:
+        return None
+    count = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            count += 1
+        elif text[i] == "}":
+            count -= 1
+            if count == 0:
+                return text[start : i + 1]
+    return None
+
+
+def _parse_xml_tool_call(text):
+    """解析 <invoke name=\"...\">...<parameter>..</parameter></invoke> 格式的 tool call。"""
+    invoke_match = re.search(r"<invoke\s+name=\"([^\"]+)\"[^>]*>(.*?)</invoke>", text, flags=re.S)
+    if not invoke_match:
+        # 也尝试 <minimax:tool_call>...<invoke>...</invoke>...</minimax:tool_call>
+        invoke_match = re.search(r"<invoke\s+name=[\"']([^\"']+)[\"'][^>]*>(.*?)</invoke>", text, flags=re.S)
+    if not invoke_match:
+        return None
+    name = invoke_match.group(1).strip()
+    inner = invoke_match.group(2)
+    arguments = {}
+    for param_match in re.finditer(r"<parameter\s+name=\"([^\"]+)\">(.*?)</parameter>", inner, flags=re.S):
+        key = param_match.group(1).strip()
+        val = param_match.group(2).strip()
+        try:
+            arguments[key] = json.loads(val)
+        except Exception:
+            arguments[key] = val
+    return {"name": name, "arguments": arguments}
+
+
+def parse_skill_call(text):
+    raw = (text or "").strip()
+    raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.I | re.S).strip()
+    # Try direct parse first
+    data = None
+    try:
+        data = parse_json_object(raw)
+    except Exception:
+        pass
+    # Try extracting [TOOL_CALL] ... [/TOOL_CALL] format
+    if not data:
+        tool_match = re.search(r"\[TOOL_CALL\]\s*(.*?)\s*\[/TOOL_CALL\]", raw, flags=re.S)
+        if tool_match:
+            try:
+                data = parse_json_object(tool_match.group(1))
+            except Exception:
+                pass
+    # Try extracting JSON object from mixed text and fix unescaped control chars
+    if not data:
+        json_str = _extract_balanced_json(raw)
+        if json_str:
+            try:
+                data = json.loads(json_str)
+            except Exception:
+                try:
+                    fixed = json_str.replace("\n", "\\n").replace("\r", "\\r")
+                    data = json.loads(fixed)
+                except Exception:
+                    pass
+    if isinstance(data, dict):
+        call = data.get("skill_call")
+        if isinstance(call, dict) and call.get("name"):
+            return {
+                "reply": data.get("reply", ""),
+                "name": str(call.get("name", "")).strip(),
+                "arguments": call.get("arguments") or {},
+            }
+    # Try XML format (MiniMax etc.)
+    xml_call = _parse_xml_tool_call(raw)
+    if xml_call:
+        return {
+            "reply": "",
+            "name": xml_call["name"],
+            "arguments": xml_call["arguments"],
+        }
+    return None
+
+
+def _clean_agent_reply(text):
+    """从大模型回复中提取自然语言，去掉嵌入的 JSON/Skill 调用标记。"""
+    if not text:
+        return text
+    # 去掉 [TOOL_CALL] ... [/TOOL_CALL]
+    cleaned = re.sub(r"\[TOOL_CALL\].*?\[/TOOL_CALL\]", "", text, flags=re.S).strip()
+    # 去掉 <minimax:tool_call> ... </minimax:tool_call>
+    cleaned = re.sub(r"<minimax:tool_call>.*?</minimax:tool_call>", "", cleaned, flags=re.S).strip()
+    # 去掉 <invoke>...</invoke>
+    cleaned = re.sub(r"<invoke[^>]*>.*?</invoke>", "", cleaned, flags=re.S).strip()
+    # 去掉独立的大括号 JSON 块（如果它占了多行或紧跟在文字后面）
+    cleaned = re.sub(r"\n?\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\n?", "\n", cleaned).strip()
+    # 去掉 Markdown 代码块
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.I | re.S).strip()
+    return cleaned
+
+
+def agent_chat(payload, username=""):
     kind = payload.get("kind", "weekly")
     messages = payload.get("messages", [])
     settings = assistant_settings()
     if not settings["url"] or not settings["key"]:
         return {"ok": False, "error": "未配置 AI 接口，请在系统配置中设置 NewAPI 地址和 Key"}
 
-    if kind == "diary":
-        system = DIARY_AGENT_SYSTEM
-    elif kind == "trip":
-        system = TRIP_AGENT_SYSTEM
-    elif kind == "mailassistant":
-        system = MAIL_AGENT_SYSTEM
-    elif kind == "news":
-        system = NEWS_AGENT_SYSTEM
-    elif kind == "forum":
-        system = FORUM_AGENT_SYSTEM
-    elif kind == "dashboard":
-        system = GENERAL_AGENT_SYSTEM
-    else:
-        system = WEEKLY_AGENT_SYSTEM
-    api_messages = [{"role": "system", "content": system}] + [
-        {"role": m["role"], "content": m["content"]} for m in messages
-    ]
+    system = AGENT_SYSTEM_PROMPTS.get(kind) or AGENT_SYSTEM_PROMPTS.get("weekly")
+    system = (
+        system
+        + "\\n\\n你现在运行在“智能办公助手 Skill 模式”。"
+        + "\\n如果用户要求你操作软件功能，请从下面 Skill 中选择一个调用。"
+        + "\\n周报工作流必须按顺序执行：1) weekly.compose 规范化并填入周报结构；2) weekly.preview 生成周报文件、预览图片和邮件草稿；3) 只有用户明确确认预览无误后，才能调用 weekly.send_confirmed 发送邮件。"
+        + "\\n调用时必须且只能输出严格 JSON（禁止 Markdown、XML、\[TOOL_CALL\]）：{\"reply\":\"说明\",\"skill_call\":{\"name\":\"skill.name\",\"arguments\":{}}}"
+        + "\\n如果不需要操作软件功能，直接自然语言回复。"
+        + "\\n如需当前日期、本周起止日期、今天是星期几等时间信息，可调用 utils.get_date。"
+        + "\\n可用 Skill：\\n"
+        + json.dumps(skill_defs(), ensure_ascii=False)
+    )
+    api_messages = [{"role": "system", "content": system}]
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role")
+        content = str(m.get("content", "") or "").strip()
+        if role not in ("user", "assistant") or not content:
+            continue
+        api_messages.append({"role": role, "content": content})
 
     try:
-        data = request_json(
-            settings["url"] + "/v1/chat/completions",
-            settings["key"],
-            {
-                "model": settings["model"],
-                "messages": api_messages,
-                "temperature": 0.6,
-            },
-            "POST",
-            60,
-        )
-        content = data["choices"][0]["message"]["content"].strip()
-        return {"ok": True, "reply": content}
+        executed_calls = []
+        max_rounds = 3
+        for _round in range(max_rounds):
+            data = request_json(
+                settings["url"] + "/v1/chat/completions",
+                settings["key"],
+                {
+                    "model": settings["model"],
+                    "messages": api_messages,
+                    "temperature": 0.6 if _round == 0 else 0.4,
+                },
+                "POST",
+                60,
+            )
+            content = data["choices"][0]["message"]["content"].strip()
+            skill_call = parse_skill_call(content)
+            if not skill_call:
+                # 没有新的 Skill 调用，直接返回最终回复
+                final_reply = _clean_agent_reply(content)
+                if executed_calls:
+                    return {
+                        "ok": True,
+                        "reply": final_reply,
+                        "skill_calls": executed_calls,
+                    }
+                return {"ok": True, "reply": final_reply}
+            # 执行 Skill
+            result = execute_skill(skill_call["name"], skill_call["arguments"], username)
+            executed_calls.append({
+                "name": skill_call["name"],
+                "arguments": skill_call["arguments"],
+                "result": result,
+            })
+            # 将结果反馈给大模型，继续下一轮
+            api_messages.append({"role": "assistant", "content": content})
+            api_messages.append({
+                "role": "user",
+                "content": (
+                    "[系统通知：你刚才调用了 Skill '" + skill_call["name"] + "'，执行结果如下。"
+                    "如果任务已完成，请用自然语言回复用户。"
+                    "如果还需要继续操作（如先生成草稿再生成预览），可以继续调用下一个 Skill。]\n"
+                    + json.dumps(result, ensure_ascii=False)
+                ),
+            })
+        # 达到最大轮次，返回最后一次回复
+        return {
+            "ok": True,
+            "reply": content,
+            "skill_calls": executed_calls,
+        }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+def save_agent_config(payload):
+    cfg = read_agent_config()
+    if "prompts" in payload:
+        cfg["prompts"] = payload["prompts"]
+    if "workflows" in payload:
+        cfg["workflows"] = payload["workflows"]
+    write_agent_config(cfg)
+    load_agent_config()
+    return {"ok": True, "message": "犇犇配置已保存并生效"}
+
+
+def agent_orchestration():
+    return {
+        "ok": True,
+        "agents": AGENT_SYSTEM_PROMPTS,
+        "skill_mode_suffix": (
+            "\\n\\n你现在运行在「智能办公助手 Skill 模式」。"
+            "\\n如果用户要求你操作软件功能，请从下面 Skill 中选择一个调用。"
+            '\\n调用时只输出严格 JSON：{\\"reply\\":\\"说明\\",\\"skill_call\\":{\\"name\\":\\"skill.name\\",\\"arguments\\":{}}}'
+            "\\n如果不需要操作软件功能，直接自然语言回复。"
+        ),
+        "workflows": AGENT_WORKFLOWS,
+        "skills": skill_defs(),
+    }
 
 
 # ===== 工作日记 =====
@@ -2498,6 +3541,15 @@ def delete_history_report(payload, username=None):
     return {"ok": True, "deleted": name}
 
 
+def delete_report_file(payload, username=None):
+    path = attachment_path_by_name(payload.get("name", ""), username)
+    if path is None:
+        raise ValueError("报告文件不存在，或不是当前账号的可删除文件")
+    name = path.name
+    path.unlink()
+    return {"ok": True, "deleted": name}
+
+
 def estimated_text_lines(text, width_chars):
     lines = 0
     for part in str(text or "").splitlines() or [""]:
@@ -2532,7 +3584,7 @@ def adjust_row_height(ws, row_idx, columns):
 def weekly_prefill(username=None):
     from openpyxl import load_workbook
 
-    template = Path((newest("weekly", username, fallback_shared=True) or {}).get("path", ""))
+    template = Path((newest_any("weekly", username, fallback_shared=True) or {}).get("path", ""))
     if not template.exists():
         return {"weekly_summary": "", "weekly_follow": "", "weekly_next": ""}
 
@@ -2647,8 +3699,8 @@ def generate_weekly(payload, username=None):
     from openpyxl import load_workbook
     from openpyxl.styles import Border, Side
 
-    template = Path((newest("weekly", username, fallback_shared=True) or {}).get("path", ""))
-    if not template.exists():
+    template = Path((newest_any("weekly", username, fallback_shared=True) or {}).get("path", ""))
+    if not template.exists() or not template.is_file():
         raise ValueError("没有找到周报模板")
 
     output_dir = user_generated_dir(username) if username else GENERATED_DIR
@@ -2656,6 +3708,10 @@ def generate_weekly(payload, username=None):
     period = (payload.get("period") or datetime.now().strftime("%Y.%m.%d-%Y.%m.%d")).strip()
     safe_period = re.sub(r"[^0-9A-Za-z.\-\u4e00-\u9fff]+", "", period)
     output = output_dir / f"周颖超工作周报{safe_period}.xlsx"
+    if template.resolve() == output.resolve():
+        fallback = newest("weekly", username, fallback_shared=True)
+        if fallback and Path(fallback.get("path", "")).resolve() != output.resolve():
+            template = Path(fallback["path"])
     shutil.copy2(template, output)
 
     wb = load_workbook(output)
@@ -2678,20 +3734,6 @@ def generate_weekly(payload, username=None):
         ["", "", ""]
     ]
 
-    summary_extra = max(0, len(summary_rows) - 4)
-    follow_extra = max(0, len(follow_rows) - 5)
-    next_extra = max(0, len(next_rows) - 3)
-    if next_extra:
-        ws.insert_rows(21, next_extra)
-    if follow_extra:
-        ws.insert_rows(16, follow_extra)
-    if summary_extra:
-        ws.insert_rows(9, summary_extra)
-
-    summary_start = 5
-    follow_start = 11 + summary_extra
-    next_start = 18 + summary_extra + follow_extra
-
     thin_border = Border(
         left=Side(style='thin'),
         right=Side(style='thin'),
@@ -2699,22 +3741,39 @@ def generate_weekly(payload, username=None):
         bottom=Side(style='thin')
     )
 
+    def merge_safe(min_r, min_c, max_r, max_c):
+        try:
+            ws.merge_cells(start_row=min_r, start_column=min_c, end_row=max_r, end_column=max_c)
+        except Exception:
+            pass
+
     def write_and_style(row_idx, col_idx, value, halign="left"):
         cell = ws.cell(row_idx, col_idx)
         cell.value = normalize_numbered_text(value)
         cell.border = thin_border
         style_xlsx_cell(cell, horizontal=halign, vertical="center")
 
-    # 清空数据区域（包括所有列）
-    for r in range(summary_start, summary_start + len(summary_rows)):
-        for c in range(2, 7):
-            write_and_style(r, c, "")
-    for r in range(follow_start, follow_start + len(follow_rows)):
-        for c in range(2, 7):
-            write_and_style(r, c, "")
-    for r in range(next_start, next_start + len(next_rows)):
-        for c in range(2, 7):
-            write_and_style(r, c, "")
+    def write_section_title(row_idx, title):
+        write_and_style(row_idx, 2, title, halign="center")
+        merge_safe(row_idx, 2, row_idx, 6)
+
+    def write_header(row_idx, labels, merges=None):
+        for col_idx in range(2, 7):
+            write_and_style(row_idx, col_idx, "")
+        for col_idx, label in labels:
+            write_and_style(row_idx, col_idx, label, halign="center")
+        for merge in merges or []:
+            merge_safe(row_idx, merge[0], row_idx, merge[1])
+
+    max_row = max(ws.max_row, 24)
+    if max_row >= 3:
+        ws.delete_rows(3, max_row - 2)
+
+    summary_title = 3
+    summary_header = 4
+    summary_start = 5
+    write_section_title(summary_title, "一、本周工作总结")
+    write_header(summary_header, [(2, "工作分类"), (3, "工作内容"), (5, "上周内容完成情况"), (6, "后续计划")], [(3, 4)])
 
     # 本周工作总结: B=工作分类 C=工作内容 E=完成情况 F=后续计划
     for idx, row in enumerate(summary_rows, start=summary_start):
@@ -2723,6 +3782,13 @@ def generate_weekly(payload, username=None):
         write_and_style(idx, 5, row[2])
         write_and_style(idx, 6, row[3])
         adjust_row_height(ws, idx, (2, 3, 5, 6))
+        merge_safe(idx, 3, idx, 4)
+
+    follow_title = summary_start + len(summary_rows)
+    follow_header = follow_title + 1
+    follow_start = follow_header + 1
+    write_section_title(follow_title, "二、重点工作跟进")
+    write_header(follow_header, [(2, "工作分类"), (3, "工作内容"), (4, "当前进展"), (6, "困难与求助")], [(4, 5)])
 
     # 重点工作跟进: B=工作分类 C=工作内容 D=当前进展 F=困难与求助
     for idx, row in enumerate(follow_rows, start=follow_start):
@@ -2731,6 +3797,13 @@ def generate_weekly(payload, username=None):
         write_and_style(idx, 4, row[2])
         write_and_style(idx, 6, row[3])
         adjust_row_height(ws, idx, (2, 3, 4, 6))
+        merge_safe(idx, 4, idx, 5)
+
+    next_title = follow_start + len(follow_rows)
+    next_header = next_title + 1
+    next_start = next_header + 1
+    write_section_title(next_title, "三、下周工作计划")
+    write_header(next_header, [(2, "工作分类"), (3, "工作内容"), (6, "困难与求助")], [(3, 5)])
 
     # 下周工作计划: B=工作分类 C=工作内容 F=困难与求助
     for idx, row in enumerate(next_rows, start=next_start):
@@ -2738,32 +3811,9 @@ def generate_weekly(payload, username=None):
         write_and_style(idx, 3, row[1])
         write_and_style(idx, 6, row[2])
         adjust_row_height(ws, idx, (2, 3, 6))
-
-    def merge_safe(min_r, min_c, max_r, max_c):
-        try:
-            ws.merge_cells(start_row=min_r, start_column=min_c, end_row=max_r, end_column=max_c)
-        except Exception:
-            pass
+        merge_safe(idx, 3, idx, 5)
 
     merge_safe(2, 2, 2, 6)
-    merge_safe(3, 2, 3, 6)
-    merge_safe(4, 3, 4, 4)
-    for idx in range(summary_start, summary_start + len(summary_rows)):
-        merge_safe(idx, 3, idx, 4)
-
-    follow_title = 9 + summary_extra
-    follow_header = 10 + summary_extra
-    merge_safe(follow_title, 2, follow_title, 6)
-    merge_safe(follow_header, 4, follow_header, 5)
-    for idx in range(follow_start, follow_start + len(follow_rows)):
-        merge_safe(idx, 4, idx, 5)
-
-    next_title = 16 + summary_extra + follow_extra
-    next_header = 17 + summary_extra + follow_extra
-    merge_safe(next_title, 2, next_title, 6)
-    merge_safe(next_header, 3, next_header, 5)
-    for idx in range(next_start, next_start + len(next_rows)):
-        merge_safe(idx, 3, idx, 5)
 
     wb.save(output)
     return output
@@ -2957,7 +4007,7 @@ def app_html():
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AI 办公助手 | 智能办公平台</title>
+  <title>犇犇 | 智能办公平台</title>
   <style>
     :root {
       color-scheme: dark;
@@ -3560,7 +4610,7 @@ def app_html():
     .agent-close { background: rgba(255,255,255,.18); color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 13px; }
     .agent-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
     .agent-messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-    .agent-msg { max-width: 88%; padding: 10px 12px; border-radius: 12px; font-size: 13.5px; line-height: 1.55; }
+    .agent-msg { max-width: 88%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
     .agent-msg.user { align-self: flex-end; background: #17736a; color: #fff; border-bottom-right-radius: 4px; }
     .agent-msg.assistant { align-self: flex-start; background: #f1f5f9; color: var(--ink); border-bottom-left-radius: 4px; }
     .agent-actions { display: flex; gap: 8px; padding: 0 14px 10px; }
@@ -3845,6 +4895,9 @@ def app_html():
     }
     .report:hover { border-color: var(--accent); background: rgba(59, 130, 246, .06); }
     .report.active { border-color: var(--accent); background: rgba(59, 130, 246, .1); box-shadow: 0 0 0 1px rgba(59, 130, 246, .15); }
+    .report-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+    .report-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .report-actions .mini { padding: 5px 8px; font-size: 12px; }
 
     .weekly-period-card, .weekly-section-card {
       background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
@@ -4139,7 +5192,7 @@ def app_html():
     }
     .agent-close { background: rgba(255,255,255,.2); color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 13px; border: 0; cursor: pointer; }
     .agent-close:hover { background: rgba(255,255,255,.3); }
-    .agent-msg { max-width: 88%; padding: 10px 14px; border-radius: 14px; font-size: 13.5px; line-height: 1.55; }
+    .agent-msg { max-width: 88%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
     .agent-msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
     .agent-msg.assistant { align-self: flex-start; background: var(--surface); color: var(--ink); border-bottom-left-radius: 4px; border: 1px solid var(--line); }
     .agent-action { flex: 1; padding: 8px; font-size: 12px; background: var(--surface); color: var(--accent); border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; font-weight: 700; }
@@ -4147,6 +5200,18 @@ def app_html():
     .agent-input-wrap textarea { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 14px; min-height: 56px; max-height: 140px; resize: vertical; line-height: 1.5; flex: 1; color: var(--ink); }
     .agent-input-wrap textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.12); }
     .agent-input-wrap button { padding: 10px 18px; font-size: 13px; }
+    .agent-lightbox {
+      position: fixed; inset: 0; z-index: 4000;
+      background: rgba(0,0,0,.85);
+      display: flex; align-items: center; justify-content: center;
+      cursor: zoom-out; padding: 20px;
+    }
+    .agent-lightbox.hidden { display: none; }
+    .agent-lightbox img {
+      max-width: 90vw; max-height: 90vh;
+      border-radius: 12px; box-shadow: 0 24px 64px rgba(0,0,0,.5);
+      background: #fff; object-fit: contain;
+    }
 
     @media (max-width: 900px) {
       main { grid-template-columns: 1fr; }
@@ -4303,10 +5368,449 @@ def app_html():
       color: var(--ink);
       border: 1px solid var(--line);
     }
+    .agent-progress {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafc;
+    }
+    .agent-step {
+      border: 1px solid #dbe5f1;
+      border-radius: 8px;
+      padding: 6px 4px;
+      text-align: center;
+      font-size: 11px;
+      line-height: 1.2;
+      color: #64748b;
+      background: #fff;
+      font-weight: 700;
+    }
+    .agent-step.active {
+      color: #1d4ed8;
+      border-color: #93c5fd;
+      background: #eff6ff;
+    }
+    .agent-step.done {
+      color: #047857;
+      border-color: #86efac;
+      background: #ecfdf5;
+    }
+    .agent-card {
+      display: grid;
+      gap: 8px;
+      min-width: min(320px, 78vw);
+    }
+    .agent-card-title {
+      font-size: 13px;
+      font-weight: 850;
+      color: var(--ink);
+    }
+    .agent-card-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+    }
+    .agent-card-metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px;
+      background: #fff;
+      text-align: center;
+    }
+    .agent-card-metric strong {
+      display: block;
+      font-size: 16px;
+      color: #1d4ed8;
+    }
+    .agent-card-note {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .agent-intro {
+      display: grid;
+      gap: 10px;
+      min-width: min(340px, 78vw);
+    }
+    .agent-intro-title {
+      font-size: 14px;
+      font-weight: 850;
+      color: var(--ink);
+    }
+    .agent-intro-copy {
+      color: #475569;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .agent-quick-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 7px;
+    }
+    .agent-quick {
+      border: 1px solid #bfdbfe;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 750;
+      text-align: left;
+      cursor: pointer;
+    }
+    .agent-quick:hover {
+      background: #dbeafe;
+      border-color: #60a5fa;
+    }
+    .agent-help-list {
+      margin: 0;
+      padding-left: 16px;
+      color: #64748b;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .agent-card-list {
+      margin: 0;
+      padding-left: 16px;
+      color: #475569;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .send-review {
+      margin-top: 12px;
+      border: 1px solid #bfdbfe;
+      border-radius: 12px;
+      background: #eff6ff;
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+    .send-review.hidden { display: none; }
+    .send-review-title {
+      font-size: 14px;
+      font-weight: 850;
+      color: #1e3a8a;
+    }
+    .send-review-grid {
+      display: grid;
+      grid-template-columns: 96px minmax(0, 1fr);
+      gap: 6px 10px;
+      font-size: 13px;
+      color: #334155;
+    }
+    .send-review-grid .label {
+      color: #64748b;
+      font-weight: 700;
+    }
+    .send-review-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+    .send-review-warning {
+      color: #b45309;
+      font-size: 13px;
+      font-weight: 700;
+    }
     .agent-action {
       background: #eff6ff;
       color: #1d4ed8;
       border-color: #bfdbfe;
+    }
+    .skill-hero,
+    .skill-protocol {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .skill-hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+    .skill-orchestration {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .skill-orchestration.hidden { display: none; }
+    .skill-orchestration .orchestration-section {
+      margin-top: 12px;
+    }
+    .skill-orchestration .orchestration-section-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--ink);
+      margin-bottom: 6px;
+    }
+    .skill-orchestration pre {
+      white-space: pre-wrap;
+      background: #f8fbff;
+      border: 1px solid #dbe5f1;
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      font-size: 12px;
+      color: #334155;
+      overflow: auto;
+      max-height: 320px;
+    }
+    .skill-protocol pre,
+    .skill-call-example {
+      white-space: pre-wrap;
+      background: #f8fbff;
+      border: 1px solid #dbe5f1;
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      margin: 10px 0 0;
+      color: #1e293b;
+      font-size: 12px;
+      line-height: 1.6;
+      overflow: auto;
+    }
+    .skill-filter-row {
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) 200px;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .skill-installed-head {
+      margin: 6px 0 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .skill-total-count {
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .skill-module-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .skill-module-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 14px;
+      cursor: pointer;
+      transition: all .16s ease;
+    }
+    .skill-module-card:hover,
+    .skill-module-card.active {
+      transform: translateY(-1px);
+      border-color: #93c5fd;
+      background: #eff6ff;
+    }
+    .skill-module-name {
+      color: var(--ink);
+      font-weight: 850;
+      font-size: 14px;
+    }
+    .skill-module-count {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+    .skill-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+      gap: 14px;
+      align-items: start;
+    }
+    .skill-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+      display: grid;
+      gap: 10px;
+      cursor: pointer;
+      transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+      align-self: start;
+    }
+    .skill-card:hover {
+      transform: translateY(-2px);
+      border-color: #93c5fd;
+      box-shadow: 0 18px 36px rgba(15, 23, 42, .11);
+    }
+    .skill-card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .skill-name {
+      font-size: 15px;
+      font-weight: 850;
+      color: var(--ink);
+    }
+    .skill-title {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+    .skill-badge {
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1d4ed8;
+      font-size: 12px;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+    .skill-badge.warn {
+      background: #fff7ed;
+      border-color: #fed7aa;
+      color: #c2410c;
+    }
+    .skill-desc {
+      color: #475569;
+      font-size: 13px;
+      line-height: 1.6;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .skill-card.compact { padding: 12px; gap: 6px; }
+    .skill-card-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .skill-help-btn {
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+      color: #475569;
+      cursor: pointer;
+      white-space: nowrap;
+      line-height: 1;
+    }
+    .skill-help-btn:hover { background: #e2e8f0; color: #0f172a; }
+    .skill-detail {
+      display: none;
+      margin-top: 4px;
+      padding: 10px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #f8fafc;
+      color: #475569;
+      font-size: 12px;
+      line-height: 1.5;
+      max-height: 300px;
+      overflow: auto;
+      cursor: default;
+    }
+    .skill-detail.open { display: block; }
+    .skill-detail .meta-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: .3px;
+      margin: 8px 0 4px;
+    }
+    .skill-detail pre {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 8px;
+      overflow: auto;
+      font-size: 11px;
+      margin: 0;
+      max-height: 180px;
+    }
+    .skill-test-box {
+      width: min(1080px, 96vw);
+      max-height: 92vh;
+      overflow: auto;
+    }
+    .skill-test-grid {
+      display: grid;
+      grid-template-columns: minmax(360px, 1fr) minmax(360px, 1fr);
+      gap: 16px;
+    }
+    .skill-test-panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #f8fbff;
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .skill-test-panel textarea {
+      min-height: 150px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      resize: vertical;
+    }
+    .skill-test-panel textarea#skillTestInstruction {
+      min-height: 110px;
+      font-family: inherit;
+    }
+    .skill-test-result {
+      min-height: 330px;
+      max-height: 520px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #0f172a;
+      color: #e2e8f0;
+      border: 1px solid #1e293b;
+      border-radius: 14px;
+      padding: 14px;
+      font-size: 12px;
+      line-height: 1.65;
+    }
+    .skill-confirm-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #b45309;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .skill-confirm-line input {
+      width: 16px;
+      height: 16px;
+    }
+    .skill-test-links {
+      display: grid;
+      gap: 10px;
+    }
+    .skill-preview-image {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    @media (max-width: 900px) {
+      .skill-test-grid {
+        grid-template-columns: 1fr;
+      }
     }
     .mail-assistant-grid {
       display: grid;
@@ -4470,6 +5974,8 @@ def app_html():
       .mail-assistant-grid { grid-template-columns: 1fr; }
       .mail-detail { min-height: 280px; }
       .mail-compose-layout { grid-template-columns: 1fr; }
+      .skill-hero { align-items: flex-start; flex-direction: column; }
+      .skill-filter-row { grid-template-columns: 1fr; }
     }
 
   </style>
@@ -4517,7 +6023,7 @@ def app_html():
         </div>
       </div>
       <div class="nav-group">
-        <div class="sidebar-title">智能助手</div>
+        <div class="sidebar-title">犇犇</div>
         <div class="task-grid">
           <button class="task-card" type="button" data-task="weekly">
             <span class="nav-icon" data-icon="file-spreadsheet"></span>
@@ -4555,6 +6061,14 @@ def app_html():
           <button class="task-card admin-only hidden" type="button" data-task="config">
             <span class="nav-icon" data-icon="settings"></span>
             <span class="task-name">系统配置</span>
+          </button>
+          <button class="task-card superadmin-only hidden" type="button" data-task="skills">
+            <span class="nav-icon" data-icon="puzzle"></span>
+            <span class="task-name">系统 Skill</span>
+          </button>
+          <button class="task-card superadmin-only hidden" type="button" data-task="usermanage">
+            <span class="nav-icon" data-icon="users"></span>
+            <span class="task-name">用户管理</span>
           </button>
         </div>
       </div>
@@ -4964,8 +6478,11 @@ def app_html():
         </div>
         <div id="configServerStatus" class="status"></div>
         </div>
-        <div class="admin-only hidden">
-        <h2 style="margin-top:18px">用户管理</h2>
+      </div>
+      </div>
+      <div class="task-panel hidden" id="userManagePanel">
+      <div class="guide">
+        <h2 style="margin:0 0 14px">用户管理</h2>
         <div class="config-grid">
           <div>
             <label>用户名</label>
@@ -4991,13 +6508,16 @@ def app_html():
         <div class="toolbar">
           <button id="addUser" type="button">新增用户</button>
         </div>
-        <div class="user-list" id="userList"></div>
-        </div>
+        <div id="userManageStatus" class="status"></div>
+        <div class="user-list" id="userList"><div class="upload-item">正在加载用户列表...</div></div>
       </div>
-      </div></div>
+      </div>
       <div class="task-panel hidden" id="mailConfigPanel">
       <div class="guide">
         <h2>我的邮箱账户</h2>
+        <div class="upload-item" style="margin-bottom:14px;">
+          发送邮件需要 SMTP；读取收件箱需要 IMAP。263 邮箱常用配置是 SMTP 465/SSL、IMAP 993/SSL。用户名通常填写完整邮箱地址；授权码不是网页登录密码，需要在邮箱后台单独生成。
+        </div>
         <div class="config-grid">
           <div>
             <label>本人邮箱</label>
@@ -5012,6 +6532,7 @@ def app_html():
           <div>
             <label>SMTP 用户名</label>
             <input id="mailSmtpUser" placeholder="通常为邮箱账号" />
+            <div class="hint">留空保存时会自动使用“本人邮箱”。</div>
           </div>
           <div>
             <label>SMTP 授权码/密码</label>
@@ -5034,6 +6555,7 @@ def app_html():
           <div>
             <label>IMAP 用户名</label>
             <input id="mailImapUser" placeholder="默认使用 SMTP 用户名" />
+            <div class="hint">只收邮件时需要；留空保存时会自动使用 SMTP 用户名。</div>
           </div>
           <div>
             <label>IMAP 授权码/密码</label>
@@ -5080,6 +6602,121 @@ def app_html():
           <button class="warn" id="testMailConfig" type="button">测试我的邮箱配置</button>
         </div>
         <div id="mailConfigStatus" class="status"></div>
+      </div>
+      </div>
+      <div class="task-panel hidden" id="skillsPanel">
+      <div class="guide">
+        <div class="skill-hero">
+          <div>
+            <div class="mail-section-title">系统 Skill 管理</div>
+            <div class="mail-section-meta">查看当前已安装的 Skill、能力说明、调用参数和调用示例。此页面仅超级管理员可见。</div>
+          </div>
+          <div class="toolbar" style="margin-top:0">
+            <button class="secondary" id="openAgentOrchestration" type="button"><span class="icon" data-icon="bot"></span> 犇犇编排逻辑</button>
+            <button class="secondary" id="openAgentConfig" type="button"><span class="icon" data-icon="settings"></span> 编辑犇犇配置</button>
+            <button class="secondary" id="openSkillDocs" type="button"><span class="icon" data-icon="file-text"></span> 查看完整文档</button>
+            <button class="warn" id="downloadSkillDocs" type="button"><span class="icon" data-icon="archive"></span> 下载文档</button>
+          </div>
+        </div>
+        <div class="skill-protocol">
+          <div class="mail-section-title">大模型调用协议</div>
+          <div class="mail-section-meta">当大模型需要操作软件时，返回下面这种 JSON；普通问答直接自然语言回复即可。</div>
+          <pre>{"reply":"给用户看的说明","skill_call":{"name":"skill.name","arguments":{}}}</pre>
+        </div>
+        <div class="skill-orchestration hidden" id="agentOrchestrationPanel">
+          <div class="mail-section-title">犇犇编排逻辑</div>
+          <div class="mail-section-meta">当前犇犇各模块角色定义、系统提示词与工作流编排。</div>
+          <div id="agentOrchestrationContent"></div>
+        </div>
+        <div class="skill-installed-head">
+          <div>
+            <div class="mail-section-title">已安装 Skill 模块</div>
+            <div class="mail-section-meta">点击下面的模块卡片查看对应 Skill 能力。</div>
+          </div>
+          <div class="skill-total-count" id="skillTotalCount"></div>
+        </div>
+        <div class="skill-module-summary" id="skillModuleSummary">
+          <div class="skill-module-card active" data-module="周报">
+            <div class="skill-module-name">周报 Skill</div>
+            <div class="skill-module-count">已安装 4 个能力，点击查看</div>
+          </div>
+          <div class="skill-module-card" data-module="出差报告">
+            <div class="skill-module-name">出差报告 Skill</div>
+            <div class="skill-module-count">已安装能力，点击查看</div>
+          </div>
+          <div class="skill-module-card" data-module="工作日记">
+            <div class="skill-module-name">日记 Skill</div>
+            <div class="skill-module-count">已安装能力，点击查看</div>
+          </div>
+          <div class="skill-module-card" data-module="金点子论坛">
+            <div class="skill-module-name">金点子论坛 Skill</div>
+            <div class="skill-module-count">已安装能力，点击查看</div>
+          </div>
+          <div class="skill-module-card" data-module="邮件">
+            <div class="skill-module-name">邮件 Skill</div>
+            <div class="skill-module-count">已安装能力，点击查看</div>
+          </div>
+          <div class="skill-module-card" data-module="资讯">
+            <div class="skill-module-name">资讯 Skill</div>
+            <div class="skill-module-count">已安装能力，点击查看</div>
+          </div>
+        </div>
+        <div class="skill-filter-row">
+          <input id="skillSearch" placeholder="搜索 Skill 名称、模块或说明..." />
+          <select id="skillModuleFilter">
+            <option value="all">全部模块</option>
+          </select>
+        </div>
+        <div class="skill-list" id="skillList">
+          <div class="skill-card" data-skill-name="weekly.compose">
+            <div class="skill-card-head">
+              <div>
+                <div class="skill-name">weekly.compose</div>
+                <div class="skill-title">周报 Skill · 编写/设计周报草稿</div>
+              </div>
+              <span class="skill-badge">查询/预览</span>
+            </div>
+            <div class="skill-desc">调用配置的大模型 API，将原始工作内容整理成周报三段式结构：本周工作总结、重点工作跟进、下周工作计划。</div>
+            <div class="mailbox-meta">调用示例</div>
+            <pre class="skill-call-example">{"reply":"我来根据这些内容生成周报草稿。","skill_call":{"name":"weekly.compose","arguments":{"raw_work":"本周原始工作内容","next_plan":"下周计划","style":"体现工作量多，编号清晰，简洁明了"}}}</pre>
+          </div>
+          <div class="skill-card" data-skill-name="weekly.preview">
+            <div class="skill-card-head">
+              <div>
+                <div class="skill-name">weekly.preview</div>
+                <div class="skill-title">周报 Skill · 生成周报预览</div>
+              </div>
+              <span class="skill-badge warn">生成文件/预览图</span>
+            </div>
+            <div class="skill-desc">把结构化周报内容写入 Excel 模板，生成周报预览图片和邮件草稿，等待用户确认。</div>
+            <div class="mailbox-meta">调用示例</div>
+            <pre class="skill-call-example">{"reply":"我先生成周报预览，请你确认。","skill_call":{"name":"weekly.preview","arguments":{"period":"2026.05.11-2026.05.15","weekly_summary":[],"weekly_follow":[],"weekly_next":[]}}}</pre>
+          </div>
+          <div class="skill-card" data-skill-name="weekly.send_confirmed">
+            <div class="skill-card-head">
+              <div>
+                <div class="skill-name">weekly.send_confirmed</div>
+                <div class="skill-title">周报 Skill · 确认后发送周报邮件</div>
+              </div>
+              <span class="skill-badge warn">发送邮件</span>
+            </div>
+            <div class="skill-desc">只有用户确认周报预览无误后，才使用 weekly.preview 生成的附件发送邮件。</div>
+            <div class="mailbox-meta">调用示例</div>
+            <pre class="skill-call-example">{"reply":"确认预览无误后发送。","skill_call":{"name":"weekly.send_confirmed","arguments":{"attachment":"周颖超工作周报2026.05.11-2026.05.15.xlsx"}}}</pre>
+          </div>
+          <div class="skill-card" data-skill-name="weekly.prefill">
+            <div class="skill-card-head">
+              <div>
+                <div class="skill-name">weekly.prefill</div>
+                <div class="skill-title">周报 Skill · 获取最新周报预填</div>
+              </div>
+              <span class="skill-badge">查询/预览</span>
+            </div>
+            <div class="skill-desc">读取最新历史周报，将上次“下周计划”迁移到本次“本周工作内容”。</div>
+            <div class="mailbox-meta">调用示例</div>
+            <pre class="skill-call-example">{"reply":"我来获取最新历史周报。","skill_call":{"name":"weekly.prefill","arguments":{}}}</pre>
+          </div>
+        </div>
       </div>
       </div>
       <div class="task-panel hidden" id="mailAssistantPanel">
@@ -5196,6 +6833,7 @@ def app_html():
         <button class="secondary" id="copy">复制正文</button>
         <button class="warn" id="send">发送/生成草稿</button>
       </div>
+      <div id="sendReview" class="send-review hidden"></div>
       </div>
       </div>
       </div>
@@ -5267,13 +6905,68 @@ def app_html():
       </div>
     </div>
   </div>
+  <div class="modal hidden" id="skillTestModal" role="dialog" aria-modal="true">
+    <div class="modal-box skill-test-box">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title" id="skillTestTitle">Skill 测试</div>
+          <div class="history-meta" id="skillTestMeta">使用平台配置的大模型 API 和当前登录用户空间执行测试。</div>
+        </div>
+        <button class="mini secondary" type="button" id="skillTestClose">关闭</button>
+      </div>
+      <div class="skill-test-grid">
+        <div class="skill-test-panel">
+          <label>调用参数 JSON</label>
+          <textarea id="skillTestArgs" spellcheck="false"></textarea>
+          <label>自然语言测试要求（可选）</label>
+          <textarea id="skillTestInstruction" placeholder="例如：把下面的原始工作内容梳理成周报草稿，要求体现工作量多、编号清晰、简洁明了。"></textarea>
+          <label class="skill-confirm-line hidden" id="skillConfirmWrap">
+            <input id="skillConfirmUnsafe" type="checkbox" />
+            我确认执行该 Skill 测试，可能会生成文件、写入数据或发送内容
+          </label>
+          <div class="toolbar" style="margin-top:0">
+            <button type="button" id="skillRunTest"><span class="icon" data-icon="play"></span> 运行测试</button>
+          </div>
+          <div id="skillTestStatus" class="status"></div>
+        </div>
+        <div class="skill-test-panel">
+          <label>测试结果</label>
+          <pre class="skill-test-result" id="skillTestResult">点击“运行测试”后，这里会显示 Skill 返回结果。</pre>
+          <div class="skill-test-links" id="skillTestLinks"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal hidden" id="agentConfigModal" role="dialog" aria-modal="true">
+    <div class="modal-box" style="width:min(960px,96vw);max-height:92vh;overflow:auto;">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">犇犇配置</div>
+          <div class="history-meta">编辑系统提示词和工作流编排，保存后立即生效。</div>
+        </div>
+        <button class="mini secondary" type="button" id="agentConfigClose">关闭</button>
+      </div>
+      <div class="config-tabs" style="display:flex;gap:8px;margin-bottom:12px;">
+        <button type="button" class="secondary agent-config-tab active" data-tab="prompts">系统提示词</button>
+        <button type="button" class="secondary agent-config-tab" data-tab="workflows">工作流</button>
+      </div>
+      <div id="agentConfigPrompts"></div>
+      <div id="agentConfigWorkflows" class="hidden"></div>
+      <div class="toolbar" style="margin-top:12px;">
+        <button type="button" id="agentConfigSave" class="primary"><span class="icon" data-icon="save"></span> 保存配置</button>
+        <span id="agentConfigStatus" class="status" style="margin-left:8px;"></span>
+      </div>
+    </div>
+  </div>
   <script>
+    let agentKind = null;
+    let agentMessages = [];
     let defaultAssistantPrompt = `请帮我优化下面的工作内容，要求：
 1、拆分成1、2、3、4这样的编号要点，每点单独换行。
 2、语言简洁明了，体现实际工作量和推进成果。
 3、修正错别字、病句和不通顺表达。
 4、不要编造不存在的事项，不要写空话套话。`;
-    let state = { reports: [], selected: null, task: 'weekly', subTab: 'edit', user: null, weeklyPrefilled: false, tripPrefilled: false, modalSave: null, restoringDraft: false, assistantMailFiles: [], forumSelected: null, forumCommentPage: 1 };
+    let state = { reports: [], selected: null, task: 'weekly', subTab: 'edit', user: null, weeklyPrefilled: false, tripPrefilled: false, modalSave: null, restoringDraft: false, assistantMailFiles: [], forumSelected: null, forumCommentPage: 1, currentSkill: null, agentStage: 0 };
     const FORM_DRAFT_PREFIX = 'personalWorkSite.formDraft.v2';
     const el = id => document.getElementById(id);
     const lucideIcons = {
@@ -5293,6 +6986,7 @@ def app_html():
       'bell-ring': '<path d="M10.27 21a2 2 0 0 0 3.46 0"/><path d="M4 8a8 8 0 0 1 16 0c0 7 3 7 3 9H1c0-2 3-2 3-9"/><path d="M18.75 3.2A10 10 0 0 1 22 8"/><path d="M1.99 8a10 10 0 0 1 3.26-4.8"/>',
       'file-text': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>',
       'messages-square': '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z"/><path d="M18 9h2a2 2 0 0 1 2 2v10l-4-4h-6a2 2 0 0 1-2-2v-1"/>',
+      puzzle: '<path d="M19.4 13.5a1.8 1.8 0 0 0 0-3 1.8 1.8 0 0 0-2.4 1.7V9a2 2 0 0 0-2-2h-3.2a1.8 1.8 0 0 0-3.4-1.1A1.8 1.8 0 0 0 10.1 8H7a2 2 0 0 0-2 2v3.1a1.8 1.8 0 0 1 0 3.8V20a2 2 0 0 0 2 2h3.1a1.8 1.8 0 0 1 3.8 0H17a2 2 0 0 0 2-2v-3.1a1.8 1.8 0 0 0 .4-3.4Z"/>',
       'thumbs-up': '<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h3.28a2 2 0 0 0 1.7-.94L13 2a2.3 2.3 0 0 1 2 3.88Z"/>',
       newspaper: '<path d="M4 22h14a2 2 0 0 0 2-2V4H6a2 2 0 0 0-2 2v16Z"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h6v4h-6z"/><path d="M4 8H2v12a2 2 0 0 0 2 2"/>',
       mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
@@ -5304,8 +6998,10 @@ def app_html():
       'clipboard-pen': '<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v9"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7"/><path d="M17.5 22 22 17.5 20.5 16 16 20.5V22Z"/>',
       'book-open': '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
       'pen-line': '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+      users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
       'library': '<path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/>',
-      'chevron-right': '<path d="m9 18 6-6-6-6"/>'
+      'chevron-right': '<path d="m9 18 6-6-6-6"/>',
+      play: '<polygon points="6 3 20 12 6 21 6 3"/>'
     };
 
     function renderIcons(root = document) {
@@ -5340,7 +7036,7 @@ def app_html():
       el('authPanel').classList.toggle('hidden', authed);
       el('appMain').classList.toggle('hidden', !authed);
       el('userbar').style.display = authed ? 'flex' : 'none';
-      el('agentFloat').classList.toggle('hidden', !authed);
+      if (el('agentFloat')) el('agentFloat').classList.toggle('hidden', !authed);
       if (authed) {
         const roleText = user.role === 'superadmin' ? '超级管理员' : user.role === 'admin' ? '管理员' : '成员';
         el('userInfo').textContent = `${user.name || user.username} · ${roleText}`;
@@ -5409,13 +7105,63 @@ def app_html():
       const list = state.reports.filter(r => r.kind === kind);
       el('reports').innerHTML = list.map(r => `
         <div class="report ${state.selected === r.name ? 'active' : ''}" data-name="${encodeURIComponent(r.name)}">
-          <div class="name">${r.name}</div>
-          <div class="meta">${r.generated ? '新生成' : (r.kind === 'weekly' ? '周报模板' : '出差报告模板')} · ${new Date(r.mtime * 1000).toLocaleString()}</div>
+          <div class="report-head">
+            <div>
+              <div class="name">${escapeHtml(r.name)}</div>
+              <div class="meta">${r.generated ? '新生成' : (r.kind === 'weekly' ? '周报模板' : '出差报告模板')} · ${new Date(r.mtime * 1000).toLocaleString()}</div>
+            </div>
+            <div class="report-actions">
+              ${r.deletable ? `<button class="mini danger delete-report-file" type="button">删除</button>` : ''}
+            </div>
+          </div>
         </div>
       `).join('');
       document.querySelectorAll('.report').forEach(node => {
         node.addEventListener('click', () => loadDraft(kind, decodeURIComponent(node.dataset.name)));
       });
+      el('reports').querySelectorAll('.delete-report-file').forEach(button => {
+        button.addEventListener('click', event => {
+          event.stopPropagation();
+          deleteReportFile(kind, decodeURIComponent(button.closest('.report').dataset.name));
+        });
+      });
+    }
+
+    function clearMailDraft() {
+      ['to', 'cc', 'subject', 'body', 'attachment'].forEach(id => {
+        if (el(id)) el(id).value = '';
+      });
+      state.bodyHtml = '';
+      renderBodyPreview();
+      el('downloadLink')?.classList.add('hidden');
+      if (el('preview')) el('preview').innerHTML = '暂无可预览内容';
+      clearSendReview();
+    }
+
+    async function deleteReportFile(kind, name) {
+      if (!confirm('确定删除这个报告文件吗？\\n' + name)) return;
+      const wasSelected = state.selected === name;
+      try {
+        const result = await api('/api/delete-report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        });
+        el('status').textContent = '已删除报告文件：' + result.deleted;
+        el('status').className = 'status ok';
+        if (wasSelected) state.selected = '';
+        await loadReports({ preserveSelection: true });
+        if (wasSelected) {
+          const next = state.reports.find(r => r.kind === kind)?.name || '';
+          state.selected = next;
+          renderReports();
+          if (next) await loadDraft(kind, next);
+          else clearMailDraft();
+        }
+      } catch (err) {
+        el('status').textContent = err.message;
+        el('status').className = 'status err';
+      }
     }
 
     function reportKindName(kind) {
@@ -5521,11 +7267,13 @@ def app_html():
       el('generateToolbar').classList.add('hidden');
       el('configPanel').classList.toggle('hidden', task !== 'config');
       el('mailConfigPanel').classList.toggle('hidden', task !== 'mailconfig');
+      el('skillsPanel').classList.toggle('hidden', task !== 'skills');
+      el('userManagePanel').classList.toggle('hidden', task !== 'usermanage');
       if (!isAssistant) {
         state.subTab = 'edit';
         document.querySelectorAll('.sub-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.sub === 'edit'));
       }
-      const titles = { dashboard: '工作台', weekly: '周报助手', trip: '出差报告助手', diary: '工作日记', forum: '金点子论坛', news: '每日资讯', mailassistant: '邮件助手', config: '系统配置', mailconfig: '邮件配置' };
+      const titles = { dashboard: '工作台', weekly: '周报助手', trip: '出差报告助手', diary: '工作日记', forum: '金点子论坛', news: '每日资讯', mailassistant: '邮件助手', config: '系统配置', mailconfig: '邮件配置', skills: '系统 Skill', usermanage: '用户管理' };
       const descs = {
         dashboard: '智能办公一站式工作台',
         weekly: '填写周报、发送邮件、管理历史周报',
@@ -5535,7 +7283,9 @@ def app_html():
         news: '收集轨道交通关键资讯，调用平台大模型生成每日简报',
         mailassistant: '查看收件箱、阅读邮件、发送普通邮件',
         config: '管理员配置 AI 接口和系统参数',
-        mailconfig: '配置发件邮箱、收件人和抄送地址'
+        mailconfig: '配置发件邮箱、收件人和抄送地址',
+        skills: '查看已安装 Skill、能力说明、调用参数和示例',
+        usermanage: '管理系统用户、角色权限和密码'
       };
       el('taskTitle').textContent = titles[task] || '';
       el('taskDesc').textContent = descs[task] || '';
@@ -5560,6 +7310,9 @@ def app_html():
       }
       if (task === 'mailconfig') {
         loadMailConfig();
+      }
+      if (task === 'skills') {
+        loadSkills();
       }
       if (task === 'mailassistant') {
         loadMailbox();
@@ -5929,14 +7682,12 @@ def app_html():
       const thisMonday = new Date(today);
       thisMonday.setHours(0, 0, 0, 0);
       thisMonday.setDate(today.getDate() - day + 1);
-      const lastMonday = new Date(thisMonday);
-      lastMonday.setDate(thisMonday.getDate() - 7);
-      const lastFriday = new Date(lastMonday);
-      lastFriday.setDate(lastMonday.getDate() + 4);
-      el('weeklyStart').value = toDateInputValue(lastMonday);
-      el('weeklyEnd').value = toDateInputValue(lastFriday);
-      el('diarySumStart').value = toDateInputValue(lastMonday);
-      el('diarySumEnd').value = toDateInputValue(lastFriday);
+      const thisFriday = new Date(thisMonday);
+      thisFriday.setDate(thisMonday.getDate() + 4);
+      el('weeklyStart').value = toDateInputValue(thisMonday);
+      el('weeklyEnd').value = toDateInputValue(thisFriday);
+      el('diarySumStart').value = toDateInputValue(thisMonday);
+      el('diarySumEnd').value = toDateInputValue(thisFriday);
       syncWeeklyPeriod();
     }
 
@@ -5981,6 +7732,236 @@ def app_html():
       });
     }
 
+    function sampleSkillCall(skill) {
+      const args = {};
+      Object.keys(skill.parameters || {}).forEach(key => {
+        const desc = String(skill.parameters[key] || '');
+        if (desc.includes('YYYY-MM-DD')) args[key] = '2026-05-14';
+        else if (desc.includes('数组')) args[key] = [];
+        else if (key === 'kind') args[key] = 'weekly';
+        else if (key === 'limit') args[key] = 20;
+        else args[key] = desc.replace(/，可选/g, '') || '';
+      });
+      return JSON.stringify({
+        reply: `准备调用 ${skill.title}`,
+        skill_call: { name: skill.name, arguments: args }
+      }, null, 2);
+    }
+
+    function skillFallback(name) {
+      const module = name.split('.')[0] || '其他';
+      return {
+        name,
+        module: module === 'weekly' ? '周报' : module,
+        title: name,
+        description: '系统 Skill 测试',
+        parameters: {},
+        safe: !/send|preview|generate|save|create|comment/.test(name)
+      };
+    }
+
+    function skillDefaultArguments(skill) {
+      const example = skill?.detail?.call_example?.skill_call?.arguments;
+      if (example && typeof example === 'object') return example;
+      const args = {};
+      Object.keys(skill?.parameters || {}).forEach(key => {
+        const desc = String(skill.parameters[key] || '');
+        if (desc.includes('YYYY-MM-DD')) args[key] = '2026-05-14';
+        else if (desc.includes('数组')) args[key] = [];
+        else if (key === 'kind') args[key] = 'weekly';
+        else if (key === 'limit') args[key] = 20;
+        else if (key === 'uid') args[key] = '';
+        else args[key] = desc.includes('可选') ? '' : desc;
+      });
+      return args;
+    }
+
+    function openSkillTest(name) {
+      const skill = (state.skills || []).find(item => item.name === name) || skillFallback(name);
+      state.currentSkill = skill;
+      el('skillTestTitle').textContent = `${skill.name} 测试`;
+      el('skillTestMeta').textContent = `${skill.module || '其他'} Skill · ${skill.title || ''} · ${skill.safe ? '查询/预览类' : '写入/外部动作类'}`;
+      el('skillTestArgs').value = JSON.stringify(skillDefaultArguments(skill), null, 2);
+      el('skillTestInstruction').value = '';
+      el('skillConfirmUnsafe').checked = false;
+      el('skillConfirmWrap').classList.toggle('hidden', !!skill.safe);
+      el('skillTestStatus').textContent = '';
+      el('skillTestResult').textContent = '点击“运行测试”后，这里会显示 Skill 返回结果。';
+      el('skillTestLinks').innerHTML = '';
+      el('skillTestModal').classList.remove('hidden');
+      renderIcons(el('skillTestModal'));
+    }
+
+    function closeSkillTest() {
+      el('skillTestModal').classList.add('hidden');
+      state.currentSkill = null;
+    }
+
+    function attachSkillCardTests(root = document) {
+      root.querySelectorAll('.skill-card[data-skill-name]').forEach(card => {
+        if (card.dataset.testBound === 'true') return;
+        card.dataset.testBound = 'true';
+        card.addEventListener('click', () => openSkillTest(card.dataset.skillName));
+      });
+    }
+
+    function renderSkillTestArtifacts(result) {
+      const data = result?.result || {};
+      const links = [];
+      if (data.download_url) {
+        links.push(`<a class="secondary" href="${escapeHtml(data.download_url)}" target="_blank">打开生成文件</a>`);
+      }
+      if (data.preview_image_url) {
+        links.push(`<img class="skill-preview-image" src="${escapeHtml(data.preview_image_url)}" alt="Skill 预览图片" />`);
+      }
+      el('skillTestLinks').innerHTML = links.join('');
+    }
+
+    async function runSkillTest() {
+      const skill = state.currentSkill;
+      if (!skill) return;
+      let args = {};
+      try {
+        args = JSON.parse(el('skillTestArgs').value || '{}');
+      } catch (err) {
+        el('skillTestStatus').textContent = '调用参数不是有效 JSON。';
+        return;
+      }
+      el('skillRunTest').disabled = true;
+      el('skillTestStatus').textContent = el('skillTestInstruction').value.trim() ? '正在调用平台配置的大模型 API 生成参数并执行 Skill...' : '正在执行 Skill 测试...';
+      el('skillTestResult').textContent = '测试运行中...';
+      el('skillTestLinks').innerHTML = '';
+      try {
+        const result = await api('/api/skill-test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: skill.name,
+            arguments: args,
+            instruction: el('skillTestInstruction').value.trim(),
+            confirm_unsafe: el('skillConfirmUnsafe').checked
+          })
+        });
+        el('skillTestStatus').textContent = result.model ? `测试完成，已使用模型：${result.model}` : '测试完成。';
+        el('skillTestResult').textContent = JSON.stringify(result, null, 2);
+        renderSkillTestArtifacts(result);
+      } catch (err) {
+        el('skillTestStatus').textContent = err.message;
+        el('skillTestResult').textContent = JSON.stringify({ ok: false, error: err.message }, null, 2);
+      } finally {
+        el('skillRunTest').disabled = false;
+      }
+    }
+
+    function renderSkills(skills) {
+      const moduleOrder = ['周报', '出差报告', '工作日记', '金点子论坛', '邮件', '资讯', '报告', '通用'];
+      const moduleLabels = {
+        周报: '周报 Skill',
+        出差报告: '出差报告 Skill',
+        工作日记: '日记 Skill',
+        金点子论坛: '金点子论坛 Skill',
+        邮件: '邮件 Skill',
+        资讯: '资讯 Skill',
+        报告: '报告 Skill',
+        通用: '通用 Skill'
+      };
+      const foundModules = [...new Set((skills || []).map(item => item.module || '其他'))];
+      const orderedModules = [
+        ...moduleOrder.filter(module => foundModules.includes(module)),
+        ...foundModules.filter(module => !moduleOrder.includes(module))
+      ];
+      const modules = ['all', ...orderedModules];
+      const filter = el('skillModuleFilter');
+      const previous = filter.value || 'all';
+      filter.innerHTML = modules.map(module => `<option value="${escapeHtml(module)}">${module === 'all' ? '全部模块' : escapeHtml(module)}</option>`).join('');
+      filter.value = modules.includes(previous) ? previous : 'all';
+      const keyword = (el('skillSearch').value || '').trim().toLowerCase();
+      const moduleName = filter.value || 'all';
+      const counts = {};
+      (skills || []).forEach(skill => {
+        const module = skill.module || '其他';
+        counts[module] = (counts[module] || 0) + 1;
+      });
+      el('skillModuleSummary').innerHTML = orderedModules.map(module => `
+        <div class="skill-module-card ${moduleName === module ? 'active' : ''}" data-module="${escapeHtml(module)}">
+          <div class="skill-module-name">${escapeHtml(moduleLabels[module] || (module + ' Skill'))}</div>
+          <div class="skill-module-count">已安装 ${counts[module] || 0} 个能力，点击查看</div>
+        </div>
+      `).join('');
+      el('skillModuleSummary').querySelectorAll('.skill-module-card').forEach(card => {
+        card.addEventListener('click', () => {
+          el('skillModuleFilter').value = card.dataset.module;
+          renderSkills(state.skills || []);
+        });
+      });
+      el('skillTotalCount').textContent = `共 ${(skills || []).length} 个 Skill`;
+      const list = (skills || []).filter(skill => {
+        const text = `${skill.name} ${skill.title} ${skill.module} ${skill.description}`.toLowerCase();
+        return (moduleName === 'all' || skill.module === moduleName) && (!keyword || text.includes(keyword));
+      });
+      const summaryText = (text, max = 72) => {
+        const compact = String(text || '').replace(/\s+/g, ' ').trim();
+        return compact.length > max ? compact.slice(0, max) + '...' : compact;
+      };
+      el('skillList').innerHTML = list.length ? list.map(skill => `
+        <div class="skill-card compact" data-skill-name="${escapeHtml(skill.name)}">
+          <div class="skill-card-head">
+            <div>
+              <div class="skill-name">${escapeHtml(skill.name)}</div>
+              <div class="skill-title">${escapeHtml(skill.module || '其他')} Skill · ${escapeHtml(skill.title || '')}</div>
+            </div>
+            <div class="skill-card-actions">
+              <span class="skill-badge ${skill.safe ? '' : 'warn'}">${skill.safe ? '查询/预览' : '写入/外部动作'}</span>
+              <button type="button" class="skill-help-btn" data-help="${escapeHtml(skill.name)}" aria-expanded="false">详情</button>
+            </div>
+          </div>
+          <div class="skill-desc">${escapeHtml(summaryText(skill.description || '点击详情查看适用场景、参数和调用示例。'))}</div>
+          <div class="skill-detail" id="skill-detail-${escapeHtml(skill.name)}">
+            <div class="meta-label">说明</div>
+            <div>${escapeHtml(skill.description || '')}</div>
+            ${skill.detail && skill.detail.when_to_use && skill.detail.when_to_use.length ? `
+              <div class="meta-label">适用场景</div>
+              <div>${(skill.detail.when_to_use || []).map(item => `· ${escapeHtml(item)}`).join('<br>')}</div>
+            ` : ''}
+            <div class="meta-label">参数</div>
+            <pre>${escapeHtml(JSON.stringify((skill.detail && skill.detail.input_schema) || skill.parameters || {}, null, 2))}</pre>
+            ${skill.detail && skill.detail.output_schema ? `
+              <div class="meta-label">输出结构</div>
+              <pre>${escapeHtml(JSON.stringify(skill.detail.output_schema || {}, null, 2))}</pre>
+            ` : ''}
+            <div class="meta-label">调用示例</div>
+            <pre>${escapeHtml(JSON.stringify((skill.detail && skill.detail.call_example) || {
+              reply: `准备调用 ${skill.title}`,
+              skill_call: { name: skill.name, arguments: {} }
+            }, null, 2))}</pre>
+          </div>
+        </div>
+      `).join('') : '<div class="upload-item">没有匹配的 Skill。</div>';
+      attachSkillCardTests(el('skillList'));
+      el('skillList').querySelectorAll('.skill-help-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const detail = el(`skill-detail-${btn.dataset.help}`);
+          if (!detail) return;
+          const open = detail.classList.toggle('open');
+          btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          btn.textContent = open ? '收起' : '详情';
+        });
+      });
+    }
+
+    async function loadSkills() {
+      if (!state.user?.is_superadmin) return;
+      el('skillList').innerHTML = '<div class="upload-item">正在读取系统 Skill...</div>';
+      try {
+        const data = await api('/api/skills');
+        state.skills = data.skills || [];
+        renderSkills(state.skills);
+      } catch (err) {
+        el('skillList').innerHTML = `<div class="upload-item">${escapeHtml(err.message)}</div>`;
+      }
+    }
+
     async function loadReports(options = {}) {
       const data = await api('/api/reports');
       state.reports = data.reports;
@@ -6015,16 +7996,22 @@ def app_html():
       el('configImapHost').value = data.imap_host || 'imap.263.net';
       el('configImapPort').value = data.imap_port || 993;
       el('configImapSsl').checked = !!data.imap_ssl;
-      el('newUserRoleBox').style.display = state.user?.is_superadmin ? 'grid' : 'none';
+    }
+    async function loadUserManage() {
+      console.log('loadUserManage called, is_superadmin:', state.user?.is_superadmin);
+      if (!state.user?.is_superadmin) { console.log('loadUserManage skipped: not superadmin'); return; }
+      el('newUserRoleBox').style.display = 'grid';
       await loadUserList();
     }
     async function loadUserList() {
-      if (!state.user?.is_admin) return;
+      if (!state.user?.is_admin) { console.log('loadUserList skipped: not admin'); return; }
       try {
         const data = await api('/api/admin-users-list');
+        console.log('loadUserList success, users count:', (data.users || []).length);
         renderUsers(data.users || []);
       } catch (err) {
-        el('userList').innerHTML = '<div class="upload-item">加载用户列表失败</div>';
+        console.error('loadUserList error:', err);
+        el('userList').innerHTML = '<div class="upload-item">加载用户列表失败: ' + escapeHtml(err.message) + '</div>';
       }
     }
 
@@ -6033,19 +8020,15 @@ def app_html():
       const ref = data.reference || {};
       const setVal = (id, val, refVal) => {
         const node = el(id);
+        if (!node) return;
         node.value = val || '';
         node.placeholder = refVal || '';
       };
       setVal('mailUserEmail', data.user_email, ref.user_email);
       setVal('mailSmtpFrom', data.smtp_from, ref.smtp_from);
-      setVal('mailSmtpHost', data.smtp_host, ref.smtp_host);
-      setVal('mailSmtpPort', data.smtp_port, ref.smtp_port);
       setVal('mailSmtpUser', data.smtp_user, ref.smtp_user);
       el('mailSmtpPassword').value = '';
       el('mailPasswordHint').textContent = 'SMTP 密码/授权码状态：' + (data.smtp_password_masked || '未配置');
-      el('mailSmtpTls').checked = data.smtp_tls !== false;
-      el('mailSmtpSsl').checked = data.smtp_ssl === true;
-      setVal('mailImapHost', data.imap_host, ref.imap_host);
       setVal('mailImapUser', data.imap_user, ref.imap_user);
       el('mailImapPassword').value = '';
       el('mailImapPasswordHint').textContent = 'IMAP 密码/授权码状态：' + (data.imap_password_masked || '未配置');
@@ -6062,12 +8045,14 @@ def app_html():
     }
 
     function mailConfigPayload() {
+      const userEmail = el('mailUserEmail').value.trim();
+      const smtpUser = el('mailSmtpUser').value.trim() || userEmail;
       return {
-        user_email: el('mailUserEmail').value,
-        smtp_from: el('mailSmtpFrom').value,
-        smtp_user: el('mailSmtpUser').value,
+        user_email: userEmail,
+        smtp_from: el('mailSmtpFrom').value.trim() || userEmail,
+        smtp_user: smtpUser,
         smtp_password: el('mailSmtpPassword').value,
-        imap_user: el('mailImapUser').value,
+        imap_user: el('mailImapUser').value.trim() || smtpUser,
         imap_password: el('mailImapPassword').value,
         weekly_to: el('mailWeeklyTo').value,
         weekly_cc: el('mailWeeklyCc').value,
@@ -6075,6 +8060,16 @@ def app_html():
         trip_cc: el('mailTripCc').value,
         email_signature: el('mailEmailSignature').value
       };
+    }
+
+    function explainMailLoginError(message) {
+      const text = String(message || '邮箱测试失败');
+      if (text.includes('SMTP 用户名')) return text + ' 请填写完整邮箱地址；留空保存时系统会自动使用“本人邮箱”。';
+      if (text.includes('SMTP 授权码') || text.includes('SMTP 密码')) return text + ' 请填写邮箱后台生成的 SMTP 授权码，不是网页登录密码。';
+      if (text.includes('IMAP 用户名')) return text + ' 如需读取收件箱，IMAP 用户名通常与 SMTP 用户名相同。';
+      if (text.includes('IMAP 授权码') || text.includes('IMAP 密码')) return text + ' 如需读取收件箱，可复用邮箱授权码或单独生成 IMAP 授权码。';
+      if (text.includes('timed out') || text.includes('超时')) return text + ' 请检查服务器、端口和 SSL 设置是否匹配。263 邮箱通常是 SMTP 465/SSL。';
+      return text;
     }
 
     function textToHtml(text) {
@@ -6104,26 +8099,50 @@ def app_html():
         return '普通成员';
       };
       const isSuper = state.user?.is_superadmin;
-      el('userList').innerHTML = (users || []).map(user => {
-        const showActions = isSuper || user.role === 'member';
-        const roleSelect = isSuper
+      const isAdmin = state.user?.is_admin;
+      console.log('renderUsers called, isSuper:', isSuper, 'users count:', (users || []).length);
+      el('userList').innerHTML = (users || []).map((user, idx) => {
+        const canEdit = isSuper;
+        const canDelete = isSuper && user.username !== state.user?.username;
+        const roleSelect = canEdit
           ? `<select class="user-role-select mini" data-user="${escapeHtml(user.username)}" style="margin-right:8px;">
               <option value="member" ${user.role === 'member' ? 'selected' : ''}>普通成员</option>
               <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>管理员</option>
               <option value="superadmin" ${user.role === 'superadmin' ? 'selected' : ''}>超级管理员</option>
             </select>`
           : `<span class="mini" style="margin-right:8px;color:var(--muted);">${roleLabel(user.role)}</span>`;
-        const deleteBtn = showActions && user.username !== state.user?.username
+        const editBtn = canEdit
+          ? `<button class="mini secondary edit-user-toggle" data-user="${escapeHtml(user.username)}" data-idx="${idx}" type="button" style="margin-right:8px;">编辑</button>`
+          : '';
+        const deleteBtn = canDelete
           ? `<button class="mini danger delete-user" data-user="${escapeHtml(user.username)}" type="button">删除</button>`
           : '';
+        const editForm = canEdit ? `
+          <div class="user-edit-form hidden" id="userEdit_${idx}" style="grid-column:1/-1;margin-top:8px;padding-top:10px;border-top:1px solid var(--line);">
+            <div class="config-grid">
+              <div>
+                <label style="margin-top:0;">显示名称</label>
+                <input class="edit-name" data-user="${escapeHtml(user.username)}" value="${escapeHtml(user.name || '')}" placeholder="${escapeHtml(user.username)}" />
+              </div>
+              <div>
+                <label style="margin-top:0;">重置密码（留空则不修改）</label>
+                <input class="edit-password" data-user="${escapeHtml(user.username)}" type="password" placeholder="不修改则留空" />
+              </div>
+            </div>
+            <div class="toolbar" style="margin-top:10px;">
+              <button class="mini save-user-edit" data-user="${escapeHtml(user.username)}" data-idx="${idx}" type="button">保存修改</button>
+              <button class="mini secondary cancel-user-edit" data-idx="${idx}" type="button">取消</button>
+            </div>
+          </div>
+        ` : '';
         return `
-        <div class="user-item" style="grid-template-columns:minmax(0,1fr) auto auto;">
+        <div class="user-item" style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;" data-idx="${idx}">
           <div>
             <strong>${escapeHtml(user.name || user.username)}</strong>
             <div class="history-meta">${escapeHtml(user.username)} · ${roleLabel(user.role)}</div>
           </div>
-          <div>${roleSelect}</div>
-          <div>${deleteBtn}</div>
+          <div style="display:flex;align-items:center;">${roleSelect}${editBtn}${deleteBtn}</div>
+          ${editForm}
         </div>
       `}).join('') || '<div class="upload-item">暂无用户。</div>';
       // 绑定删除按钮
@@ -6134,11 +8153,11 @@ def app_html():
           try {
             const result = await apiPost('/api/admin-users-delete', { username });
             renderUsers(result.users || []);
-            el('configTestStatus').textContent = '用户已删除';
-            el('configTestStatus').className = 'status ok';
+            el('userManageStatus').textContent = '用户已删除';
+            el('userManageStatus').className = 'status ok';
           } catch (err) {
-            el('configTestStatus').textContent = err.message;
-            el('configTestStatus').className = 'status err';
+            el('userManageStatus').textContent = err.message;
+            el('userManageStatus').className = 'status err';
           }
         });
       });
@@ -6151,16 +8170,67 @@ def app_html():
             try {
               const result = await apiPost('/api/admin-users-update', { username, role: newRole });
               renderUsers(result.users || []);
-              el('configTestStatus').textContent = '权限已更新';
-              el('configTestStatus').className = 'status ok';
+              el('userManageStatus').textContent = '权限已更新';
+              el('userManageStatus').className = 'status ok';
             } catch (err) {
-              el('configTestStatus').textContent = err.message;
-              el('configTestStatus').className = 'status err';
+              el('userManageStatus').textContent = err.message;
+              el('userManageStatus').className = 'status err';
               await loadUserList();
             }
           });
         });
       }
+      // 绑定编辑展开/收起
+      el('userList').querySelectorAll('.edit-user-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = btn.dataset.idx;
+          const form = el('userEdit_' + idx);
+          if (form) {
+            const wasHidden = form.classList.contains('hidden');
+            // 先关闭所有编辑表单
+            el('userList').querySelectorAll('.user-edit-form').forEach(f => f.classList.add('hidden'));
+            el('userList').querySelectorAll('.edit-user-toggle').forEach(b => b.textContent = '编辑');
+            if (wasHidden) {
+              form.classList.remove('hidden');
+              btn.textContent = '收起';
+            }
+          }
+        });
+      });
+      // 绑定取消编辑
+      el('userList').querySelectorAll('.cancel-user-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = btn.dataset.idx;
+          const form = el('userEdit_' + idx);
+          if (form) {
+            form.classList.add('hidden');
+            const toggle = el('userList').querySelector(`.edit-user-toggle[data-idx="${idx}"]`);
+            if (toggle) toggle.textContent = '编辑';
+          }
+        });
+      });
+      // 绑定保存编辑
+      el('userList').querySelectorAll('.save-user-edit').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const username = btn.dataset.user;
+          const idx = btn.dataset.idx;
+          const row = el('userList').querySelector(`.user-item[data-idx="${idx}"]`);
+          const name = row?.querySelector('.edit-name')?.value?.trim() || '';
+          const password = row?.querySelector('.edit-password')?.value?.trim() || '';
+          const payload = { username };
+          if (name) payload.name = name;
+          if (password) payload.password = password;
+          try {
+            const result = await apiPost('/api/admin-users-update', payload);
+            renderUsers(result.users || []);
+            el('userManageStatus').textContent = '用户信息已更新';
+            el('userManageStatus').className = 'status ok';
+          } catch (err) {
+            el('userManageStatus').textContent = err.message;
+            el('userManageStatus').className = 'status err';
+          }
+        });
+      });
     }
 
     function renderMailbox(messages) {
@@ -6352,11 +8422,15 @@ def app_html():
       if (!force && state.tripPrefilled) return;
       if (force) clearSavedFormDraft('trip');
       const prefill = await api('/api/trip-prefill');
+      const today = new Date();
+      const fmt = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+      const defaultStart = fmt(today);
+      const defaultEnd = fmt(new Date(today.getTime() + 2*24*60*60*1000));
       el('tripReporter').value = prefill.reporter || '周颖超';
       el('tripDepartment').value = prefill.department || '场景研究院';
       el('tripLocation').value = prefill.location || '';
-      el('tripStart').value = prefill.trip_start || '';
-      el('tripEnd').value = prefill.trip_end || '';
+      el('tripStart').value = prefill.trip_start || defaultStart;
+      el('tripEnd').value = prefill.trip_end || defaultEnd;
       el('tripPurpose').value = prefill.purpose || '';
       el('tripItinerary').value = prefill.itinerary || '';
       el('tripDetails').value = prefill.details || '';
@@ -6381,6 +8455,124 @@ def app_html():
       const latest = generated?.name || (kind === 'weekly' ? window.latestWeekly : window.latestTrip);
       await loadDraft(kind, latest || '');
     });
+
+    async function loadAgentOrchestration() {
+      const panel = el('agentOrchestrationPanel');
+      const content = el('agentOrchestrationContent');
+      if (!panel.classList.contains('hidden')) {
+        panel.classList.add('hidden');
+        return;
+      }
+      content.innerHTML = '<div class="upload-item">正在加载编排逻辑...</div>';
+      panel.classList.remove('hidden');
+      try {
+        const data = await api('/api/agent-orchestration');
+        if (!data.ok) throw new Error(data.error || '加载失败');
+        const agents = data.agents || {};
+        const workflows = data.workflows || {};
+        const skills = data.skills || [];
+        let html = '';
+        html += '<div class="orchestration-section"><div class="orchestration-section-title">🧠 犇犇角色定义与系统提示词</div>';
+        Object.entries(agents).forEach(([key, val]) => {
+          const label = { weekly: '周报助手', trip: '出差报告助手', diary: '日记助手', mailassistant: '邮件助手', news: '资讯助手', forum: '论坛助手', dashboard: '总助手' }[key] || key;
+          html += `<div style="margin-bottom:8px;font-size:12px;font-weight:700;color:#475569;">${label}</div><pre>${escapeHtml(val)}</pre>`;
+        });
+        html += '</div>';
+        html += `<div class="orchestration-section"><div class="orchestration-section-title">🔄 Skill 模式追加提示词</div><pre>${escapeHtml(data.skill_mode_suffix || '')}</pre></div>`;
+        html += '<div class="orchestration-section"><div class="orchestration-section-title">📋 工作流编排</div>';
+        Object.entries(workflows).forEach(([key, val]) => {
+          const label = { weekly: '周报', trip: '出差报告', diary: '工作日记', mailassistant: '邮件', news: '资讯', forum: '金点子论坛' }[key] || key;
+          html += `<div style="margin-bottom:6px;font-size:12px;"><strong>${label}：</strong>${escapeHtml(val)}</div>`;
+        });
+        html += '</div>';
+        html += `<div class="orchestration-section"><div class="orchestration-section-title">🛠 可用 Skill 列表</div><pre>${escapeHtml(JSON.stringify(skills.map(s => ({ name: s.name, module: s.module, title: s.title, safe: s.safe })), null, 2))}</pre></div>`;
+        content.innerHTML = html;
+      } catch (err) {
+        content.innerHTML = `<div class="upload-item">${escapeHtml(err.message)}</div>`;
+      }
+    }
+    let agentConfigData = {};
+    function openAgentConfigModal() {
+      el('agentConfigModal').classList.remove('hidden');
+      loadAgentConfigEditor();
+    }
+    function closeAgentConfigModal() {
+      el('agentConfigModal').classList.add('hidden');
+    }
+    async function loadAgentConfigEditor() {
+      el('agentConfigStatus').textContent = '正在加载...';
+      try {
+        const data = await api('/api/agent-config');
+        if (!data.ok) throw new Error(data.error || '加载失败');
+        agentConfigData = data.config || {};
+        const prompts = agentConfigData.prompts || {};
+        const workflows = agentConfigData.workflows || {};
+        const labels = { weekly: '周报助手', trip: '出差报告助手', diary: '日记助手', mailassistant: '邮件助手', news: '资讯助手', forum: '论坛助手', dashboard: '总助手' };
+        let pHtml = '';
+        Object.entries(labels).forEach(([key, label]) => {
+          pHtml += `<div style="margin-bottom:10px;"><label style="font-size:12px;font-weight:700;color:#475569;">${label}</label><textarea id="agentPrompt-${key}" rows="6" spellcheck="false" style="width:100%;margin-top:4px;font-size:12px;">${escapeHtml(prompts[key] || '')}</textarea></div>`;
+        });
+        el('agentConfigPrompts').innerHTML = pHtml;
+        let wHtml = '';
+        Object.entries(labels).forEach(([key, label]) => {
+          if (key === 'dashboard') return;
+          wHtml += `<div style="margin-bottom:10px;"><label style="font-size:12px;font-weight:700;color:#475569;">${label}</label><textarea id="agentWorkflow-${key}" rows="3" spellcheck="false" style="width:100%;margin-top:4px;font-size:12px;">${escapeHtml(workflows[key] || '')}</textarea></div>`;
+        });
+        el('agentConfigWorkflows').innerHTML = wHtml;
+        el('agentConfigStatus').textContent = '';
+      } catch (err) {
+        el('agentConfigStatus').textContent = err.message;
+      }
+    }
+    async function saveAgentConfig() {
+      el('agentConfigStatus').textContent = '保存中...';
+      const prompts = {};
+      const workflows = {};
+      const keys = ['weekly','trip','diary','mailassistant','news','forum','dashboard'];
+      keys.forEach(key => {
+        const ta = el(`agentPrompt-${key}`);
+        if (ta && ta.value.trim()) prompts[key] = ta.value.trim();
+      });
+      ['weekly','trip','diary','mailassistant','news','forum'].forEach(key => {
+        const ta = el(`agentWorkflow-${key}`);
+        if (ta && ta.value.trim()) workflows[key] = ta.value.trim();
+      });
+      try {
+        const result = await api('/api/agent-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompts, workflows })
+        });
+        if (!result.ok) throw new Error(result.error || '保存失败');
+        el('agentConfigStatus').textContent = result.message || '保存成功';
+      } catch (err) {
+        el('agentConfigStatus').textContent = err.message;
+      }
+    }
+    if (el('openAgentOrchestration')) el('openAgentOrchestration').addEventListener('click', loadAgentOrchestration);
+    if (el('openAgentConfig')) el('openAgentConfig').addEventListener('click', openAgentConfigModal);
+    if (el('agentConfigClose')) el('agentConfigClose').addEventListener('click', closeAgentConfigModal);
+    if (el('agentConfigModal')) el('agentConfigModal').addEventListener('click', event => { if (event.target === el('agentConfigModal')) closeAgentConfigModal(); });
+    if (el('agentConfigSave')) el('agentConfigSave').addEventListener('click', saveAgentConfig);
+    document.querySelectorAll('.agent-config-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.agent-config-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const name = tab.dataset.tab;
+        el('agentConfigPrompts').classList.toggle('hidden', name !== 'prompts');
+        el('agentConfigWorkflows').classList.toggle('hidden', name !== 'workflows');
+      });
+    });
+    el('openSkillDocs').addEventListener('click', () => window.open('/skill-docs', '_blank'));
+    el('downloadSkillDocs').addEventListener('click', () => window.open('/download-skill-doc', '_blank'));
+    el('skillSearch').addEventListener('input', () => renderSkills(state.skills || []));
+    el('skillModuleFilter').addEventListener('change', () => renderSkills(state.skills || []));
+    el('skillTestClose').addEventListener('click', closeSkillTest);
+    el('skillRunTest').addEventListener('click', runSkillTest);
+    el('skillTestModal').addEventListener('click', event => {
+      if (event.target === el('skillTestModal')) closeSkillTest();
+    });
+    attachSkillCardTests(el('skillsPanel'));
 
     el('refreshMailbox').addEventListener('click', () => loadMailbox(true));
     el('mailboxLimit').addEventListener('change', loadMailbox);
@@ -6493,6 +8685,10 @@ def app_html():
           loadMailbox();
         } else if (task === 'config') {
           await loadAdminConfig();
+        } else if (task === 'skills') {
+          await loadSkills();
+        } else if (task === 'usermanage') {
+          await loadUserManage();
         }
       });
     });
@@ -6619,7 +8815,7 @@ def app_html():
         el('mailConfigStatus').textContent = '邮件配置已保存。';
         el('mailConfigStatus').className = 'status ok';
       } catch (err) {
-        el('mailConfigStatus').textContent = err.message;
+        el('mailConfigStatus').textContent = explainMailLoginError(err.message);
         el('mailConfigStatus').className = 'status err';
       }
     });
@@ -6691,8 +8887,9 @@ def app_html():
 
     el('addUser').addEventListener('click', async () => {
       const isSuper = state.user?.is_superadmin;
-      el('configTestStatus').textContent = '正在新增用户...';
-      el('configTestStatus').className = 'status';
+      const statusEl = el('userManageStatus') || el('configTestStatus');
+      statusEl.textContent = '正在新增用户...';
+      statusEl.className = 'status';
       try {
         const payload = {
           username: el('newUserName').value,
@@ -6705,11 +8902,11 @@ def app_html():
         el('newUserName').value = '';
         el('newDisplayName').value = '';
         el('newUserPassword').value = '';
-        el('configTestStatus').textContent = '用户已新增。';
-        el('configTestStatus').className = 'status ok';
+        statusEl.textContent = '用户已新增。';
+        statusEl.className = 'status ok';
       } catch (err) {
-        el('configTestStatus').textContent = err.message;
-        el('configTestStatus').className = 'status err';
+        statusEl.textContent = err.message;
+        statusEl.className = 'status err';
       }
     });
 
@@ -6731,17 +8928,17 @@ def app_html():
       saveFormDraft();
     });
     el('historyKind').addEventListener('change', renderHistoryReports);
-    el('profileButton').addEventListener('click', openProfileModal);
-    el('profileClose').addEventListener('click', closeProfileModal);
-    el('profileModal').addEventListener('click', event => {
+    if (el('profileButton')) el('profileButton').addEventListener('click', openProfileModal);
+    if (el('profileClose')) el('profileClose').addEventListener('click', closeProfileModal);
+    if (el('profileModal')) el('profileModal').addEventListener('click', event => {
       if (event.target === el('profileModal')) closeProfileModal();
     });
-    el('profileAvatarFile').addEventListener('change', () => {
+    if (el('profileAvatarFile')) el('profileAvatarFile').addEventListener('change', () => {
       const file = el('profileAvatarFile').files[0];
       if (file) el('profileAvatarPreview').src = URL.createObjectURL(file);
     });
-    el('profileUseAssistantAvatar').addEventListener('click', () => saveProfile('assistant'));
-    el('profileSave').addEventListener('click', () => saveProfile());
+    if (el('profileUseAssistantAvatar')) el('profileUseAssistantAvatar').addEventListener('click', () => saveProfile('assistant'));
+    if (el('profileSave')) el('profileSave').addEventListener('click', () => saveProfile());
 
     el('uploadButton').addEventListener('click', async () => {
       const selected = [...el('uploadFiles').files];
@@ -7418,33 +9615,98 @@ def app_html():
     el('body').addEventListener('input', () => {
       state.bodyHtml = '';
       renderBodyPreview();
+      clearSendReview();
     });
-    el('send').addEventListener('click', async () => {
+    ['to', 'cc', 'subject', 'attachment'].forEach(id => {
+      el(id).addEventListener('input', clearSendReview);
+      el(id).addEventListener('change', clearSendReview);
+    });
+
+    function sendPayload() {
+      return {
+        to: el('to').value.trim(),
+        cc: el('cc').value.trim(),
+        subject: el('subject').value.trim(),
+        body: el('body').value,
+        body_html: state.bodyHtml || '',
+        attachment: el('attachment').value.trim()
+      };
+    }
+
+    function sendBlockers(payload) {
+      const blockers = [];
+      if (!payload.to) blockers.push('收件人为空');
+      if (!payload.subject) blockers.push('主题为空');
+      if (!payload.attachment) blockers.push('未选择附件');
+      const badWords = ['跟进内容', '计划内容', '很长内容', '总结5', '总结6'];
+      const found = badWords.filter(word => payload.body.includes(word));
+      if (found.length) blockers.push('正文疑似含测试残留：' + found.join('、'));
+      return blockers;
+    }
+
+    function clearSendReview() {
+      const box = el('sendReview');
+      if (!box) return;
+      box.classList.add('hidden');
+      box.innerHTML = '';
+    }
+
+    function renderSendReview(payload, blockers = []) {
+      const box = el('sendReview');
+      if (!box) return;
+      box.classList.remove('hidden');
+      box.innerHTML = `
+        <div class="send-review-title">发送前确认</div>
+        <div class="send-review-grid">
+          <div class="label">收件人</div><div>${escapeHtml(payload.to || '未填写')}</div>
+          <div class="label">抄送</div><div>${escapeHtml(payload.cc || '无')}</div>
+          <div class="label">主题</div><div>${escapeHtml(payload.subject || '未填写')}</div>
+          <div class="label">附件</div><div>${escapeHtml(payload.attachment || '未选择')}</div>
+        </div>
+        ${blockers.length ? `<div class="send-review-warning">${escapeHtml(blockers.join('；'))}</div>` : ''}
+        <div class="send-review-actions">
+          <button type="button" class="secondary" id="cancelSendReview">取消</button>
+          <button type="button" id="openMailConfigFromSend" class="secondary">邮件配置</button>
+          <button type="button" class="warn" id="confirmSendReview" ${blockers.length ? 'disabled' : ''}>确认发送</button>
+        </div>
+      `;
+      el('cancelSendReview').addEventListener('click', clearSendReview);
+      el('openMailConfigFromSend').addEventListener('click', () => setTask('mailconfig'));
+      el('confirmSendReview').addEventListener('click', () => doSendMail(payload));
+    }
+
+    function explainSendError(message) {
+      const text = String(message || '发送失败');
+      if (text.includes('SMTP 用户名')) return text + ' 建议在“邮件配置”中把 SMTP 用户名填写为发件邮箱。';
+      if (text.includes('SMTP 密码')) return text + ' 请确认已填写邮箱授权码，不要使用网页登录密码。';
+      if (text.includes('收件人')) return text + ' 请检查收件人邮箱，多个邮箱用分号分隔。';
+      return text;
+    }
+
+    async function doSendMail(payload) {
       el('status').textContent = '处理中...';
       el('status').className = 'status';
       try {
         const result = await api('/api/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: el('to').value,
-            cc: el('cc').value,
-            subject: el('subject').value,
-            body: el('body').value,
-            body_html: state.bodyHtml || '',
-            attachment: el('attachment').value
-          })
+          body: JSON.stringify(payload)
         });
         el('status').textContent = result.message;
         el('status').className = 'status ok';
+        clearSendReview();
       } catch (err) {
-        el('status').textContent = err.message;
+        el('status').textContent = explainSendError(err.message);
         el('status').className = 'status err';
+        renderSendReview(payload, []);
       }
-    });
+    }
 
-    let agentMessages = [];
-    let agentKind = null;
+    el('send').addEventListener('click', async () => {
+      const payload = sendPayload();
+      const blockers = sendBlockers(payload);
+      renderSendReview(payload, blockers);
+    });
 
     function agentKindForTask(task = state.task) {
       if (['weekly', 'trip', 'diary', 'forum', 'news', 'mailassistant'].includes(task)) return task;
@@ -7461,7 +9723,7 @@ def app_html():
         news: '资讯助手',
         mailassistant: '智能邮件助手',
         dashboard: 'AI 办公总助手'
-      }[kind] || 'AI 办公助手';
+      }[kind] || '犇犇';
     }
 
     function agentIcon(kind) {
@@ -7476,6 +9738,47 @@ def app_html():
       }[kind] || 'bot';
     }
 
+    function agentIntro(kind, hasContent = false) {
+      const intro = {
+        weekly: {
+          title: '周报助手怎么用',
+          copy: hasContent ? '我看到当前周报页已有内容。你可以先让我检查问题，也可以直接给我本周工作素材重写。' : '直接把本周做过的事、重点项目、下周计划发给我，我会自动整理成周报草稿 → 生成预览 → 发送邮件。',
+          tips: ['我会自动获取当前日期和本周周期', '先对话收集信息，再一键生成草稿', '确认预览后再发送，全程不用手动填表'],
+          prompts: [
+            ['帮我写本周周报', '帮我写本周周报。'],
+            ['根据素材写周报', '请根据我接下来提供的工作素材，生成正式周报并填入表单。'],
+            ['优化语言表达', '请优化当前周报表单里的表达，让内容更正式、具体、清晰。']
+          ]
+        },
+        mailassistant: {
+          title: '邮件助手怎么用',
+          copy: '我可以帮你总结邮件、起草回复、润色正文。真正发送前，页面会让你确认收件人、主题和附件。',
+          tips: ['SMTP 用于发送，IMAP 用于收件箱', 'SMTP 用户名通常就是发件邮箱', '授权码不是网页登录密码'],
+          prompts: [
+            ['检查邮件配置', '请告诉我当前邮件配置还缺什么，以及下一步怎么修。'],
+            ['优化当前正文', '请帮我把当前邮件正文优化得更清晰、礼貌、适合发送。'],
+            ['起草一封邮件', '请根据我的要求起草一封普通邮件。']
+          ]
+        },
+        dashboard: {
+          title: '犇犇可以做什么',
+          copy: '选择一个工作场景，或直接说你要处理的事。我会尽量把结果写回页面，而不是只给建议。',
+          tips: ['周报、出差报告、日记、邮件都可以处理', '复杂操作会先生成预览或确认卡', '发送、发布等外部动作会二次确认'],
+          prompts: [
+            ['写本周周报', '帮我写本周周报。', 'weekly'],
+            ['处理邮件', '帮我处理一封邮件。', 'mailassistant'],
+            ['记录工作日记', '帮我记录今天的工作日记。', 'diary']
+          ]
+        }
+      };
+      return intro[kind] || {
+        title: `${agentTitle(kind)}怎么用`,
+        copy: '告诉我你要完成的目标，我会结合当前页面内容帮你整理、填写或生成。',
+        tips: ['先说明目标', '确认内容后再执行外部动作', '可以随时要求重写或优化'],
+        prompts: [['分析当前页面', '请分析当前页面内容，并告诉我下一步怎么做。']]
+      };
+    }
+
     function updateAgentChrome(kind = agentKindForTask()) {
       const title = agentTitle(kind);
       const header = document.querySelector('#agentWindow .agent-header span');
@@ -7484,13 +9787,15 @@ def app_html():
       }
       el('agentToggle').title = title;
       el('agentActions').innerHTML = `
-        <button class="agent-action" type="button" data-agent-kind="${kind}"><span class="icon" data-icon="${agentIcon(kind)}"></span> ${title}</button>
-        <button class="agent-action" type="button" data-agent-kind="weekly"><span class="icon" data-icon="file-spreadsheet"></span> 周报</button>
-        <button class="agent-action" type="button" data-agent-kind="trip"><span class="icon" data-icon="briefcase-business"></span> 出差</button>
+        <button class="agent-action agent-kind-action" type="button" data-agent-kind="${kind}"><span class="icon" data-icon="${agentIcon(kind)}"></span> 当前</button>
+        <button class="agent-action agent-kind-action" type="button" data-agent-kind="weekly"><span class="icon" data-icon="file-spreadsheet"></span> 周报</button>
+        <button class="agent-action agent-kind-action" type="button" data-agent-kind="mailassistant"><span class="icon" data-icon="inbox"></span> 邮件</button>
+        <button class="agent-action" type="button" id="agentClear"><span class="icon" data-icon="rotate-ccw"></span> 清空</button>
       `;
-      el('agentActions').querySelectorAll('.agent-action').forEach(btn => {
+      el('agentActions').querySelectorAll('.agent-kind-action').forEach(btn => {
         btn.addEventListener('click', () => startAgent(btn.dataset.agentKind, true));
       });
+      el('agentClear')?.addEventListener('click', () => startAgent(agentKind, true));
       renderIcons(el('agentWindow'));
     }
 
@@ -7524,12 +9829,267 @@ def app_html():
       agent.style.zIndex = '3000';
     }
 
+    function agentStageSteps(kind = agentKind) {
+      if (kind === 'weekly') return ['分析', '生成', '预览', '发送'];
+      if (kind === 'trip') return ['分析', '整理', '生成', '发送'];
+      if (kind === 'mailassistant') return ['读取', '起草', '确认', '发送'];
+      return ['理解', '处理', '确认', '完成'];
+    }
+
+    function setAgentStage(index = 0) {
+      state.agentStage = index;
+      const box = el('agentProgress');
+      if (!box) return;
+      const steps = agentStageSteps(agentKind);
+      box.innerHTML = steps.map((step, idx) => `
+        <div class="agent-step ${idx < index ? 'done' : idx === index ? 'active' : ''}">${escapeHtml(step)}</div>
+      `).join('');
+    }
+
+    function compactAssistantText(content) {
+      const text = String(content || '').trim();
+      if (!text) return '';
+      const raw = text.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+      if (raw.startsWith('{') && raw.endsWith('}')) {
+        try {
+          const data = JSON.parse(raw);
+          return data.reply || '已完成当前步骤，页面内容已同步更新。';
+        } catch (err) {
+          return text;
+        }
+      }
+      return text;
+    }
+
+    function renderMarkdown(text) {
+      if (!text) return '';
+      // Protect code blocks
+      const codeBlocks = [];
+      text = text.replace(/```([\s\S]*?)```/g, (match, code) => {
+        codeBlocks.push(escapeHtml(code.replace(/^.*?\\n/, '')));
+        return '__CODEBLOCK_' + (codeBlocks.length - 1) + '__';
+      });
+      // Protect inline code
+      const inlineCodes = [];
+      text = text.replace(/`([^`]+)`/g, (match, code) => {
+        inlineCodes.push(escapeHtml(code));
+        return '__INLINECODE_' + (inlineCodes.length - 1) + '__';
+      });
+      // Escape remaining HTML
+      text = escapeHtml(text);
+      // Process blocks
+      const rawLines = text.split('\\n');
+      const blocks = [];
+      let currentBlock = [];
+      const flushBlock = () => {
+        if (currentBlock.length === 0) return;
+        if (currentBlock[0].trim().startsWith('|')) {
+          blocks.push(renderMarkdownTable(currentBlock));
+        } else {
+          blocks.push(renderMarkdownBlock(currentBlock.join('\\n')));
+        }
+        currentBlock = [];
+      };
+      for (let line of rawLines) {
+        if (line.trim() === '') {
+          flushBlock();
+        } else {
+          currentBlock.push(line);
+        }
+      }
+      flushBlock();
+      text = blocks.join('\\n');
+      // Restore inline code
+      text = text.replace(/__INLINECODE_(\d+)__/g, (match, idx) => {
+        return '<code style="background:#0f172a;padding:2px 5px;border-radius:4px;font-size:13px;color:#7dd3fc;">' + inlineCodes[idx] + '</code>';
+      });
+      // Restore code blocks
+      text = text.replace(/__CODEBLOCK_(\d+)__/g, (match, idx) => {
+        return '<pre style="background:#0f172a;padding:12px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.5;border:1px solid #1e293b;margin:8px 0;"><code>' + codeBlocks[idx] + '</code></pre>';
+      });
+      return text;
+    }
+    function renderMarkdownBlock(block) {
+      if (block.startsWith('# ')) return '<h1 style="margin:14px 0 10px;font-size:20px;color:#e2e8f0;font-weight:700;">' + block.slice(2) + '</h1>';
+      if (block.startsWith('## ')) return '<h2 style="margin:12px 0 8px;font-size:18px;color:#e2e8f0;font-weight:700;border-bottom:1px solid #334155;padding-bottom:4px;">' + block.slice(3) + '</h2>';
+      if (block.startsWith('### ')) return '<h3 style="margin:10px 0 6px;font-size:16px;color:#e2e8f0;font-weight:600;">' + block.slice(4) + '</h3>';
+      if (block.trim() === '---') return '<hr style="border:none;border-top:1px solid #334155;margin:10px 0;">';
+      let html = block.replace(/\*\*(.*?)\*\*/g, '<strong style="color:#e2e8f0;">$1</strong>');
+      const lines = html.split('\\n');
+      const isBullet = lines.every(l => l.trim().startsWith('- ') || l.trim().startsWith('* '));
+      const isNumbered = lines.every(l => /^\s*\d+\./.test(l.trim()));
+      if (isBullet) {
+        const items = lines.map(l => '<li style="margin:4px 0;">' + l.trim().replace(/^[-*] /, '') + '</li>').join('');
+        return '<ul style="margin:6px 0;padding-left:20px;">' + items + '</ul>';
+      }
+      if (isNumbered) {
+        const items = lines.map(l => '<li style="margin:4px 0;">' + l.trim().replace(/^\d+\.\s*/, '') + '</li>').join('');
+        return '<ol style="margin:6px 0;padding-left:20px;">' + items + '</ol>';
+      }
+      return '<p style="margin:6px 0;">' + html.replace(/\\n/g, '<br>') + '</p>';
+    }
+    function renderMarkdownTable(lines) {
+      const rows = lines.map(line => {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('|')) return null;
+        return trimmed.slice(1).split('|').map(c => c.trim());
+      }).filter(r => r !== null);
+      if (rows.length < 2) return lines.join('<br>');
+      const isSep = rows[1].every(c => /^:?-+:?$/.test(c));
+      if (!isSep) return lines.join('<br>');
+      let html = '<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:13px;">';
+      html += '<thead><tr>';
+      rows[0].forEach(cell => {
+        html += '<th style="border:1px solid #334155;padding:8px 10px;background:#1e293b;color:#94a3b8;text-align:left;font-weight:600;">' + cell + '</th>';
+      });
+      html += '</tr></thead><tbody>';
+      for (let i = 2; i < rows.length; i++) {
+        html += '<tr>';
+        rows[i].forEach((cell, idx) => {
+          const sep = rows[1][idx] || '';
+          let align = 'left';
+          if (sep.startsWith(':') && sep.endsWith(':')) align = 'center';
+          else if (sep.endsWith(':')) align = 'right';
+          html += '<td style="border:1px solid #334155;padding:8px 10px;color:#cbd5e1;text-align:' + align + ';">' + cell + '</td>';
+        });
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+      return html;
+    }
+
+    function agentMessageHtml(m) {
+      if (m.type === 'intro') {
+        return `
+          <div class="agent-msg assistant">
+            <div class="agent-intro">
+              <div class="agent-intro-title">${escapeHtml(m.title)}</div>
+              <div class="agent-intro-copy">${escapeHtml(m.copy)}</div>
+              <div class="agent-quick-grid">
+                ${(m.prompts || []).map(([label, prompt, targetKind]) => `<button type="button" class="agent-quick" data-agent-prompt="${escapeHtml(prompt)}" ${targetKind ? `data-agent-target-kind="${escapeHtml(targetKind)}"` : ''}>${escapeHtml(label)}</button>`).join('')}
+              </div>
+              ${(m.tips || []).length ? `<ul class="agent-help-list">${m.tips.map(tip => `<li>${escapeHtml(tip)}</li>`).join('')}</ul>` : ''}
+            </div>
+          </div>`;
+      }
+      if (m.type === 'skill') {
+        return `
+          <div class="agent-msg assistant">
+            <div class="agent-card">
+              <div class="agent-card-title">${escapeHtml(m.title || 'Skill 调用完成')}</div>
+              ${m.metrics ? `<div class="agent-card-grid">${m.metrics.map(item => `
+                <div class="agent-card-metric"><strong>${escapeHtml(item.value)}</strong><span>${escapeHtml(item.label)}</span></div>
+              `).join('')}</div>` : ''}
+              ${m.items && m.items.length ? `<ul class="agent-card-list">${m.items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
+              ${m.note ? `<div class="agent-card-note">${escapeHtml(m.note)}</div>` : ''}
+              ${m.image_url ? `<div><img class="agent-img" src="${escapeHtml(m.image_url)}" style="max-width:100%;border:1px solid #dbe5f1;border-radius:8px;background:#fff;cursor:zoom-in;" onclick="openAgentLightbox('${escapeHtml(m.image_url)}')" /></div>` : ''}
+            </div>
+          </div>`;
+      }
+      const content = m.role === 'assistant' ? compactAssistantText(m.content) : m.content;
+      const htmlContent = m.role === 'assistant' ? renderMarkdown(content) : escapeHtml(content);
+      return `<div class="agent-msg ${m.role}">
+        ${htmlContent}
+        ${m.image_url ? `<div style="margin-top:10px"><img class="agent-img" src="${escapeHtml(m.image_url)}" style="max-width:100%;border:1px solid #dbe5f1;border-radius:8px;background:#fff;cursor:zoom-in;" onclick="openAgentLightbox('${escapeHtml(m.image_url)}')" /></div>` : ''}
+      </div>`;
+    }
+
     function renderAgentMessages() {
       const box = el('agentMessages');
-      box.innerHTML = agentMessages.map(m =>
-        `<div class="agent-msg ${m.role}">${escapeHtml(m.content)}</div>`
-      ).join('');
+      box.innerHTML = agentMessages.map(agentMessageHtml).join('');
+      box.querySelectorAll('[data-agent-prompt]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const targetKind = btn.dataset.agentTargetKind;
+          if (targetKind && targetKind !== agentKind) startAgent(targetKind, true);
+          sendAgentMessage(btn.dataset.agentPrompt || '');
+        });
+      });
       box.scrollTop = box.scrollHeight;
+      setAgentStage(state.agentStage || 0);
+    }
+
+    function agentPayloadMessages() {
+      return agentMessages
+        .filter(m => ['user', 'assistant'].includes(m.role) && m.content && !m.type)
+        .map(m => ({ role: m.role, content: String(m.content || '') }));
+    }
+
+    function appendSkillResult(result) {
+      if (!result) return;
+      // 支持多次 Skill 调用（skill_calls 数组）和单次调用（skill_call 对象）
+      const calls = result.skill_calls || (result.skill_call ? [{ name: result.skill_call.name, result: result.skill_result }] : []);
+      if (!calls.length) return;
+      calls.forEach(call => {
+        const name = call.name || '';
+        const data = call.result || {};
+        if (name === 'weekly.compose' && data.draft) {
+          if (hasRowContent(data.draft.weekly_summary)) renderWorkRows('summary', data.draft.weekly_summary);
+          if (hasRowContent(data.draft.weekly_follow)) renderWorkRows('follow', data.draft.weekly_follow);
+          if (hasRowContent(data.draft.weekly_next)) renderWorkRows('next', data.draft.weekly_next);
+          agentMessages.push({
+            role: 'assistant',
+            type: 'skill',
+            title: '周报草稿已生成并填入表单',
+            metrics: [
+              { label: '工作总结', value: (data.draft.weekly_summary || []).length },
+              { label: '重点跟进', value: (data.draft.weekly_follow || []).length },
+              { label: '下周计划', value: (data.draft.weekly_next || []).length }
+            ],
+            items: (data.draft.weekly_summary || []).slice(0, 3).map(item => `${item.category || '事项'}：${item.content || ''}`),
+            note: '草稿已填入“填写报告”页面，你可以继续补充或告诉我直接生成预览。'
+          });
+          setAgentStage(2);
+          renderAgentMessages();
+          return;
+        }
+        if (name === 'weekly.preview') {
+          agentMessages.push({
+            role: 'assistant',
+            type: 'skill',
+            title: '周报预览已生成',
+            metrics: [
+              { label: '附件', value: data.file || '1' },
+              { label: '周期', value: (data.mail_draft && data.mail_draft.period) || '' }
+            ].filter(m => m.value),
+            items: [
+              data.file && `文件：${data.file}`,
+              data.mail_draft && data.mail_draft.subject && `主题：${data.mail_draft.subject}`
+            ].filter(Boolean),
+            note: '预览图已生成，确认无误后告诉我“发送”即可。',
+            image_url: data.preview_image_url || ''
+          });
+          setAgentStage(3);
+          renderAgentMessages();
+          return;
+        }
+        if (name === 'weekly.send_confirmed') {
+          agentMessages.push({
+            role: 'assistant',
+            type: 'skill',
+            title: '周报邮件已发送',
+            metrics: data.mode ? [{ label: '状态', value: data.mode }] : null,
+            items: [data.message].filter(Boolean),
+            note: '本周周报已发送完成，如需继续处理其他工作随时告诉我。'
+          });
+          setAgentStage(4);
+          renderAgentMessages();
+          return;
+        }
+        if (name === 'utils.get_date') {
+          // 日期获取不展示卡片，由大模型在回复中自然描述
+          return;
+        }
+        agentMessages.push({
+          role: 'assistant',
+          type: 'skill',
+          title: `${name} 已完成`,
+          metrics: data.file ? [{ label: '附件', value: '1' }] : null,
+          items: [data.file, data.message, data.mode ? `结果：${data.mode}` : ''].filter(Boolean),
+          note: data.mail_draft ? '邮件草稿已生成，请确认收件人、主题、附件和正文后再发送。' : '',
+          image_url: data.preview_image_url || ''
+        });
+        renderAgentMessages();
+      });
     }
 
     async function sendAgentContext(contextData) {
@@ -7537,7 +10097,7 @@ def app_html():
       btn.disabled = true;
       btn.textContent = '分析中...';
       try {
-        const payloadMessages = agentMessages.filter(m => m.role !== 'system').map(m => ({...m}));
+        const payloadMessages = agentPayloadMessages();
         payloadMessages.push({
           role: 'user',
           content: `[系统提示：当前智能体类型为 ${agentTitle(agentKind)}，以下是当前页面上下文。请严格按这个智能体的职责处理，不要沿用其他模块逻辑。]\\n` + JSON.stringify(contextData, null, 2)
@@ -7548,6 +10108,7 @@ def app_html():
           body: JSON.stringify({ kind: agentKind, messages: payloadMessages })
         });
         agentMessages.push({ role: 'assistant', content: result.reply });
+        appendSkillResult(result);
         renderAgentMessages();
         try {
           const json = JSON.parse(result.reply);
@@ -7580,6 +10141,7 @@ def app_html():
     function startAgent(kind, reset = true) {
       const previousKind = agentKind;
       agentKind = kind;
+      state.agentStage = 0;
       updateAgentChrome(kind);
       if (reset || !agentMessages.length || previousKind !== kind) agentMessages = [];
       toggleAgent(true);
@@ -7593,38 +10155,9 @@ def app_html():
         : kind === 'mailassistant'
         ? Object.values(currentData).some(v => typeof v === 'string' && v.trim())
         : Object.values(currentData).some(v => v && String(v).trim());
-      if (hasContent) {
-        const greeting = kind === 'weekly'
-          ? '你好，我是周报智能助手。我检测到你已经在表单中填写了一些内容，让我分析一下还需要补充什么。'
-          : kind === 'diary'
-          ? '你好，我是工作日记智能助手。我检测到你已经在日记中填写了一些内容，让我分析一下还可以补充什么。'
-          : kind === 'forum'
-          ? '你好，我是论坛助手。我会基于当前话题、评论和草稿，帮你提炼观点或生成讨论回复。'
-          : kind === 'news'
-          ? '你好，我是资讯助手。我会基于当前每日资讯，帮你提炼重点、影响和建议行动。'
-          : kind === 'mailassistant'
-          ? '你好，我是智能邮件助手。我会根据当前邮件或写信内容，帮你总结、回复或优化正文。'
-          : '你好，我是出差报告智能助手。我检测到你已经在表单中填写了一些内容，让我分析一下还需要补充什么。';
-        agentMessages.push({ role: 'assistant', content: greeting });
-        renderAgentMessages();
-        sendAgentContext(currentData);
-      } else {
-        const greeting = kind === 'weekly'
-          ? '你好，我是周报智能助手。\\n\\n我会通过几轮对话了解你本周的工作情况，然后自动生成周报。\\n\\n请先告诉我：本周你主要做了哪些工作？可以按项目或任务分类描述。'
-          : kind === 'diary'
-          ? '你好，我是工作日记智能助手。\\n\\n我会通过对话帮你记录今天的工作日记。\\n\\n你可以一次性描述今天的工作、明天的计划和想法，我会自动分类整理。\\n\\n请告诉我：今天做了什么工作？'
-          : kind === 'forum'
-          ? '你好，我是论坛助手。\\n\\n我可以帮你发起金点子话题、润色评论、总结历史话题讨论热度。\\n\\n你想讨论哪个点子？'
-          : kind === 'news'
-          ? '你好，我是资讯助手。\\n\\n我可以帮你解读每日轨交资讯、提炼影响和行动建议。\\n\\n请告诉我你想重点看哪类资讯？'
-          : kind === 'mailassistant'
-          ? '你好，我是智能邮件助手。\\n\\n我可以帮你总结邮件、起草回复、优化普通邮件正文。\\n\\n请把要处理的邮件内容或写信要求告诉我。'
-          : kind === 'dashboard'
-          ? '你好，我是 AI 办公总助手。\\n\\n我可以帮你在周报、出差报告、工作日记、邮件、论坛和资讯之间梳理工作。你现在想处理什么？'
-          : '你好，我是出差报告智能助手。\\n\\n我会通过几轮对话了解你的出差情况，然后自动生成出差报告。\\n\\n请先告诉我：这次出差的地点和时间？';
-        agentMessages.push({ role: 'assistant', content: greeting });
-        renderAgentMessages();
-      }
+      const intro = agentIntro(kind, hasContent);
+      agentMessages.push({ role: 'assistant', type: 'intro', ...intro });
+      renderAgentMessages();
     }
 
     async function sendAgentMessage(text) {
@@ -7637,7 +10170,7 @@ def app_html():
       btn.textContent = '思考中...';
       try {
         const currentData = getCurrentFormData(agentKind);
-        const payloadMessages = agentMessages.filter(m => m.role !== 'system').map(m => ({...m}));
+        const payloadMessages = agentPayloadMessages();
         if (Object.values(currentData).some(v => Array.isArray(v) ? v.length : v)) {
           payloadMessages.push({
             role: 'user',
@@ -7650,6 +10183,7 @@ def app_html():
           body: JSON.stringify({ kind: agentKind, messages: payloadMessages })
         });
         agentMessages.push({ role: 'assistant', content: result.reply });
+        appendSkillResult(result);
         renderAgentMessages();
         try {
           const json = JSON.parse(result.reply);
@@ -7804,15 +10338,16 @@ def app_html():
     </div>
   </div>
   <div class="agent-float hidden" id="agentFloat">
-    <button class="agent-toggle" id="agentToggle" type="button" title="AI 智能助手" onclick="openAgentFromAvatar()"><img class="agent-avatar" src="/assets/ai-assistant-avatar.png" alt="AI 智能助手" /></button>
+    <button class="agent-toggle" id="agentToggle" type="button" title="犇犇" onclick="openAgentFromAvatar()"><img class="agent-avatar" src="/assets/ai-assistant-avatar.png" alt="犇犇" /></button>
     <div class="agent-window hidden" id="agentWindow">
       <div class="agent-header">
-        <span><img class="agent-avatar" src="/assets/ai-assistant-avatar.png" alt="" /> AI 智能助手</span>
+        <span><img class="agent-avatar" src="/assets/ai-assistant-avatar.png" alt="" /> 犇犇</span>
         <button class="agent-close" id="agentClose" type="button">✕</button>
       </div>
       <div class="agent-body">
+        <div class="agent-progress" id="agentProgress"></div>
         <div class="agent-messages" id="agentMessages">
-          <div class="agent-msg assistant">你好！我是你的 AI 智能助手。点击下方的快捷按钮，我可以帮你自动生成周报或出差报告。</div>
+          <div class="agent-msg assistant">你好！我是犇犇，你的智能办公助手。点击下方的快捷按钮，我可以帮你自动生成周报或出差报告。</div>
         </div>
         <div class="agent-actions" id="agentActions">
           <button class="agent-action" type="button" data-agent-kind="weekly"><span class="icon" data-icon="file-spreadsheet"></span> 生成周报</button>
@@ -7825,8 +10360,20 @@ def app_html():
         </div>
       </div>
     </div>
+    <div class="agent-lightbox hidden" id="agentLightbox" onclick="closeAgentLightbox()">
+      <img id="agentLightboxImg" src="" alt="预览" />
+    </div>
   </div>
   <script>
+    function openAgentLightbox(src) {
+      const box = document.getElementById('agentLightbox');
+      const img = document.getElementById('agentLightboxImg');
+      if (box && img) { img.src = src; box.classList.remove('hidden'); }
+    }
+    function closeAgentLightbox() {
+      const box = document.getElementById('agentLightbox');
+      if (box) box.classList.add('hidden');
+    }
     (function() {
       const el = id => document.getElementById(id);
       const agentFloat = el('agentFloat');
@@ -7978,7 +10525,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path == "/":
+        if parsed.path in ("/", APP_RELATIVE_PATH, APP_RELATIVE_PATH + "/"):
             raw = app_html().encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -8042,7 +10589,49 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.send_json({"ok": True, "users": user_list(self.current_user().get("username", ""))})
             return
+        if parsed.path == "/skill-docs":
+            raw = (
+                "<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
+                "<title>智能办公助手 Skill 文档</title>"
+                "<style>body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;max-width:980px;margin:0 auto;padding:32px;line-height:1.7;color:#172033;background:#f4f7fb}"
+                "pre{white-space:pre-wrap;background:#fff;border:1px solid #dbe5f1;border-radius:10px;padding:18px;box-shadow:0 8px 24px rgba(15,23,42,.06)}"
+                "a{display:inline-block;margin-bottom:18px;color:#2563eb;font-weight:700}</style></head><body>"
+                "<a href='/download-skill-doc'>下载 Markdown 文档</a>"
+                "<pre>"
+                + escape(skill_doc_markdown())
+                + "</pre></body></html>"
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        if parsed.path == "/download-skill-doc":
+            raw = skill_doc_markdown().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/markdown; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''ai-office-skills.md")
+            self.end_headers()
+            self.wfile.write(raw)
+            return
         if parsed.path.startswith("/api/") and not self.require_user():
+            return
+        if parsed.path == "/api/skills":
+            if not self.require_superadmin():
+                return
+            self.send_json(public_skill_docs())
+            return
+        if parsed.path == "/api/agent-orchestration":
+            if not self.require_superadmin():
+                return
+            self.send_json(agent_orchestration())
+            return
+        if parsed.path == "/api/agent-config":
+            if not self.require_superadmin():
+                return
+            self.send_json({"ok": True, "config": read_agent_config()})
             return
         if parsed.path == "/api/mail-config":
             username = self.current_user().get("username", "")
@@ -8139,6 +10728,23 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(raw)
             return
+        if parsed.path == "/preview-image":
+            if not self.require_user():
+                return
+            qs = urllib.parse.parse_qs(parsed.query)
+            file_name = Path(qs.get("file", [""])[0]).name
+            path = user_generated_dir(self.current_user().get("username", "")) / file_name
+            if path.suffix.lower() != ".png" or not path.exists() or not path.is_file():
+                self.send_json({"error": "预览图片不存在"}, status=404)
+                return
+            raw = path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "private, max-age=300")
+            self.end_headers()
+            self.wfile.write(raw)
+            return
         self.send_json({"error": "Not found"}, status=404)
 
     def do_POST(self):
@@ -8182,9 +10788,19 @@ class Handler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/optimize":
                 result = optimize_text(payload)
             elif parsed.path == "/api/agent":
-                result = agent_chat(payload)
+                result = agent_chat(payload, username)
+            elif parsed.path == "/api/skill-test":
+                if not self.require_superadmin():
+                    return
+                result = skill_test(payload, username)
+            elif parsed.path == "/api/agent-config":
+                if not self.require_superadmin():
+                    return
+                result = save_agent_config(payload)
             elif parsed.path == "/api/upload-history":
                 result = upload_history_reports(payload, username)
+            elif parsed.path == "/api/delete-report":
+                result = delete_report_file(payload, username)
             elif parsed.path == "/api/delete-history":
                 result = delete_history_report(payload, username)
             elif parsed.path == "/api/change-password":
@@ -8256,10 +10872,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    load_agent_config()
     port = int(os.getenv("PORT", "8765"))
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     threading.Thread(target=news_auto_worker, daemon=True).start()
     print(f"个人工作报告邮件助手已启动：http://127.0.0.1:{port}")
+    print(f"英文相对访问地址：{APP_RELATIVE_PATH}")
+    print(f"完整访问地址：http://127.0.0.1:{port}{APP_RELATIVE_PATH}")
     print(f"用户数据目录：{USER_DATA_DIR}")
     print(f"共享模板目录：{REPORT_DIR}")
     print("按 Ctrl+C 停止服务")

@@ -21,6 +21,13 @@ python3 app.py
 http://127.0.0.1:8765
 ```
 
+也可以使用英文相对地址：
+
+```text
+/personal-office-assistant
+http://127.0.0.1:8765/personal-office-assistant
+```
+
 ## 邮箱配置
 
 复制一份配置文件：

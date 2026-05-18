@@ -26,5 +26,7 @@ PID=$!
 echo $PID > "$APP_DIR/app.pid"
 echo "已启动，PID: $PID"
 echo "访问地址: http://127.0.0.1:$PORT"
+echo "英文相对地址: /personal-office-assistant"
+echo "完整访问地址: http://127.0.0.1:$PORT/personal-office-assistant"
 echo ""
 echo "停止命令: kill \$(cat app.pid)"
