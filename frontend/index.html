@@ -1,0 +1,1048 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>犇犇 | 智能办公平台</title>
+  <link rel="stylesheet" href="/frontend/styles.css" />
+</head>
+<body>
+  <header>
+    <div class="header-row">
+      <div class="brand">
+        <div class="brand-icon"><span class="icon" data-icon="sparkles"></span></div>
+        <div>智能办公助手 / AI 办公平台</div>
+      </div>
+      <div class="global-search">
+        <span class="search-icon icon" data-icon="search"></span>
+        <input type="text" placeholder="搜索文档、邮件、知识..." />
+      </div>
+      <div class="userbar" id="userbar">
+        <img class="user-avatar" id="userAvatar" src="/assets/ai-assistant-avatar.png" alt="" />
+        <span id="userInfo"></span>
+        <button type="button" id="profileButton" class="mini">个人资料</button>
+        <button type="button" id="changePassButton" class="mini">修改密码</button>
+        <button type="button" id="logoutButton">退出</button>
+      </div>
+    </div>
+  </header>
+  <section class="auth-panel" id="authPanel">
+    <h2>登录</h2>
+    <label>用户名</label>
+    <input id="loginUser" />
+    <label>密码</label>
+    <input id="loginPass" type="password" />
+    <div class="toolbar">
+      <button id="loginButton" type="button">登录</button>
+    </div>
+    <div id="loginStatus" class="status"></div>
+  </section>
+  <main id="appMain" class="hidden">
+    <aside class="sidebar">
+      <div class="nav-group">
+        <div class="sidebar-title">工作台</div>
+        <div class="task-grid">
+          <button class="task-card active" type="button" data-task="dashboard">
+            <span class="nav-icon" data-icon="layout-dashboard"></span>
+            <span class="task-name">首页</span>
+          </button>
+        </div>
+      </div>
+      <div class="nav-group">
+        <div class="sidebar-title">犇犇</div>
+        <div class="task-grid">
+          <button class="task-card" type="button" data-task="weekly">
+            <span class="nav-icon" data-icon="file-spreadsheet"></span>
+            <span class="task-name">周报助手</span>
+          </button>
+          <button class="task-card" type="button" data-task="trip">
+            <span class="nav-icon" data-icon="briefcase-business"></span>
+            <span class="task-name">出差报告助手</span>
+          </button>
+          <button class="task-card" type="button" data-task="diary">
+            <span class="nav-icon" data-icon="book-open"></span>
+            <span class="task-name">工作日记</span>
+          </button>
+          <button class="task-card" type="button" data-task="forum">
+            <span class="nav-icon" data-icon="messages-square"></span>
+            <span class="task-name">金点子论坛</span>
+          </button>
+          <button class="task-card" type="button" data-task="news">
+            <span class="nav-icon" data-icon="newspaper"></span>
+            <span class="task-name">每日资讯</span>
+          </button>
+          <button class="task-card" type="button" data-task="mailassistant">
+            <span class="nav-icon" data-icon="inbox"></span>
+            <span class="task-name">邮件助手</span>
+          </button>
+        </div>
+      </div>
+      <div class="nav-group">
+        <div class="sidebar-title">系统</div>
+        <div class="task-grid">
+          <button class="task-card" type="button" data-task="mailconfig">
+            <span class="nav-icon" data-icon="mail-check"></span>
+            <span class="task-name">邮件配置</span>
+          </button>
+          <button class="task-card admin-only hidden" type="button" data-task="config">
+            <span class="nav-icon" data-icon="settings"></span>
+            <span class="task-name">系统配置</span>
+          </button>
+          <button class="task-card superadmin-only hidden" type="button" data-task="skills">
+            <span class="nav-icon" data-icon="puzzle"></span>
+            <span class="task-name">系统 Skill</span>
+          </button>
+          <button class="task-card superadmin-only hidden" type="button" data-task="usermanage">
+            <span class="nav-icon" data-icon="users"></span>
+            <span class="task-name">用户管理</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+    <section class="composer">
+      <div class="task-panel" id="dashboardPanel">
+        <div class="dashboard-grid">
+          <div class="welcome-card">
+            <h1>欢迎回来，<span id="dashUserName"></span></h1>
+            <p>围绕日常办公闭环工作：记录工作、生成报告、处理邮件、共创金点子、查看每日轨交资讯。</p>
+            <div class="ai-command">
+              <input id="dashboardAsk" type="text" placeholder="输入问题，例如：根据本周日记生成周报、整理出差报告、提炼邮件重点..." />
+              <button type="button" id="dashboardAskButton"><span class="icon" data-icon="send"></span> 提问助手</button>
+            </div>
+          </div>
+          <div class="shortcut-grid">
+            <div class="shortcut-card" onclick="navigateTo('weekly','edit')">
+              <div class="icon" data-icon="file-spreadsheet"></div>
+              <div>
+                <div class="title">填写周报</div>
+                <div class="desc">按模板快速生成本周工作总结、重点跟进和下周计划</div>
+              </div>
+            </div>
+            <div class="shortcut-card" onclick="navigateTo('diary')">
+              <div class="icon" data-icon="book-open"></div>
+              <div>
+                <div class="title">记录工作日记</div>
+                <div class="desc">沉淀每日工作、明日计划和想法，周报可直接智能总结</div>
+              </div>
+            </div>
+            <div class="shortcut-card" onclick="navigateTo('trip','edit')">
+              <div class="icon" data-icon="briefcase-business"></div>
+              <div>
+                <div class="title">填写出差报告</div>
+                <div class="desc">录入出差地点、时间、目的、行程和总结内容</div>
+              </div>
+            </div>
+            <div class="shortcut-card" onclick="navigateTo('forum')">
+              <div class="icon" data-icon="messages-square"></div>
+              <div>
+                <div class="title">金点子论坛</div>
+                <div class="desc">浏览历史话题、查看热度点赞评论，围绕话题分级讨论</div>
+              </div>
+            </div>
+            <div class="shortcut-card" onclick="navigateTo('news')">
+              <div class="icon" data-icon="newspaper"></div>
+              <div>
+                <div class="title">每日资讯</div>
+                <div class="desc">查看轨道交通关键资讯，配置和生成由超级管理员维护</div>
+              </div>
+            </div>
+            <div class="shortcut-card" onclick="navigateTo('mailassistant')">
+              <div class="icon" data-icon="inbox"></div>
+              <div>
+                <div class="title">邮件助手</div>
+                <div class="desc">读取收件箱、查看邮件详情、普通发信；收件箱已支持缓存加速</div>
+              </div>
+            </div>
+          </div>
+          <div class="module-grid">
+            <div class="recent-docs">
+              <h3>最近文档</h3>
+              <div id="recentDocsList"><div class="doc-item"><span class="doc-name">暂无最近文档</span></div></div>
+            </div>
+            <div class="recent-docs">
+              <h3>当前能力</h3>
+              <div class="recommend-list">
+                <div class="recommend-item">
+                  <span class="card-icon" data-icon="calendar-check"></span>
+                  <div><strong>报告只在专属模块生成</strong><span>“按标准模板生成文件”仅在周报助手和出差报告助手中出现。</span></div>
+                </div>
+                <div class="recommend-item">
+                  <span class="card-icon" data-icon="messages-square"></span>
+                  <div><strong>论坛以浏览评论为主</strong><span>发起话题默认收起，历史话题展示热度、点赞、评论和浏览。</span></div>
+                </div>
+                <div class="recommend-item">
+                  <span class="card-icon" data-icon="newspaper"></span>
+                  <div><strong>资讯配置受权限保护</strong><span>普通用户只看每日资讯，只有超级管理员能配置来源和立即生成。</span></div>
+                </div>
+                <div class="recommend-item">
+                  <span class="card-icon" data-icon="inbox"></span>
+                  <div><strong>邮件读取已缓存</strong><span>收件箱列表优先读缓存，点击刷新才强制重新拉取最新邮件。</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="page-header hidden" id="pageHeader">
+        <h2 id="taskTitle"></h2>
+        <p id="taskDesc"></p>
+      </div>
+      <div class="sub-tabs hidden" id="subTabs">
+        <button class="sub-tab active" type="button" data-sub="edit"><span class="icon" data-icon="clipboard-pen"></span> 填写报告</button>
+        <button class="sub-tab" type="button" data-sub="mail"><span class="icon" data-icon="mail"></span> 发送邮件</button>
+        <button class="sub-tab" type="button" data-sub="history"><span class="icon" data-icon="folder-clock"></span> 历史管理</button>
+      </div>
+      <input id="kind" type="hidden" value="weekly" />
+      <div class="task-panel hidden" id="diaryPanel">
+        <div class="diary-tabs">
+          <button class="diary-tab active" type="button" data-diarytab="write"><span class="icon" data-icon="pen-line"></span> 记录日记</button>
+          <button class="diary-tab" type="button" data-diarytab="browse"><span class="icon" data-icon="library"></span> 浏览日记</button>
+        </div>
+        <div class="diary-view" id="diaryWriteView">
+          <div class="diary-card">
+            <div class="row">
+              <div>
+                <label>日期</label>
+                <input id="diaryDate" type="date" />
+              </div>
+              <div style="display:flex;align-items:flex-end;">
+                <button type="button" class="secondary" id="diaryLoadToday">载入今天</button>
+              </div>
+            </div>
+            <div class="diary-two-col">
+              <div>
+                <label>今日工作内容</label>
+                <textarea id="diaryTodayWork" class="diary-field" readonly placeholder="记录今天完成的主要工作、遇到的问题、解决方案..."></textarea>
+              </div>
+              <div>
+                <label>明日工作计划</label>
+                <textarea id="diaryTomorrowPlan" class="diary-field" readonly placeholder="计划明天要做的事项..."></textarea>
+              </div>
+            </div>
+            <label>思路与想法</label>
+            <textarea id="diaryThoughts" class="diary-field" readonly placeholder="灵光一闪的想法、改进建议、学习心得..."></textarea>
+            <div class="toolbar">
+              <button type="button" id="diarySaveButton">保存日记</button>
+              <button type="button" class="secondary" id="diaryClearButton">清空</button>
+              <button type="button" id="diaryAgentButton"><span class="icon" data-icon="sparkles"></span> AI 智能记录</button>
+              <span id="diaryStatus" class="status"></span>
+            </div>
+          </div>
+        </div>
+        <div class="diary-view hidden" id="diaryBrowseView">
+          <div class="diary-card">
+            <div class="diary-list-header">
+              <h3 style="margin:0;font-size:15px;">日记列表</h3>
+              <button type="button" class="mini" id="diaryRefreshList">刷新</button>
+            </div>
+            <div id="diaryList" class="diary-list"><div class="diary-empty">暂无日记，去记录第一篇吧～</div></div>
+          </div>
+        </div>
+        <div class="modal hidden" id="diaryDetailModal">
+          <div class="modal-box" style="width:min(720px,96vw)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+              <h3 style="margin:0" id="diaryDetailDate">日记详情</h3>
+              <button type="button" class="secondary" onclick="el('diaryDetailModal').classList.add('hidden')">关闭</button>
+            </div>
+            <div class="diary-detail-body">
+              <div class="diary-detail-section">
+                <div class="diary-detail-label">今日工作内容</div>
+                <div class="diary-detail-content" id="diaryDetailToday"></div>
+              </div>
+              <div class="diary-detail-section">
+                <div class="diary-detail-label">明日工作计划</div>
+                <div class="diary-detail-content" id="diaryDetailTomorrow"></div>
+              </div>
+              <div class="diary-detail-section">
+                <div class="diary-detail-label">思路与想法</div>
+                <div class="diary-detail-content" id="diaryDetailThoughts"></div>
+              </div>
+            </div>
+            <div class="toolbar" style="justify-content:flex-end;margin-top:16px;">
+              <button type="button" class="secondary" id="diaryDetailEdit">编辑</button>
+              <button type="button" class="danger" id="diaryDetailDelete">删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="task-panel hidden" id="forumPanel">
+        <div class="forum-layout">
+          <div class="forum-card">
+            <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
+              <h3 style="margin:0;">全部历史话题</h3>
+              <span class="history-meta" id="forumTopicCount">0 个话题</span>
+            </div>
+            <div class="toolbar" style="margin-top:12px;">
+              <button type="button" class="secondary" id="forumToggleCreate">发起话题</button>
+              <button type="button" class="secondary" id="forumRefreshButton">刷新</button>
+            </div>
+            <div class="forum-create-panel hidden" id="forumCreatePanel">
+              <h3 style="margin-top:18px;">发起金点子话题</h3>
+              <label>话题标题</label>
+              <input id="forumTitle" placeholder="例如：如何让工作日记自动沉淀成项目经验？" />
+              <label>话题内容</label>
+              <textarea id="forumBody" placeholder="写下背景、想讨论的问题、希望大家从哪些角度给建议..."></textarea>
+              <div class="toolbar">
+                <button type="button" id="forumCreateButton">发布话题</button>
+              </div>
+              <div id="forumCreateStatus" class="status"></div>
+              <h3 style="margin-top:24px;">智能体每日起题</h3>
+              <label>输入信息</label>
+              <textarea id="forumAiSeed" placeholder="输入今天的工作背景、灵感、项目机会或想让大家讨论的方向..."></textarea>
+              <label>聊天内容</label>
+              <textarea id="forumAiChat" placeholder="可粘贴群聊、会议纪要、用户反馈等内容..."></textarea>
+              <label>传入文档</label>
+              <input id="forumAiFiles" type="file" multiple accept=".txt,.md,.csv,.docx,.xlsx" />
+              <div class="toolbar">
+                <button type="button" class="warn" id="forumAiButton"><span class="icon" data-icon="sparkles"></span> 智能生成话题</button>
+              </div>
+              <div id="forumAiStatus" class="status"></div>
+            </div>
+            <div class="forum-topic-list" id="forumTopicList">
+              <div class="forum-empty">暂无话题，先发起一个金点子吧。</div>
+            </div>
+          </div>
+          <div class="forum-card">
+            <div id="forumTopicDetail" style="margin-top:16px;">
+              <div class="forum-empty">选择一个话题查看详情和讨论。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="task-panel hidden" id="newsPanel">
+        <div class="news-layout" id="newsLayout">
+          <div class="news-card superadmin-only hidden" id="newsConfigCard">
+            <h3>资讯收集配置</h3>
+            <label>网页路径</label>
+            <div id="newsSources"></div>
+            <div class="toolbar">
+              <button type="button" class="secondary" id="newsAddSource">新增网页</button>
+            </div>
+            <label>大模型自动搜索关键词</label>
+            <textarea id="newsSearchQuery" placeholder="轨道交通 OR 城市轨道 OR 地铁 OR 智慧轨交"></textarea>
+            <div class="row">
+              <label><input id="newsAutoSearch" type="checkbox" style="width:auto" /> 允许大模型自动网络搜索</label>
+              <label><input id="newsAutoPush" type="checkbox" style="width:auto" /> 每日自动更新推送</label>
+            </div>
+            <label>推送时间</label>
+            <input id="newsPushTime" type="time" value="08:30" />
+            <div class="toolbar">
+              <button type="button" id="newsSaveConfig">保存配置</button>
+              <button type="button" class="warn" id="newsGenerateNow"><span class="icon" data-icon="sparkles"></span> 立即生成今日资讯</button>
+            </div>
+            <div id="newsConfigStatus" class="status"></div>
+            <div class="hint">自动搜索会通过平台配置的大模型 API 发起；若模型平台不支持联网工具，将主要基于配置网页内容生成。</div>
+          </div>
+          <div class="news-card">
+            <div class="news-issue-head">
+              <div>
+                <div class="news-issue-title" id="newsTitle">暂无每日资讯</div>
+                <div class="news-issue-meta" id="newsMeta">配置资讯源后生成今日简报。</div>
+              </div>
+              <button type="button" class="secondary" id="newsRefresh">刷新</button>
+            </div>
+            <div class="news-summary" id="newsSummary">暂无摘要。</div>
+            <div class="news-list" id="newsItems"></div>
+            <div class="news-keywords" id="newsKeywords"></div>
+          </div>
+        </div>
+      </div>
+      <div class="task-panel" id="weeklyPanel">
+      <div class="guide" id="weeklyGuide">
+        <div class="weekly-workspace">
+          <div class="weekly-period-card">
+            <div class="weekly-period-head">
+              <div>
+                <div class="weekly-period-title">周报时段</div>
+                <div class="weekly-section-meta">默认上周一至上周五，可用日历快速调整。</div>
+              </div>
+              <div class="toolbar" style="margin-top:0">
+                <span class="history-meta" id="weeklyPeriodText"></span>
+                <button class="action-button" id="loadLatestWeekly" type="button">获取最新历史报告</button>
+              </div>
+            </div>
+            <div class="weekly-period-grid">
+              <div>
+                <label>开始日期</label>
+                <input id="weeklyStart" type="date" />
+              </div>
+              <div>
+                <label>结束日期</label>
+                <input id="weeklyEnd" type="date" />
+              </div>
+            </div>
+          </div>
+          <input id="weeklyPeriod" type="hidden" />
+          <div class="diary-summarize-box" id="diarySummarizeBox">
+            <span class="icon" data-icon="sparkles" style="color:var(--accent);font-size:18px;"></span>
+            <div style="flex:1;min-width:200px;">
+              <div style="font-weight:700;font-size:13px;margin-bottom:4px;">从工作日记智能总结</div>
+              <div style="font-size:12px;color:var(--muted);">选择日期范围，AI 自动总结日记内容填充周报</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <input id="diarySumStart" type="date" style="width:auto;min-width:130px;" />
+              <span style="color:var(--muted);font-size:13px;">至</span>
+              <input id="diarySumEnd" type="date" style="width:auto;min-width:130px;" />
+              <button type="button" id="diarySummarizeBtn">智能总结</button>
+            </div>
+          </div>
+          <div class="weekly-section-grid">
+            <section class="weekly-section-card">
+              <div class="weekly-section-head">
+                <div>
+                  <div class="weekly-section-title">一、本周工作总结</div>
+                  <div class="weekly-section-meta"><span id="summaryCount">0</span> 项，点击卡片填写详情</div>
+                </div>
+                <button class="mini" id="addSummary" type="button">新增</button>
+              </div>
+              <div class="weekly-rows" id="summaryRows"></div>
+            </section>
+            <section class="weekly-section-card">
+              <div class="weekly-section-head">
+                <div>
+                  <div class="weekly-section-title">二、重点工作跟进</div>
+                  <div class="weekly-section-meta"><span id="followCount">0</span> 项，记录进展和困难</div>
+                </div>
+                <button class="mini" id="addFollow" type="button">新增</button>
+              </div>
+              <div class="weekly-rows" id="followRows"></div>
+            </section>
+            <section class="weekly-section-card">
+              <div class="weekly-section-head">
+                <div>
+                  <div class="weekly-section-title">三、下周工作计划</div>
+                  <div class="weekly-section-meta"><span id="nextCount">0</span> 项，安排后续计划</div>
+                </div>
+                <button class="mini" id="addNext" type="button">新增</button>
+              </div>
+              <div class="weekly-rows" id="nextRows"></div>
+            </section>
+          </div>
+        </div>
+      </div>
+      </div>
+      <div class="task-panel hidden" id="tripPanel">
+      <div class="guide" id="tripGuide">
+        <div class="toolbar" style="margin-top:0;margin-bottom:12px">
+          <button class="action-button" id="loadLatestTrip" type="button">获取最新历史报告</button>
+          <span class="history-meta">使用最近一份出差报告自动填充当前模板。</span>
+        </div>
+        <div class="trip-store">
+          <input id="tripReporter" value="周颖超" />
+          <input id="tripDepartment" value="场景研究院" />
+          <input id="tripLocation" placeholder="青岛" />
+          <input id="tripStart" placeholder="2026-05-06" />
+          <input id="tripEnd" placeholder="2026-05-08" />
+          <textarea id="tripPurpose"></textarea>
+          <textarea id="tripItinerary"></textarea>
+          <textarea id="tripDetails"></textarea>
+          <textarea id="tripIssues"></textarea>
+          <textarea id="tripSuggestions"></textarea>
+        </div>
+        <div class="edit-card-grid" id="tripCards"></div>
+      </div>
+      </div>
+      <div class="task-panel hidden" id="configPanel">
+      <div class="guide">
+        <div class="superadmin-only hidden">
+        <h2 style="margin:0 0 14px">大模型 API 配置</h2>
+        <div class="config-grid">
+          <div>
+            <label>NewAPI 地址</label>
+            <input id="configApiUrl" placeholder="http://host:port" />
+          </div>
+          <div>
+            <label>模型名称</label>
+            <select id="configModelSelect"></select>
+          </div>
+        </div>
+        <label>手动模型名称</label>
+        <input id="configModel" placeholder="MiniMax-M2.7" />
+        <label>API Key</label>
+        <input id="configApiKey" type="password" placeholder="留空则保持原 Key 不变" />
+        <div class="hint" id="configKeyHint"></div>
+        <label>默认优化提示词</label>
+        <textarea id="configPrompt"></textarea>
+        <div class="toolbar">
+          <button class="secondary" id="loadModels" type="button">获取模型列表</button>
+          <button class="warn" id="testModel" type="button">测试 API Key</button>
+          <button id="saveConfig" type="button">保存系统配置</button>
+        </div>
+        <div id="configTestStatus" class="status"></div>
+        </div>
+        <div class="superadmin-only hidden">
+        <h2 style="margin-top:18px">邮件服务器（全局）</h2>
+        <div class="config-grid">
+          <div>
+            <label>SMTP 服务器</label>
+            <input id="configSmtpHost" placeholder="smtp.263.net" />
+          </div>
+          <div>
+            <label>SMTP 端口</label>
+            <input id="configSmtpPort" type="number" placeholder="465" />
+          </div>
+        </div>
+        <div class="row">
+          <label><input id="configSmtpTls" type="checkbox" style="width:auto" /> 使用 TLS</label>
+          <label><input id="configSmtpSsl" type="checkbox" style="width:auto" /> 使用 SSL</label>
+        </div>
+        <div class="config-grid">
+          <div>
+            <label>IMAP 服务器</label>
+            <input id="configImapHost" placeholder="imap.263.net" />
+          </div>
+          <div>
+            <label>IMAP 端口</label>
+            <input id="configImapPort" type="number" placeholder="993" />
+          </div>
+        </div>
+        <div class="row">
+          <label><input id="configImapSsl" type="checkbox" style="width:auto" /> 使用 SSL 连接 IMAP</label>
+        </div>
+        <div class="toolbar">
+          <button id="saveServerConfig" type="button">保存邮件服务器配置</button>
+        </div>
+        <div id="configServerStatus" class="status"></div>
+        </div>
+      </div>
+      </div>
+      <div class="task-panel hidden" id="userManagePanel">
+      <div class="guide">
+        <h2 style="margin:0 0 14px">用户管理</h2>
+        <div class="config-grid">
+          <div>
+            <label>用户名</label>
+            <input id="newUserName" placeholder="zhangsan" />
+          </div>
+          <div>
+            <label>显示名称</label>
+            <input id="newDisplayName" placeholder="张三" />
+          </div>
+        </div>
+        <div class="config-grid" id="newUserRoleBox" style="display:none;">
+          <div>
+            <label>角色权限</label>
+            <select id="newUserRole">
+              <option value="member">普通成员</option>
+              <option value="admin">管理员</option>
+              <option value="superadmin">超级管理员</option>
+            </select>
+          </div>
+        </div>
+        <label>初始密码</label>
+        <input id="newUserPassword" type="password" placeholder="至少 4 位" />
+        <div class="toolbar">
+          <button id="addUser" type="button">新增用户</button>
+        </div>
+        <div id="userManageStatus" class="status"></div>
+        <div class="user-list" id="userList"><div class="upload-item">正在加载用户列表...</div></div>
+      </div>
+      </div>
+      <div class="task-panel hidden" id="mailConfigPanel">
+      <div class="guide">
+        <h2>我的邮箱账户</h2>
+        <div class="upload-item" style="margin-bottom:14px;">
+          发送邮件需要 SMTP；读取收件箱需要 IMAP。263 邮箱常用配置是 SMTP 465/SSL、IMAP 993/SSL。用户名通常填写完整邮箱地址；授权码不是网页登录密码，需要在邮箱后台单独生成。
+        </div>
+        <div class="config-grid">
+          <div>
+            <label>本人邮箱</label>
+            <input id="mailUserEmail" placeholder="your-email@example.com" />
+          </div>
+          <div>
+            <label>SMTP 发件地址</label>
+            <input id="mailSmtpFrom" placeholder="默认使用本人邮箱" />
+          </div>
+        </div>
+        <div class="config-grid">
+          <div>
+            <label>SMTP 用户名</label>
+            <input id="mailSmtpUser" placeholder="通常为邮箱账号" />
+            <div class="hint">留空保存时会自动使用“本人邮箱”。</div>
+          </div>
+          <div>
+            <label>SMTP 授权码/密码</label>
+            <input id="mailSmtpPassword" type="password" placeholder="留空则保持原密码不变" />
+            <div class="hint" id="mailPasswordHint"></div>
+          </div>
+        </div>
+        <div class="config-grid" style="margin-top:8px;">
+          <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px;">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:2px;">SMTP 服务器（全局）</div>
+            <div id="mailSmtpHostDisplay" style="font-weight:700;font-size:14px;">smtp.263.net</div>
+          </div>
+          <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px;">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:2px;">SMTP 端口 / SSL</div>
+            <div id="mailSmtpPortDisplay" style="font-weight:700;font-size:14px;">465 / SSL</div>
+          </div>
+        </div>
+        <h2 style="margin-top:18px">收件箱 IMAP</h2>
+        <div class="config-grid">
+          <div>
+            <label>IMAP 用户名</label>
+            <input id="mailImapUser" placeholder="默认使用 SMTP 用户名" />
+            <div class="hint">只收邮件时需要；留空保存时会自动使用 SMTP 用户名。</div>
+          </div>
+          <div>
+            <label>IMAP 授权码/密码</label>
+            <input id="mailImapPassword" type="password" placeholder="留空则保持原密码不变" />
+            <div class="hint" id="mailImapPasswordHint"></div>
+          </div>
+        </div>
+        <div class="config-grid" style="margin-top:8px;">
+          <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px;">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:2px;">IMAP 服务器（全局）</div>
+            <div id="mailImapHostDisplay" style="font-weight:700;font-size:14px;">imap.263.net</div>
+          </div>
+          <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px;">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:2px;">IMAP 端口 / SSL</div>
+            <div id="mailImapPortDisplay" style="font-weight:700;font-size:14px;">993 / SSL</div>
+          </div>
+        </div>
+        <h2 style="margin-top:18px">周报邮件</h2>
+        <div class="config-grid">
+          <div>
+            <label>周报收件人</label>
+            <input id="mailWeeklyTo" placeholder="leader@example.com" />
+          </div>
+          <div>
+            <label>周报抄送</label>
+            <input id="mailWeeklyCc" placeholder="可选，多个用分号分隔" />
+          </div>
+        </div>
+        <h2 style="margin-top:18px">出差报告邮件</h2>
+        <div class="config-grid">
+          <div>
+            <label>出差报告收件人</label>
+            <input id="mailTripTo" placeholder="leader@example.com" />
+          </div>
+          <div>
+            <label>出差报告抄送</label>
+            <input id="mailTripCc" placeholder="可选，多个用分号分隔" />
+          </div>
+        </div>
+        <label>邮件签名模板</label>
+        <textarea id="mailEmailSignature" placeholder="留空则使用默认签名"></textarea>
+        <div class="toolbar" style="margin-top:16px">
+          <button id="saveMailConfig" type="button">保存我的邮件配置</button>
+          <button class="warn" id="testMailConfig" type="button">测试我的邮箱配置</button>
+        </div>
+        <div id="mailConfigStatus" class="status"></div>
+      </div>
+      </div>
+      <div class="task-panel hidden" id="skillsPanel">
+      <div class="guide">
+        <div class="skill-hero">
+          <div>
+            <div class="mail-section-title">系统 Skill 管理</div>
+            <div class="mail-section-meta">查看当前已安装的 Skill、能力说明、调用参数和调用示例。此页面仅超级管理员可见。</div>
+          </div>
+          <div class="toolbar" style="margin-top:0">
+            <button class="secondary" id="openAgentOrchestration" type="button"><span class="icon" data-icon="bot"></span> 犇犇编排逻辑</button>
+            <button class="secondary" id="openAgentConfig" type="button"><span class="icon" data-icon="settings"></span> 编辑犇犇配置</button>
+            <button class="secondary" id="openSkillDocs" type="button"><span class="icon" data-icon="file-text"></span> 查看完整文档</button>
+            <button class="warn" id="downloadSkillDocs" type="button"><span class="icon" data-icon="archive"></span> 下载文档</button>
+          </div>
+        </div>
+        <div class="skill-protocol">
+          <div class="mail-section-title">大模型调用协议</div>
+          <div class="mail-section-meta">当大模型需要操作软件时，返回下面这种 JSON；普通问答直接自然语言回复即可。</div>
+          <pre>{"reply":"给用户看的说明","skill_call":{"name":"skill.name","arguments":{}}}</pre>
+        </div>
+        <div class="skill-orchestration hidden" id="agentOrchestrationPanel">
+          <div class="mail-section-title">犇犇编排逻辑</div>
+          <div class="mail-section-meta">当前犇犇各模块角色定义、系统提示词与工作流编排。</div>
+          <div id="agentOrchestrationContent"></div>
+        </div>
+        <div class="skill-installed-head">
+          <div>
+            <div class="mail-section-title">已安装 Skill 模块</div>
+            <div class="mail-section-meta">点击下面的模块卡片查看对应 Skill 能力。</div>
+          </div>
+          <div class="skill-total-count" id="skillTotalCount"></div>
+        </div>
+        <div class="skill-module-summary" id="skillModuleSummary">
+          <div class="skill-module-card active" data-module="周报">
+            <div class="skill-module-name">周报 Skill</div>
+            <div class="skill-module-count">已安装 4 个能力，点击查看</div>
+          </div>
+          <div class="skill-module-card" data-module="出差报告">
+            <div class="skill-module-name">出差报告 Skill</div>
+            <div class="skill-module-count">已安装能力，点击查看</div>
+          </div>
+          <div class="skill-module-card" data-module="工作日记">
+            <div class="skill-module-name">日记 Skill</div>
+            <div class="skill-module-count">已安装能力，点击查看</div>
+          </div>
+          <div class="skill-module-card" data-module="金点子论坛">
+            <div class="skill-module-name">金点子论坛 Skill</div>
+            <div class="skill-module-count">已安装能力，点击查看</div>
+          </div>
+          <div class="skill-module-card" data-module="邮件">
+            <div class="skill-module-name">邮件 Skill</div>
+            <div class="skill-module-count">已安装能力，点击查看</div>
+          </div>
+          <div class="skill-module-card" data-module="资讯">
+            <div class="skill-module-name">资讯 Skill</div>
+            <div class="skill-module-count">已安装能力，点击查看</div>
+          </div>
+        </div>
+        <div class="skill-filter-row">
+          <input id="skillSearch" placeholder="搜索 Skill 名称、模块或说明..." />
+          <select id="skillModuleFilter">
+            <option value="all">全部模块</option>
+          </select>
+        </div>
+        <div class="skill-list" id="skillList">
+          <div class="skill-card" data-skill-name="weekly.compose">
+            <div class="skill-card-head">
+              <div>
+                <div class="skill-name">weekly.compose</div>
+                <div class="skill-title">周报 Skill · 编写/设计周报草稿</div>
+              </div>
+              <span class="skill-badge">查询/预览</span>
+            </div>
+            <div class="skill-desc">调用配置的大模型 API，将原始工作内容整理成周报三段式结构：本周工作总结、重点工作跟进、下周工作计划。</div>
+            <div class="mailbox-meta">调用示例</div>
+            <pre class="skill-call-example">{"reply":"我来根据这些内容生成周报草稿。","skill_call":{"name":"weekly.compose","arguments":{"raw_work":"本周原始工作内容","next_plan":"下周计划","style":"体现工作量多，编号清晰，简洁明了"}}}</pre>
+          </div>
+          <div class="skill-card" data-skill-name="weekly.preview">
+            <div class="skill-card-head">
+              <div>
+                <div class="skill-name">weekly.preview</div>
+                <div class="skill-title">周报 Skill · 生成周报预览</div>
+              </div>
+              <span class="skill-badge warn">生成文件/预览图</span>
+            </div>
+            <div class="skill-desc">把结构化周报内容写入 Excel 模板，生成周报预览图片和邮件草稿，等待用户确认。</div>
+            <div class="mailbox-meta">调用示例</div>
+            <pre class="skill-call-example">{"reply":"我先生成周报预览，请你确认。","skill_call":{"name":"weekly.preview","arguments":{"period":"2026.05.11-2026.05.15","weekly_summary":[],"weekly_follow":[],"weekly_next":[]}}}</pre>
+          </div>
+          <div class="skill-card" data-skill-name="weekly.send_confirmed">
+            <div class="skill-card-head">
+              <div>
+                <div class="skill-name">weekly.send_confirmed</div>
+                <div class="skill-title">周报 Skill · 确认后发送周报邮件</div>
+              </div>
+              <span class="skill-badge warn">发送邮件</span>
+            </div>
+            <div class="skill-desc">只有用户确认周报预览无误后，才使用 weekly.preview 生成的附件发送邮件。</div>
+            <div class="mailbox-meta">调用示例</div>
+            <pre class="skill-call-example">{"reply":"确认预览无误后发送。","skill_call":{"name":"weekly.send_confirmed","arguments":{"attachment":"周颖超工作周报2026.05.11-2026.05.15.xlsx"}}}</pre>
+          </div>
+          <div class="skill-card" data-skill-name="weekly.prefill">
+            <div class="skill-card-head">
+              <div>
+                <div class="skill-name">weekly.prefill</div>
+                <div class="skill-title">周报 Skill · 获取最新周报预填</div>
+              </div>
+              <span class="skill-badge">查询/预览</span>
+            </div>
+            <div class="skill-desc">读取最新历史周报，将上次“下周计划”迁移到本次“本周工作内容”。</div>
+            <div class="mailbox-meta">调用示例</div>
+            <pre class="skill-call-example">{"reply":"我来获取最新历史周报。","skill_call":{"name":"weekly.prefill","arguments":{}}}</pre>
+          </div>
+        </div>
+      </div>
+      </div>
+      <div class="task-panel hidden" id="mailAssistantPanel">
+      <div class="guide">
+        <div class="mail-assistant-grid">
+          <div class="mailbox-card">
+            <div class="mail-section-head">
+              <div>
+                <div class="mail-section-title">收件箱</div>
+                <div class="mail-section-meta">查看当前账号最近邮件，支持正文和附件信息预览。</div>
+              </div>
+              <div class="toolbar" style="margin-top:0">
+                <select id="mailboxLimit" style="width:110px">
+                  <option value="10">最近 10 封</option>
+                  <option value="20" selected>最近 20 封</option>
+                  <option value="50">最近 50 封</option>
+                </select>
+                <button class="secondary" id="refreshMailbox" type="button"><span class="icon" data-icon="refresh-cw"></span> 刷新</button>
+              </div>
+            </div>
+            <div class="mailbox-list" id="mailboxList"></div>
+          </div>
+          <div class="mail-detail-card">
+            <div class="mail-section-head">
+              <div>
+                <div class="mail-section-title">邮件详情</div>
+                <div class="mail-section-meta">按邮件原始版式预览正文，附件在头部集中展示。</div>
+              </div>
+            </div>
+            <div class="mail-detail" id="mailDetail">暂无选中邮件。</div>
+          </div>
+        </div>
+        <div class="mail-compose-card">
+          <div class="mail-section-head">
+            <div>
+              <div class="mail-section-title">发送邮件</div>
+              <div class="mail-section-meta">使用当前账号 SMTP 发送普通邮件，可添加附件并实时预览正文。</div>
+            </div>
+          </div>
+          <div class="mail-compose-layout">
+            <div class="mail-compose-form">
+              <div class="row">
+                <div>
+                  <label>收件人</label>
+                  <input id="assistantMailTo" placeholder="recipient@example.com" />
+                </div>
+                <div>
+                  <label>抄送</label>
+                  <input id="assistantMailCc" placeholder="可选，多个邮箱用分号分隔" />
+                </div>
+              </div>
+              <label>主题</label>
+              <input id="assistantMailSubject" placeholder="请输入邮件主题" />
+              <label>正文</label>
+              <textarea id="assistantMailBody" placeholder="请输入邮件正文"></textarea>
+              <label>附件</label>
+              <input id="assistantMailFiles" type="file" multiple />
+              <div class="mail-file-list" id="assistantMailFileList"></div>
+              <div class="toolbar">
+                <button class="secondary" id="clearAssistantMail" type="button">清空</button>
+                <button class="warn" id="sendAssistantMail" type="button"><span class="icon" data-icon="send"></span> 发送邮件</button>
+              </div>
+              <div id="assistantMailStatus" class="status"></div>
+            </div>
+            <div class="mail-compose-preview">
+              <label>正文预览</label>
+              <div class="rich-preview" id="assistantMailPreview">暂无正文内容</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+      <div class="toolbar hidden" id="generateToolbar">
+        <button id="generate">按标准模板生成文件</button>
+      </div>
+      <div class="task-panel hidden" id="mailPanel">
+      <div class="mail-layout">
+      <div class="side">
+        <h2>报告文件</h2>
+        <label>类型</label>
+        <select id="mailKind">
+          <option value="weekly">周报</option>
+          <option value="trip">出差报告</option>
+        </select>
+        <div id="reports"></div>
+      </div>
+      <div>
+      <h2>邮件内容</h2>
+      <div class="row">
+        <div>
+          <label>收件人</label>
+          <input id="to" placeholder="leader@example.com" />
+        </div>
+        <div>
+          <label>抄送</label>
+          <input id="cc" placeholder="可选，多个邮箱用分号分隔" />
+        </div>
+      </div>
+      <label>主题</label>
+      <input id="subject" />
+      <label>正文</label>
+      <textarea id="body"></textarea>
+      <label>发送邮件正文预览</label>
+      <div class="rich-preview" id="bodyPreview"></div>
+      <label>附件</label>
+      <input id="attachment" readonly />
+      <div class="toolbar" style="margin-top:8px">
+        <a id="downloadLink" class="download-link hidden" href="#" target="_blank">下载查看当前附件</a>
+      </div>
+      <label>模板内容预览</label>
+      <div class="rich-preview" id="preview"></div>
+      <div class="toolbar">
+        <button id="refresh">重新生成正文</button>
+        <button class="secondary" id="copy">复制正文</button>
+        <button class="warn" id="send">发送/生成草稿</button>
+      </div>
+      <div id="sendReview" class="send-review hidden"></div>
+      </div>
+      </div>
+      </div>
+      <div class="task-panel hidden" id="uploadPanel">
+      <div class="guide">
+        <div class="row">
+          <div>
+            <label>上传类型</label>
+            <select id="uploadKind">
+              <option value="weekly">历史周报（.xlsx / .xls）</option>
+              <option value="trip">历史出差报告（.docx / .md）</option>
+            </select>
+          </div>
+          <div>
+            <label>选择文件</label>
+            <input id="uploadFiles" type="file" multiple accept=".xlsx,.xls,.docx,.md" />
+          </div>
+        </div>
+        <div class="toolbar">
+          <button id="uploadButton" type="button">上传到历史报告库</button>
+        </div>
+        <div class="hint">上传后的文件会保存到当前用户的个人历史报告空间，并自动出现在“发送报告邮件”的报告列表中。</div>
+        <div class="upload-list" id="uploadList"></div>
+        <div class="history-tools">
+          <h2 style="margin:0">历史报告管理</h2>
+          <select id="historyKind">
+            <option value="all">全部</option>
+            <option value="weekly">周报</option>
+            <option value="trip">出差报告</option>
+          </select>
+        </div>
+        <div class="history-list" id="historyList"></div>
+      </div>
+      </div>
+      <div id="status" class="status"></div>
+    </section>
+  </main>
+  <div class="modal hidden" id="passModal" role="dialog" aria-modal="true">
+    <div class="modal-box" style="width:min(420px,96vw)">
+      <div class="modal-head">
+        <div class="modal-title">修改密码</div>
+        <button class="mini secondary" type="button" onclick="el('passModal').classList.add('hidden')">取消</button>
+      </div>
+      <div class="modal-fields">
+        <label>原密码</label>
+        <input id="passOld" type="password" placeholder="输入当前密码" />
+        <label>新密码</label>
+        <input id="passNew" type="password" placeholder="至少 4 位" />
+        <label>确认新密码</label>
+        <input id="passConfirm" type="password" placeholder="再次输入新密码" />
+        <div id="passStatus" class="status"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary" type="button" onclick="el('passModal').classList.add('hidden')">取消</button>
+        <button type="button" id="passSave">确认修改</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal hidden" id="editModal" role="dialog" aria-modal="true">
+    <div class="modal-box">
+      <div class="modal-head">
+        <div class="modal-title" id="modalTitle">编辑内容</div>
+        <button class="mini secondary" type="button" id="modalClose">退出并保存</button>
+      </div>
+      <div class="modal-fields" id="modalFields"></div>
+      <div class="modal-actions">
+        <button class="secondary" type="button" id="modalCancel">退出并保存</button>
+        <button type="button" id="modalSave">保存</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal hidden" id="skillTestModal" role="dialog" aria-modal="true">
+    <div class="modal-box skill-test-box">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title" id="skillTestTitle">Skill 测试</div>
+          <div class="history-meta" id="skillTestMeta">使用平台配置的大模型 API 和当前登录用户空间执行测试。</div>
+        </div>
+        <button class="mini secondary" type="button" id="skillTestClose">关闭</button>
+      </div>
+      <div class="skill-test-grid">
+        <div class="skill-test-panel">
+          <label>调用参数 JSON</label>
+          <textarea id="skillTestArgs" spellcheck="false"></textarea>
+          <label>自然语言测试要求（可选）</label>
+          <textarea id="skillTestInstruction" placeholder="例如：把下面的原始工作内容梳理成周报草稿，要求体现工作量多、编号清晰、简洁明了。"></textarea>
+          <label class="skill-confirm-line hidden" id="skillConfirmWrap">
+            <input id="skillConfirmUnsafe" type="checkbox" />
+            我确认执行该 Skill 测试，可能会生成文件、写入数据或发送内容
+          </label>
+          <div class="toolbar" style="margin-top:0">
+            <button type="button" id="skillRunTest"><span class="icon" data-icon="play"></span> 运行测试</button>
+          </div>
+          <div id="skillTestStatus" class="status"></div>
+        </div>
+        <div class="skill-test-panel">
+          <label>测试结果</label>
+          <pre class="skill-test-result" id="skillTestResult">点击“运行测试”后，这里会显示 Skill 返回结果。</pre>
+          <div class="skill-test-links" id="skillTestLinks"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal hidden" id="agentConfigModal" role="dialog" aria-modal="true">
+    <div class="modal-box" style="width:min(960px,96vw);max-height:92vh;overflow:auto;">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">犇犇配置</div>
+          <div class="history-meta">编辑系统提示词和工作流编排，保存后立即生效。</div>
+        </div>
+        <button class="mini secondary" type="button" id="agentConfigClose">关闭</button>
+      </div>
+      <div class="config-tabs" style="display:flex;gap:8px;margin-bottom:12px;">
+        <button type="button" class="secondary agent-config-tab active" data-tab="prompts">系统提示词</button>
+        <button type="button" class="secondary agent-config-tab" data-tab="workflows">工作流</button>
+      </div>
+      <div id="agentConfigPrompts"></div>
+      <div id="agentConfigWorkflows" class="hidden"></div>
+      <div class="toolbar" style="margin-top:12px;">
+        <button type="button" id="agentConfigSave" class="primary"><span class="icon" data-icon="save"></span> 保存配置</button>
+        <span id="agentConfigStatus" class="status" style="margin-left:8px;"></span>
+      </div>
+    </div>
+  </div>
+  <script src="/frontend/config.js" defer></script>
+  <script src="/frontend/app.js" defer></script>
+  <div class="modal hidden" id="profileModal">
+    <div class="modal-box" style="max-width:720px;">
+      <div class="modal-head">
+        <div class="modal-title">个人资料</div>
+        <button class="mini secondary" id="profileClose" type="button">关闭</button>
+      </div>
+      <div class="profile-grid">
+        <div>
+          <img class="profile-avatar-large" id="profileAvatarPreview" src="/assets/ai-assistant-avatar.png" alt="" />
+          <div class="profile-actions">
+            <button class="mini secondary" id="profileUseAssistantAvatar" type="button">使用助手头像</button>
+          </div>
+        </div>
+        <div>
+          <label>对外显示名称</label>
+          <input id="profileName" placeholder="你的姓名或昵称" />
+          <label>上传头像</label>
+          <input id="profileAvatarFile" type="file" accept="image/png,image/jpeg,image/webp" />
+          <label>对外介绍</label>
+          <textarea id="profileBio" placeholder="例如：负责项目、擅长方向、工作职责等" style="min-height:96px;"></textarea>
+          <label>个人爱好</label>
+          <textarea id="profileHobbies" placeholder="例如：轨道交通、AI 工具、阅读、跑步..." style="min-height:80px;"></textarea>
+          <div class="toolbar">
+            <button id="profileSave" type="button">保存资料</button>
+            <span id="profileStatus" class="status"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="agent-float hidden" id="agentFloat">
+    <button class="agent-toggle" id="agentToggle" type="button" title="犇犇" onclick="openAgentFromAvatar()"><img class="agent-avatar" src="/assets/ai-assistant-avatar.png" alt="犇犇" /></button>
+    <div class="agent-window hidden" id="agentWindow">
+      <div class="agent-header">
+        <span><img class="agent-avatar" src="/assets/ai-assistant-avatar.png" alt="" /> 犇犇</span>
+        <button class="agent-close" id="agentClose" type="button">✕</button>
+      </div>
+      <div class="agent-body">
+        <div class="agent-progress" id="agentProgress"></div>
+        <div class="agent-messages" id="agentMessages">
+          <div class="agent-msg assistant">你好！我是犇犇，你的智能办公助手。点击下方的快捷按钮，我可以帮你自动生成周报或出差报告。</div>
+        </div>
+        <div class="agent-actions" id="agentActions">
+          <button class="agent-action" type="button" data-agent-kind="weekly"><span class="icon" data-icon="file-spreadsheet"></span> 生成周报</button>
+          <button class="agent-action" type="button" data-agent-kind="trip"><span class="icon" data-icon="briefcase-business"></span> 生成出差报告</button>
+          <button class="agent-action" type="button" data-agent-kind="diary"><span class="icon" data-icon="book-open"></span> 记录日记</button>
+        </div>
+        <div class="agent-input-wrap">
+          <textarea id="agentInput" placeholder="输入消息...（Ctrl+Enter 发送）"></textarea>
+          <button id="agentSend" type="button">发送</button>
+        </div>
+      </div>
+    </div>
+    <div class="agent-lightbox hidden" id="agentLightbox" onclick="closeAgentLightbox()">
+      <img id="agentLightboxImg" src="" alt="预览" />
+    </div>
+  </div>
+
+</body>
+</html>
