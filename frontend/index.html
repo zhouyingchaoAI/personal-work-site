@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>犇犇 | 智能办公平台</title>
-  <link rel="stylesheet" href="/frontend/styles.css" />
+  <link rel="stylesheet" href="/personal-office-assistant/frontend/styles.css" />
 </head>
 <body>
   <header>
@@ -18,7 +18,7 @@
         <input type="text" placeholder="搜索文档、邮件、知识..." />
       </div>
       <div class="userbar" id="userbar">
-        <img class="user-avatar" id="userAvatar" src="/assets/ai-assistant-avatar.png" alt="" />
+        <img class="user-avatar" id="userAvatar" src="/personal-office-assistant/assets/ai-assistant-avatar.png" alt="" />
         <span id="userInfo"></span>
         <button type="button" id="profileButton" class="mini">个人资料</button>
         <button type="button" id="changePassButton" class="mini">修改密码</button>
@@ -984,8 +984,8 @@
       </div>
     </div>
   </div>
-  <script src="/frontend/config.js" defer></script>
-  <script src="/frontend/app.js" defer></script>
+  <script src="/personal-office-assistant/frontend/config.js" defer></script>
+  <script src="/personal-office-assistant/frontend/app.js" defer></script>
   <div class="modal hidden" id="profileModal">
     <div class="modal-box" style="max-width:720px;">
       <div class="modal-head">
@@ -994,7 +994,7 @@
       </div>
       <div class="profile-grid">
         <div>
-          <img class="profile-avatar-large" id="profileAvatarPreview" src="/assets/ai-assistant-avatar.png" alt="" />
+          <img class="profile-avatar-large" id="profileAvatarPreview" src="/personal-office-assistant/assets/ai-assistant-avatar.png" alt="" />
           <div class="profile-actions">
             <button class="mini secondary" id="profileUseAssistantAvatar" type="button">使用助手头像</button>
           </div>
@@ -1017,10 +1017,10 @@
     </div>
   </div>
   <div class="agent-float hidden" id="agentFloat">
-    <button class="agent-toggle" id="agentToggle" type="button" title="犇犇" onclick="openAgentFromAvatar()"><img class="agent-avatar" src="/assets/ai-assistant-avatar.png" alt="犇犇" /></button>
+    <button class="agent-toggle" id="agentToggle" type="button" title="犇犇" onclick="openAgentFromAvatar()"><img class="agent-avatar" src="/personal-office-assistant/assets/ai-assistant-avatar.png" alt="犇犇" /></button>
     <div class="agent-window hidden" id="agentWindow">
       <div class="agent-header">
-        <span><img class="agent-avatar" src="/assets/ai-assistant-avatar.png" alt="" /> 犇犇</span>
+        <span><img class="agent-avatar" src="/personal-office-assistant/assets/ai-assistant-avatar.png" alt="" /> 犇犇</span>
         <button class="agent-close" id="agentClose" type="button">✕</button>
       </div>
       <div class="agent-body">

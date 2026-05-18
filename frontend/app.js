@@ -52,16 +52,38 @@
       });
     }
 
-    async function api(path, options) {
+    function appBasePath() {
       const config = window.PERSONAL_OFFICE_ASSISTANT_CONFIG || {};
-      const baseUrl = String(config.apiBaseUrl || '').replace(/\/$/, '');
-      const res = await fetch(baseUrl + path, options);
+      return String(config.appBasePath || '').replace(/\/$/, '');
+    }
+
+    function resourceUrl(path) {
+      const value = String(path || '');
+      if (!value || /^(https?:|data:|blob:)/i.test(value)) return value;
+      const basePath = appBasePath();
+      if (!basePath || !value.startsWith('/')) return value;
+      if (value === basePath || value.startsWith(basePath + '/')) return value;
+      return basePath + value;
+    }
+
+    function apiUrl(path) {
+      const config = window.PERSONAL_OFFICE_ASSISTANT_CONFIG || {};
+      const explicitBaseUrl = String(config.apiBaseUrl || '').replace(/\/$/, '');
+      const baseUrl = explicitBaseUrl || appBasePath();
+      if (/^https?:/i.test(path)) return path;
+      if (!baseUrl || !path.startsWith('/')) return path;
+      if (path === baseUrl || path.startsWith(baseUrl + '/')) return path;
+      return baseUrl + path;
+    }
+
+    async function api(path, options) {
+      const res = await fetch(apiUrl(path), options);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '请求失败');
       return data;
     }
     async function apiPost(path, body) {
-      const res = await fetch(path, {
+      const res = await fetch(apiUrl(path), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body || {})
@@ -81,7 +103,7 @@
       if (authed) {
         const roleText = user.role === 'superadmin' ? '超级管理员' : user.role === 'admin' ? '管理员' : '成员';
         el('userInfo').textContent = `${user.name || user.username} · ${roleText}`;
-        el('userAvatar').src = user.avatar_url || '/assets/ai-assistant-avatar.png';
+        el('userAvatar').src = resourceUrl(user.avatar_url || '/assets/ai-assistant-avatar.png');
       }
       document.querySelectorAll('.admin-only').forEach(node => {
         node.classList.toggle('hidden', !user?.is_admin);
@@ -106,7 +128,7 @@
       el('profileName').value = user.name || user.username || '';
       el('profileBio').value = user.bio || '';
       el('profileHobbies').value = user.hobbies || '';
-      el('profileAvatarPreview').src = user.avatar_url || '/assets/ai-assistant-avatar.png';
+      el('profileAvatarPreview').src = resourceUrl(user.avatar_url || '/assets/ai-assistant-avatar.png');
       el('profileAvatarFile').value = '';
       el('profileStatus').textContent = '';
       el('profileStatus').className = 'status';
@@ -131,7 +153,7 @@
           avatar_preset: avatarPreset
         });
         applyUser(result.user);
-        el('profileAvatarPreview').src = result.user.avatar_url || '/assets/ai-assistant-avatar.png';
+        el('profileAvatarPreview').src = resourceUrl(result.user.avatar_url || '/assets/ai-assistant-avatar.png');
         el('profileAvatarFile').value = '';
         el('profileStatus').textContent = '个人资料已保存';
         el('profileStatus').className = 'status ok';
@@ -219,7 +241,7 @@
             <div class="doc-name">${escapeHtml(r.name)}</div>
             <div class="doc-meta">${r.kind === 'weekly' ? '周报' : '出差报告'} · ${new Date(r.mtime * 1000).toLocaleDateString()}</div>
           </div>
-          <a class="download-link" style="padding:6px 12px;font-size:12px;" href="/download?file=${encodeURIComponent(r.name)}" target="_blank">查看</a>
+          <a class="download-link" style="padding:6px 12px;font-size:12px;" href="${resourceUrl('/download?file=' + encodeURIComponent(r.name))}" target="_blank">查看</a>
         </div>
       `).join('') : '<div class="doc-item"><span class="doc-name">暂无最近文档</span></div>';
     }
@@ -234,7 +256,7 @@
             <div class="history-meta">${reportKindName(r.kind)} · ${new Date(r.mtime * 1000).toLocaleString()}</div>
           </div>
           <div class="history-actions">
-            <a class="download-link" href="/download?file=${encodeURIComponent(r.name)}" target="_blank">下载</a>
+            <a class="download-link" href="${resourceUrl('/download?file=' + encodeURIComponent(r.name))}" target="_blank">下载</a>
             <button class="mini danger delete-history" type="button">删除</button>
           </div>
         </div>
@@ -850,10 +872,10 @@
       const data = result?.result || {};
       const links = [];
       if (data.download_url) {
-        links.push(`<a class="secondary" href="${escapeHtml(data.download_url)}" target="_blank">打开生成文件</a>`);
+        links.push(`<a class="secondary" href="${escapeHtml(resourceUrl(data.download_url))}" target="_blank">打开生成文件</a>`);
       }
       if (data.preview_image_url) {
-        links.push(`<img class="skill-preview-image" src="${escapeHtml(data.preview_image_url)}" alt="Skill 预览图片" />`);
+        links.push(`<img class="skill-preview-image" src="${escapeHtml(resourceUrl(data.preview_image_url))}" alt="Skill 预览图片" />`);
       }
       el('skillTestLinks').innerHTML = links.join('');
     }
@@ -1423,7 +1445,7 @@
       renderBodyPreview();
       el('attachment').value = draft.attachment || '';
       if (draft.download_url) {
-        el('downloadLink').href = draft.download_url;
+        el('downloadLink').href = resourceUrl(draft.download_url);
         el('downloadLink').classList.remove('hidden');
       } else {
         el('downloadLink').classList.add('hidden');
@@ -1605,7 +1627,7 @@
       });
     });
     el('openSkillDocs').addEventListener('click', () => window.open('/skill-docs', '_blank'));
-    el('downloadSkillDocs').addEventListener('click', () => window.open('/download-skill-doc', '_blank'));
+    el('downloadSkillDocs').addEventListener('click', () => window.open(resourceUrl('/download-skill-doc'), '_blank'));
     el('skillSearch').addEventListener('input', () => renderSkills(state.skills || []));
     el('skillModuleFilter').addEventListener('change', () => renderSkills(state.skills || []));
     el('skillTestClose').addEventListener('click', closeSkillTest);
@@ -2824,7 +2846,7 @@
       const title = agentTitle(kind);
       const header = document.querySelector('#agentWindow .agent-header span');
       if (header) {
-        header.innerHTML = `<img class="agent-avatar" src="/assets/ai-assistant-avatar.png" alt="" /> ${title}`;
+        header.innerHTML = `<img class="agent-avatar" src="${resourceUrl('/assets/ai-assistant-avatar.png')}" alt="" /> ${title}`;
       }
       el('agentToggle').title = title;
       el('agentActions').innerHTML = `
@@ -3023,7 +3045,7 @@
               `).join('')}</div>` : ''}
               ${m.items && m.items.length ? `<ul class="agent-card-list">${m.items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
               ${m.note ? `<div class="agent-card-note">${escapeHtml(m.note)}</div>` : ''}
-              ${m.image_url ? `<div><img class="agent-img" src="${escapeHtml(m.image_url)}" style="max-width:100%;border:1px solid #dbe5f1;border-radius:8px;background:#fff;cursor:zoom-in;" onclick="openAgentLightbox('${escapeHtml(m.image_url)}')" /></div>` : ''}
+              ${m.image_url ? `<div><img class="agent-img" src="${escapeHtml(resourceUrl(m.image_url))}" style="max-width:100%;border:1px solid #dbe5f1;border-radius:8px;background:#fff;cursor:zoom-in;" onclick="openAgentLightbox('${escapeHtml(resourceUrl(m.image_url))}')" /></div>` : ''}
             </div>
           </div>`;
       }
@@ -3031,7 +3053,7 @@
       const htmlContent = m.role === 'assistant' ? renderMarkdown(content) : escapeHtml(content);
       return `<div class="agent-msg ${m.role}">
         ${htmlContent}
-        ${m.image_url ? `<div style="margin-top:10px"><img class="agent-img" src="${escapeHtml(m.image_url)}" style="max-width:100%;border:1px solid #dbe5f1;border-radius:8px;background:#fff;cursor:zoom-in;" onclick="openAgentLightbox('${escapeHtml(m.image_url)}')" /></div>` : ''}
+        ${m.image_url ? `<div style="margin-top:10px"><img class="agent-img" src="${escapeHtml(resourceUrl(m.image_url))}" style="max-width:100%;border:1px solid #dbe5f1;border-radius:8px;background:#fff;cursor:zoom-in;" onclick="openAgentLightbox('${escapeHtml(resourceUrl(m.image_url))}')" /></div>` : ''}
       </div>`;
     }
 

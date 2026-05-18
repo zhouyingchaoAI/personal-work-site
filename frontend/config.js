@@ -1,4 +1,7 @@
 window.PERSONAL_OFFICE_ASSISTANT_CONFIG = {
-  // Same-origin by default. Set to "http://127.0.0.1:8765" when the frontend is deployed separately.
-  apiBaseUrl: ""
+  // Same-origin by default. Set to "https://api.example.com" only when the API is on another origin.
+  apiBaseUrl: "",
+  appBasePath: window.location.pathname === "/personal-office-assistant" || window.location.pathname.startsWith("/personal-office-assistant/")
+    ? "/personal-office-assistant"
+    : ""
 };

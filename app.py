@@ -4062,6 +4062,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path.startswith(APP_RELATIVE_PATH + "/"):
+            parsed = parsed._replace(path=parsed.path[len(APP_RELATIVE_PATH):] or "/")
         if parsed.path in ("/", APP_RELATIVE_PATH, APP_RELATIVE_PATH + "/"):
             raw = app_html().encode("utf-8")
             self.send_response(200)
@@ -4304,6 +4306,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path.startswith(APP_RELATIVE_PATH + "/"):
+            parsed = parsed._replace(path=parsed.path[len(APP_RELATIVE_PATH):] or "/")
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
