@@ -1,0 +1,228 @@
+/* Design tokens, shell layout, forms, tabs, and common controls. */
+
+    :root {
+      color-scheme: dark;
+      --bg: #0b1120;
+      --surface: #111827;
+      --panel: #1e293b;
+      --elevated: #243447;
+      --ink: #f1f5f9;
+      --muted: #94a3b8;
+      --line: #334155;
+      --accent: #3b82f6;
+      --accent-2: #8b5cf6;
+      --accent-gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      --danger: #ef4444;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --shadow: 0 8px 32px rgba(2, 8, 20, .45);
+      --glow: 0 0 20px rgba(59, 130, 246, .15);
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    header {
+      background: #123c3b;
+      color: #fff;
+      padding: 22px 28px;
+      border-bottom: 4px solid #d69839;
+    }
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+    }
+    .userbar {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      color: #d7e5e3;
+      font-size: 13px;
+    }
+    .user-avatar {
+      width: 30px; height: 30px; border-radius: 50%;
+      object-fit: cover; background: #eaf1fb; border: 1px solid var(--line);
+    }
+    .userbar button { background: rgba(255,255,255,.16); }
+    h1 { margin: 0; font-size: 24px; font-weight: 720; letter-spacing: 0; }
+    .sub { margin-top: 6px; color: #d7e5e3; font-size: 14px; }
+    main {
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      gap: 16px;
+      padding: 20px;
+      max-width: 1320px;
+      margin: 0 auto;
+      align-items: start;
+    }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .task-board {
+      padding: 14px;
+      position: sticky;
+      top: 14px;
+    }
+    .task-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .task-card {
+      width: 100%;
+      min-height: 64px;
+      text-align: left;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 11px 12px;
+      background: #fff;
+      color: var(--ink);
+      box-shadow: none;
+      cursor: pointer;
+    }
+    .task-card.active {
+      border-color: var(--accent);
+      background: #eef8f6;
+      box-shadow: inset 0 0 0 1px #b9ded8;
+    }
+    .task-card .task-name {
+      display: block;
+      font-size: 15px;
+      font-weight: 760;
+      margin-bottom: 4px;
+    }
+    .task-card .task-desc {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      font-weight: 520;
+    }
+    .task-panel.hidden { display: none; }
+    .auth-panel {
+      max-width: 460px;
+      margin: 34px auto 0;
+      padding: 18px;
+    }
+    .auth-panel.hidden { display: none; }
+    .mail-layout {
+      display: grid;
+      grid-template-columns: minmax(250px, 340px) minmax(0, 1fr);
+      gap: 16px;
+    }
+    .side {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+    .composer { padding: 18px; }
+    .sub-tabs {
+      display: flex;
+      gap: 8px;
+      margin: 0 0 18px;
+      padding: 4px;
+      background: #eef1f5;
+      border-radius: 10px;
+      width: fit-content;
+    }
+    .sub-tab {
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 680;
+      background: transparent;
+      color: var(--muted);
+      border: 0;
+      cursor: pointer;
+      transition: all .15s ease;
+    }
+    .sub-tab.active {
+      background: #fff;
+      color: var(--accent);
+      box-shadow: 0 2px 8px rgba(26,34,47,.08);
+    }
+    .sub-tab:hover:not(.active) {
+      color: var(--ink);
+      background: rgba(255,255,255,.5);
+    }
+    h2 { margin: 0 0 14px; font-size: 17px; }
+    label { display: block; margin: 12px 0 6px; font-size: 13px; color: var(--muted); }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 11px;
+      font: inherit;
+      color: var(--ink);
+      background: #fff;
+    }
+    textarea { min-height: 260px; resize: vertical; line-height: 1.55; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+    button {
+      border: 0;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-weight: 680;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+    }
+    button.secondary { background: #2f3a4a; }
+    button.warn { background: var(--accent-2); }
+    button.action-button {
+      padding: 10px 14px;
+      font-size: 14px;
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      white-space: nowrap;
+    }
+    .download-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: #eef8f6;
+      color: var(--accent);
+      border: 1px solid #b9ded8;
+      text-decoration: none;
+      font-weight: 680;
+      font-size: 14px;
+    }
+    .report {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      background: #fff;
+    }
+    .report.active { border-color: var(--accent); background: #eef8f6; }
+    .report .name { font-weight: 680; word-break: break-all; }
+    .report .meta { color: var(--muted); font-size: 12px; margin-top: 5px; }
+    .preview {
+      white-space: pre-wrap;
+      background: #f8fafb;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 12px;
+      min-height: 130px;
+      max-height: 260px;
+      overflow: auto;
+      color: #354052;
+      font-size: 13px;
+      line-height: 1.55;
+    }

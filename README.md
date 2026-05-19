@@ -2,10 +2,13 @@
 
 这个本地网站会自动读取上级目录里的 `周报` 文件夹，识别最新周报和最新出差报告，生成邮件主题、正文，并把报告文件作为附件发送。
 
-项目已拆分为前后端分离结构：
+项目已拆分为前后端分离、按模块组织的结构：
 
-- 后端：`app.py`，负责 API、文件生成、邮件发送、静态文件转发
-- 前端：`frontend/index.html`、`frontend/styles.css`、`frontend/app.js`
+- 后端入口：`app.py`
+- 后端模块：`backend/`，按配置用户、报表、邮件、Skill/Agent、日记、论坛、资讯、文档生成、HTTP 服务拆分
+- 前端入口：`frontend/index.html`
+- 前端脚本模块：`frontend/js/`
+- 前端样式模块：`frontend/css/`，由 `frontend/styles.css` 聚合
 - 前端配置：`frontend/config.js`，单独部署前端时可配置后端 API 地址
 
 现在也支持按引导表单新建标准文件：
