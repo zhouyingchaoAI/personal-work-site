@@ -32,34 +32,52 @@ def parse_trip_date(name):
     return (int(match.group(1)), int(match.group(2)))
 
 
+def report_storage_dirs(root, include_legacy=True):
+    dirs = []
+    for kind in ("weekly", "trip"):
+        path = root / kind
+        if path.exists():
+            dirs.append((kind, path))
+    if include_legacy:
+        dirs.append((None, root))
+    return dirs
+
+
+def is_legacy_auto_numbered_report(name):
+    return bool(re.search(r"-(?:生成|上传)[0-9]+(?=\.[^.]+$)", str(name or "")))
+
+
 def report_files(username=None):
     files = []
     base = user_report_dir(username) if username else REPORT_DIR
     if not base.exists():
         return files
-    for path in base.iterdir():
-        if not path.is_file() or path.name.startswith("."):
-            continue
-        lower = path.suffix.lower()
-        if "工作周报" in path.name and lower in {".xlsx", ".xls"}:
+    seen = set()
+    for expected_kind, directory in report_storage_dirs(base):
+        for path in directory.iterdir():
+            if not path.is_file() or path.name.startswith(".") or path in seen:
+                continue
+            seen.add(path)
+            if is_legacy_auto_numbered_report(path.name):
+                continue
+            lower = path.suffix.lower()
+            if "工作周报" in path.name and lower in {".xlsx", ".xls"}:
+                kind = "weekly"
+                sort_key = parse_weekly_date(path.name)
+            elif path.name.startswith("出差报告") and lower in {".docx", ".md"}:
+                kind = "trip"
+                sort_key = parse_trip_date(path.name)
+            else:
+                continue
+            if expected_kind and expected_kind != kind:
+                continue
             files.append(
                 {
-                    "kind": "weekly",
+                    "kind": kind,
                     "name": path.name,
                     "path": str(path),
                     "mtime": path.stat().st_mtime,
-                    "sort_key": parse_weekly_date(path.name),
-                    "deletable": bool(username),
-                }
-            )
-        elif path.name.startswith("出差报告") and lower in {".docx", ".md"}:
-            files.append(
-                {
-                    "kind": "trip",
-                    "name": path.name,
-                    "path": str(path),
-                    "mtime": path.stat().st_mtime,
-                    "sort_key": parse_trip_date(path.name),
+                    "sort_key": sort_key,
                     "deletable": bool(username),
                 }
             )
@@ -71,27 +89,32 @@ def generated_files(username=None):
     base = user_generated_dir(username) if username else GENERATED_DIR
     if not base.exists():
         return files
-    for path in base.iterdir():
-        if not path.is_file() or path.name.startswith("."):
-            continue
-        lower = path.suffix.lower()
-        if "工作周报" in path.name and lower in {".xlsx", ".xls"}:
-            kind = "weekly"
-        elif "出差报告" in path.name and lower in {".docx", ".md"}:
-            kind = "trip"
-        else:
-            continue
-        files.append(
-            {
-                "kind": kind,
-                "name": path.name,
-                "path": str(path),
-                "mtime": path.stat().st_mtime,
-                "sort_key": (9999, int(path.stat().st_mtime)),
-                "generated": True,
-                "deletable": bool(username),
-            }
-        )
+    seen = set()
+    for expected_kind, directory in report_storage_dirs(base):
+        for path in directory.iterdir():
+            if not path.is_file() or path.name.startswith(".") or path in seen:
+                continue
+            seen.add(path)
+            lower = path.suffix.lower()
+            if "工作周报" in path.name and lower in {".xlsx", ".xls"}:
+                kind = "weekly"
+            elif "出差报告" in path.name and lower in {".docx", ".md"}:
+                kind = "trip"
+            else:
+                continue
+            if expected_kind and expected_kind != kind:
+                continue
+            files.append(
+                {
+                    "kind": kind,
+                    "name": path.name,
+                    "path": str(path),
+                    "mtime": path.stat().st_mtime,
+                    "sort_key": (9999, int(path.stat().st_mtime)),
+                    "generated": True,
+                    "deletable": bool(username),
+                }
+            )
     return files
 
 

@@ -371,7 +371,21 @@ def build_message(payload, username=None):
 
 def attachment_path_by_name(file_name, username=None):
     safe_name = Path(file_name or "").name
-    bases = (user_report_dir(username), user_generated_dir(username)) if username else (REPORT_DIR, GENERATED_DIR)
+    kind = report_kind_from_name(safe_name) if "report_kind_from_name" in globals() else "other"
+    if username:
+        bases = (
+            user_generated_kind_dir(username, kind),
+            user_report_kind_dir(username, kind),
+            user_generated_dir(username),
+            user_report_dir(username),
+        )
+    else:
+        bases = (
+            GENERATED_DIR / safe_report_kind(kind),
+            REPORT_DIR / safe_report_kind(kind),
+            GENERATED_DIR,
+            REPORT_DIR,
+        )
     for base in bases:
         path = base / safe_name
         if path.exists() and path.is_file():
@@ -381,7 +395,10 @@ def attachment_path_by_name(file_name, username=None):
 
 def history_path_by_name(file_name, username=None):
     safe_name = Path(file_name or "").name
-    path = (user_report_dir(username) if username else REPORT_DIR) / safe_name
-    if path.exists() and path.is_file():
-        return path
+    kind = report_kind_from_name(safe_name) if "report_kind_from_name" in globals() else "other"
+    bases = (user_report_kind_dir(username, kind), user_report_dir(username)) if username else (REPORT_DIR / safe_report_kind(kind), REPORT_DIR)
+    for base in bases:
+        path = base / safe_name
+        if path.exists() and path.is_file():
+            return path
     return None

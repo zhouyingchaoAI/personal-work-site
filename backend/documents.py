@@ -26,33 +26,37 @@ def safe_uploaded_name(name, kind):
 
 
 def unique_report_path(name, username=None):
-    base = user_report_dir(username) if username else REPORT_DIR
+    kind = report_kind_from_name(name)
+    base = user_report_kind_dir(username, kind) if username else REPORT_DIR / safe_report_kind(kind)
     base.mkdir(parents=True, exist_ok=True)
-    path = base / name
-    if not path.exists():
-        return path
-    stem = path.stem
-    suffix = path.suffix
-    for idx in range(1, 1000):
-        candidate = base / f"{stem}-上传{idx}{suffix}"
-        if not candidate.exists():
-            return candidate
-    raise ValueError("同名文件过多，请修改文件名后再上传")
+    return base / name
 
 
-def generated_report_path(name, username=None):
-    base = user_report_dir(username) if username else REPORT_DIR
+def generated_report_path(name, username=None, kind=None):
+    report_kind = kind or report_kind_from_name(name)
+    base = user_generated_kind_dir(username, report_kind) if username else GENERATED_DIR / safe_report_kind(report_kind)
     base.mkdir(parents=True, exist_ok=True)
-    path = base / name
-    if not path.exists():
-        return path
-    stem = path.stem
-    suffix = path.suffix
-    for idx in range(1, 1000):
-        candidate = base / f"{stem}-生成{idx}{suffix}"
-        if not candidate.exists():
-            return candidate
-    raise ValueError("同名生成文件过多，请调整日期或文件名后再生成")
+    return base / name
+
+
+def report_kind_from_name(name):
+    name = Path(name or "").name
+    suffix = Path(name).suffix.lower()
+    if "工作周报" in name and suffix in {".xlsx", ".xls"}:
+        return "weekly"
+    if "出差报告" in name and suffix in {".docx", ".md"}:
+        return "trip"
+    return "other"
+
+
+def normalize_report_period_name(period):
+    text = str(period or "").strip()
+
+    def repl(match):
+        return f"{int(match.group(1))}.{int(match.group(2))}.{int(match.group(3))}"
+
+    text = re.sub(r"(20[0-9]{2})[.\-/年]0?([0-9]{1,2})[.\-/月]0?([0-9]{1,2})(?:日)?", repl, text)
+    return re.sub(r"[^0-9A-Za-z.\-\u4e00-\u9fff]+", "", text)
 
 
 def upload_history_reports(payload, username=None):
@@ -91,6 +95,26 @@ def delete_report_file(payload, username=None):
     name = path.name
     path.unlink()
     return {"ok": True, "deleted": name}
+
+
+def promote_sent_report(file_name, username=None):
+    safe_name = Path(file_name or "").name
+    if not safe_name:
+        return None
+    kind = report_kind_from_name(safe_name)
+    source = user_generated_kind_dir(username, kind) / safe_name if username else GENERATED_DIR / safe_report_kind(kind) / safe_name
+    if not source.exists() or not source.is_file():
+        legacy_source = user_generated_dir(username) / safe_name if username else GENERATED_DIR / safe_name
+        if legacy_source.exists() and legacy_source.is_file():
+            source = legacy_source
+        else:
+            return None
+    target = user_report_kind_dir(username, kind) / safe_name if username else REPORT_DIR / safe_report_kind(kind) / safe_name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        target.unlink()
+    shutil.move(str(source), str(target))
+    return {"kind": kind, "name": target.name, "path": str(target)}
 
 
 def estimated_text_lines(text, width_chars):
@@ -374,8 +398,8 @@ def generate_weekly(payload, username=None):
         raise ValueError("没有找到周报模板")
 
     period = (payload.get("period") or datetime.now().strftime("%Y.%m.%d-%Y.%m.%d")).strip()
-    safe_period = re.sub(r"[^0-9A-Za-z.\-\u4e00-\u9fff]+", "", period)
-    output = generated_report_path(f"{safe_display_name(username)}工作周报{safe_period}.xlsx", username)
+    safe_period = normalize_report_period_name(period)
+    output = generated_report_path(f"{safe_display_name(username)}工作周报{safe_period}.xlsx", username, "weekly")
     if template.resolve() == output.resolve():
         fallback = newest("weekly", username, fallback_shared=True)
         if fallback and Path(fallback.get("path", "")).resolve() != output.resolve():
@@ -622,7 +646,7 @@ def generate_trip(payload, username=None):
     start = (payload.get("trip_start") or datetime.now().strftime("%Y%m%d")).replace("-", "")
     end = (payload.get("trip_end") or start).replace("-", "")[-4:]
     reporter = display_name_for_user(username)
-    output = generated_report_path(f"出差报告-{start}-{end}-{safe_display_name(username)}.docx", username)
+    output = generated_report_path(f"出差报告-{start}-{end}-{safe_display_name(username)}.docx", username, "trip")
     date_text = payload.get("trip_date_text") or format_trip_date_text(payload.get("trip_start", ""), payload.get("trip_end", ""))
     values = {
         "reporter": reporter,
@@ -691,4 +715,8 @@ def send_mail(payload, username=None):
             if settings["user"]:
                 smtp.login(settings["user"], settings["password"])
             smtp.send_message(msg, to_addrs=recipients)
-    return {"ok": True, "mode": "sent", "message": "邮件已发送"}
+    promoted = promote_sent_report(payload.get("attachment", ""), username)
+    result = {"ok": True, "mode": "sent", "message": "邮件已发送"}
+    if promoted:
+        result["promoted"] = promoted
+    return result

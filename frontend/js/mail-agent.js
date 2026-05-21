@@ -364,6 +364,7 @@
         });
         el('status').textContent = result.message;
         el('status').className = 'status ok';
+        if (result.promoted) await loadReports({ preserveSelection: true });
         clearSendReview();
       } catch (err) {
         el('status').textContent = explainSendError(err.message);

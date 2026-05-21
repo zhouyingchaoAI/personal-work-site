@@ -73,6 +73,13 @@ def safe_username(username):
     return re.sub(r"[^A-Za-z0-9_@.-]+", "_", str(username or "default")).strip("._") or "default"
 
 
+def safe_report_kind(kind):
+    kind = str(kind or "").strip().lower()
+    if kind in {"weekly", "trip"}:
+        return kind
+    return "other"
+
+
 def user_root(username):
     return USER_DATA_DIR / safe_username(username)
 
@@ -81,8 +88,16 @@ def user_report_dir(username):
     return user_root(username) / "reports"
 
 
+def user_report_kind_dir(username, kind):
+    return user_report_dir(username) / safe_report_kind(kind)
+
+
 def user_generated_dir(username):
     return user_root(username) / "generated"
+
+
+def user_generated_kind_dir(username, kind):
+    return user_generated_dir(username) / safe_report_kind(kind)
 
 
 def user_draft_dir(username):
@@ -180,7 +195,14 @@ def safe_display_name(username):
 
 
 def ensure_user_space(username):
-    for path in (user_report_dir(username), user_generated_dir(username), user_draft_dir(username), user_profile_dir(username)):
+    for path in (
+        user_report_kind_dir(username, "weekly"),
+        user_report_kind_dir(username, "trip"),
+        user_generated_kind_dir(username, "weekly"),
+        user_generated_kind_dir(username, "trip"),
+        user_draft_dir(username),
+        user_profile_dir(username),
+    ):
         path.mkdir(parents=True, exist_ok=True)
 
 
