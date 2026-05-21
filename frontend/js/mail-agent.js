@@ -1103,7 +1103,7 @@
         if (hasRowContent(data.weekly_follow)) renderWorkRows('follow', data.weekly_follow);
         if (hasRowContent(data.weekly_next)) renderWorkRows('next', data.weekly_next);
       } else if (agentKind === 'trip') {
-        if (data.reporter !== undefined) el('tripReporter').value = data.reporter;
+        if (data.reporter !== undefined) el('tripReporter').value = state.user?.name || state.user?.username || data.reporter;
         if (data.department !== undefined) el('tripDepartment').value = data.department;
         if (data.location !== undefined) el('tripLocation').value = data.location;
         if (data.trip_start !== undefined) el('tripStart').value = data.trip_start;

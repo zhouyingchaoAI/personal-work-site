@@ -69,6 +69,23 @@ def _json_loads(value: str | None, fallback: Any = None) -> Any:
         return {} if fallback is None else fallback
 
 
+def _display_name_for_user(user_id: str) -> str:
+    helper = globals().get("display_name_for_user")
+    if callable(helper):
+        return helper(user_id)
+    config_reader = globals().get("read_config")
+    if callable(config_reader):
+        try:
+            config = config_reader()
+            for user in config.get("users", []):
+                if user.get("username") == user_id:
+                    return user.get("name") or user_id or config.get("sender_name", "")
+            return user_id or config.get("sender_name", "")
+        except Exception:
+            pass
+    return user_id or ""
+
+
 # ---------------------------------------------------------------------------
 # Session management
 # ---------------------------------------------------------------------------
@@ -821,6 +838,7 @@ def _direct_trip_response(latest_user_content: str, kind: str, username: str, se
         return _agent_error(session_id, username, "内部错误：缺少 execute_skill", kind=kind)
 
     payload = _trip_context_payload(context)
+    payload["reporter"] = _display_name_for_user(username)
     raw_material = _trip_material_from_user_text(user_text)
     if not _trip_payload_has_content(payload) and len(raw_material) >= 12:
         payload["details"] = raw_material
@@ -846,6 +864,7 @@ def _direct_trip_response(latest_user_content: str, kind: str, username: str, se
         payload["trip_start"] = str(date_result.get("today") or "").replace(".", "-")
     if not payload.get("trip_end"):
         payload["trip_end"] = payload.get("trip_start", "")
+    payload["reporter"] = _display_name_for_user(username)
     args = {"kind": "trip", **payload}
     result = exec_fn("document.generate", args, username)
     executed_calls = [

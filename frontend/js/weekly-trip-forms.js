@@ -244,7 +244,7 @@
         }
         if (kind === 'trip' && draft.trip) {
           Object.entries({
-            tripReporter: draft.trip.reporter,
+            tripReporter: state.user?.name || state.user?.username || draft.trip.reporter,
             tripDepartment: draft.trip.department,
             tripLocation: draft.trip.location,
             tripStart: draft.trip.trip_start,
@@ -403,4 +403,3 @@
         saveFormDraft();
       });
     }
-

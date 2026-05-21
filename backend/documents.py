@@ -621,7 +621,7 @@ def generate_trip(payload, username=None):
 
     start = (payload.get("trip_start") or datetime.now().strftime("%Y%m%d")).replace("-", "")
     end = (payload.get("trip_end") or start).replace("-", "")[-4:]
-    reporter = str(payload.get("reporter") or display_name_for_user(username)).strip()
+    reporter = display_name_for_user(username)
     output = generated_report_path(f"出差报告-{start}-{end}-{safe_display_name(username)}.docx", username)
     date_text = payload.get("trip_date_text") or format_trip_date_text(payload.get("trip_start", ""), payload.get("trip_end", ""))
     values = {

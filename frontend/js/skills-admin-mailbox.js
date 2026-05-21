@@ -718,7 +718,7 @@
           el('status').className = 'status err';
           return;
         }
-        el('tripReporter').value = prefill.reporter || state.user?.name || state.user?.username || '';
+        el('tripReporter').value = state.user?.name || state.user?.username || prefill.reporter || '';
         el('tripDepartment').value = prefill.department || '场景研究院';
         el('tripLocation').value = prefill.location || '';
         el('tripStart').value = prefill.trip_start || defaultStart;

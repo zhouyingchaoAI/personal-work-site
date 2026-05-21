@@ -106,6 +106,13 @@ def newest(kind, username=None, fallback_shared=False):
     items = [item for item in report_files(username) if item["kind"] == kind]
     if not items and fallback_shared and username:
         items = [item for item in report_files(None) if item["kind"] == kind]
+    if not items and fallback_shared and username:
+        for fallback_user in ("zhouyingchao", "admin"):
+            if fallback_user == username:
+                continue
+            items = [item for item in report_files(fallback_user) if item["kind"] == kind]
+            if items:
+                break
     if not items:
         return None
     return sorted(items, key=lambda item: (item["sort_key"], item["mtime"]), reverse=True)[0]

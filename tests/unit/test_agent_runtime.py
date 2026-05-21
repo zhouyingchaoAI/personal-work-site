@@ -444,6 +444,73 @@ class AgentRuntimeTests(unittest.TestCase):
             else:
                 art.execute_skill = old_execute
 
+    def test_agent_chat_trip_overrides_reporter_with_account_name(self):
+        old_request = getattr(art, "request_json", None)
+        old_execute = getattr(art, "execute_skill", None)
+        old_read_config = getattr(art, "read_config", None)
+        context = {
+            "reporter": "周颖超",
+            "department": "场景研究院",
+            "location": "长沙",
+            "trip_start": "2026-05-18",
+            "trip_end": "2026-05-20",
+            "purpose": "项目现场调研",
+            "itinerary": "现场沟通需求",
+            "details": "完成系统部署问题排查",
+        }
+        try:
+            art.request_json = lambda *a, **k: self.fail("direct trip generation should not call LLM")
+            art.read_config = lambda: {
+                "users": [{"username": "yilujian", "password": "x", "role": "member", "name": "易鲁剑"}],
+                "sender_name": "周颖超",
+            }
+
+            def fake_execute(name, args, username):
+                if name == "utils.get_date":
+                    return {"ok": True, "today": "2026.05.21"}
+                if name == "document.generate":
+                    self.assertEqual(username, "yilujian")
+                    self.assertEqual(args.get("reporter"), "易鲁剑")
+                    return {"ok": True, "file": "出差报告-20260518-0520-易鲁剑.docx", "draft": {}}
+                raise AssertionError(name)
+
+            art.execute_skill = fake_execute
+            result = art.agent_chat(
+                {
+                    "kind": "trip",
+                    "messages": [{
+                        "role": "user",
+                        "content": "生成出差报告给我看看\n\n[系统提示：当前页面上下文]\n" + json.dumps(context, ensure_ascii=False),
+                    }],
+                },
+                username="yilujian",
+            )
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["skill_calls"][1]["arguments"]["reporter"], "易鲁剑")
+        finally:
+            if old_request is None:
+                try:
+                    delattr(art, "request_json")
+                except AttributeError:
+                    pass
+            else:
+                art.request_json = old_request
+            if old_execute is None:
+                try:
+                    delattr(art, "execute_skill")
+                except AttributeError:
+                    pass
+            else:
+                art.execute_skill = old_execute
+            if old_read_config is None:
+                try:
+                    delattr(art, "read_config")
+                except AttributeError:
+                    pass
+            else:
+                art.read_config = old_read_config
+
     def test_agent_chat_direct_diary_list_includes_dates_and_previews(self):
         old_request = getattr(art, "request_json", None)
         old_execute = getattr(art, "execute_skill", None)
