@@ -627,7 +627,7 @@ def compose_draft(kind, file_name=None, username=None):
     path = Path(report["path"])
     preview = preview_file(path)
     preview_html = preview_file_html(path)
-    sender = config.get("sender_name", "周颖超")
+    sender = display_name_for_user(username)
     if kind == "weekly":
         subject = f"【周报】{path.stem}"
         summary_text, summary_html = format_weekly_body(path)

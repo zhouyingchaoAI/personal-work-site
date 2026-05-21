@@ -709,7 +709,7 @@
         const prefill = await api('/api/trip-prefill');
         if (prefill.error) {
           state.tripPrefilled = true;
-          el('tripReporter').value = '周颖超';
+          el('tripReporter').value = state.user?.name || state.user?.username || '';
           el('tripDepartment').value = '场景研究院';
           el('tripStart').value = defaultStart;
           el('tripEnd').value = defaultEnd;
@@ -718,7 +718,7 @@
           el('status').className = 'status err';
           return;
         }
-        el('tripReporter').value = prefill.reporter || '周颖超';
+        el('tripReporter').value = prefill.reporter || state.user?.name || state.user?.username || '';
         el('tripDepartment').value = prefill.department || '场景研究院';
         el('tripLocation').value = prefill.location || '';
         el('tripStart').value = prefill.trip_start || defaultStart;
@@ -741,7 +741,7 @@
         saveFormDraft();
       } catch (err) {
         state.tripPrefilled = true;
-        el('tripReporter').value = '周颖超';
+        el('tripReporter').value = state.user?.name || state.user?.username || '';
         el('tripDepartment').value = '场景研究院';
         el('tripStart').value = defaultStart;
         el('tripEnd').value = defaultEnd;

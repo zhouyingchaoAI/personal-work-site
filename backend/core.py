@@ -170,6 +170,15 @@ def public_user(user):
     }
 
 
+def display_name_for_user(username):
+    user = find_user(username)
+    return (user or {}).get("name") or username or read_config().get("sender_name", "周颖超")
+
+
+def safe_display_name(username):
+    return re.sub(r"[^0-9A-Za-z\u4e00-\u9fff@._-]+", "", display_name_for_user(username)) or safe_username(username)
+
+
 def ensure_user_space(username):
     for path in (user_report_dir(username), user_generated_dir(username), user_draft_dir(username), user_profile_dir(username)):
         path.mkdir(parents=True, exist_ok=True)
@@ -527,4 +536,3 @@ def test_admin_model(payload):
     )
     content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
     return {"ok": True, "model": settings["model"], "message": content or "测试请求已成功返回"}
-

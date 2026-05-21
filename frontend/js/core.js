@@ -123,6 +123,9 @@
         const roleText = user.role === 'superadmin' ? '超级管理员' : user.role === 'admin' ? '管理员' : '成员';
         el('userInfo').textContent = `${user.name || user.username} · ${roleText}`;
         el('userAvatar').src = resourceUrl(user.avatar_url || '/assets/ai-assistant-avatar.png');
+        if (el('tripReporter') && !el('tripReporter').value.trim()) {
+          el('tripReporter').value = user.name || user.username || '';
+        }
       }
       document.querySelectorAll('.admin-only').forEach(node => {
         node.classList.toggle('hidden', !user?.is_admin);

@@ -375,7 +375,7 @@ def generate_weekly(payload, username=None):
 
     period = (payload.get("period") or datetime.now().strftime("%Y.%m.%d-%Y.%m.%d")).strip()
     safe_period = re.sub(r"[^0-9A-Za-z.\-\u4e00-\u9fff]+", "", period)
-    output = generated_report_path(f"周颖超工作周报{safe_period}.xlsx", username)
+    output = generated_report_path(f"{safe_display_name(username)}工作周报{safe_period}.xlsx", username)
     if template.resolve() == output.resolve():
         fallback = newest("weekly", username, fallback_shared=True)
         if fallback and Path(fallback.get("path", "")).resolve() != output.resolve():
@@ -592,7 +592,7 @@ def generate_trip_from_docx_template(template, output, values):
             return rows[row_idx].findall(w_tag("tc"))[actual_col_idx]
 
         cell_map = {
-            (0, 1): values.get("reporter", "周颖超"),
+            (0, 1): values.get("reporter", ""),
             (0, 3): values.get("department", "场景研究院"),
             (0, 5): values.get("location", ""),
             (1, 1): values.get("date_text", ""),
@@ -621,10 +621,11 @@ def generate_trip(payload, username=None):
 
     start = (payload.get("trip_start") or datetime.now().strftime("%Y%m%d")).replace("-", "")
     end = (payload.get("trip_end") or start).replace("-", "")[-4:]
-    output = generated_report_path(f"出差报告-{start}-{end}-周颖超.docx", username)
+    reporter = str(payload.get("reporter") or display_name_for_user(username)).strip()
+    output = generated_report_path(f"出差报告-{start}-{end}-{safe_display_name(username)}.docx", username)
     date_text = payload.get("trip_date_text") or format_trip_date_text(payload.get("trip_start", ""), payload.get("trip_end", ""))
     values = {
-        "reporter": payload.get("reporter", "周颖超"),
+        "reporter": reporter,
         "department": payload.get("department", "场景研究院"),
         "location": payload.get("location", ""),
         "date_text": date_text,

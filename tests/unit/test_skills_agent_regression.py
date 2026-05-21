@@ -43,6 +43,20 @@ class SkillDefinitionRegressionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "未知 Skill"):
             rt.execute_skill("missing.skill", {}, "tester")
 
+    def test_report_names_use_current_user_display_name(self):
+        old_read_config = rt.read_config
+        try:
+            rt.read_config = lambda: {
+                "sender_name": "默认发件人",
+                "users": [
+                    {"username": "alice", "password": "x", "role": "member", "name": "李雷"},
+                ],
+            }
+            self.assertEqual(rt.display_name_for_user("alice"), "李雷")
+            self.assertEqual(rt.safe_display_name("alice"), "李雷")
+        finally:
+            rt.read_config = old_read_config
+
 
 if __name__ == "__main__":
     unittest.main()
