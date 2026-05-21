@@ -1,0 +1,29 @@
+{
+  "project": "personal-work-site",
+  "goal": "AI 原生办公平台改造：Skill Runtime + Agent Runtime + Memory Layer + Workflow Engine + Long-term History",
+  "status": "active",
+  "current_phase": "Phase 2：Workflow Engine",
+  "current_task": "Workflow Engine 核心模块已完成，全部 36 项测试通过",
+  "completed": [
+    "Phase 0：工程化与测试底座（8/8 测试通过）",
+    "Phase 1 p1-1：新建 backend/agent_runtime.py — Agent 会话管理、消息历史、上下文组装、统一响应协议",
+    "Phase 1 p1-2：新建 backend/memory.py — Memory Skill + FTS5 检索、记忆注入上下文",
+    "Phase 1 p1-3：修改 backend/skills_agent.py — agent_chat 接入新 Agent Runtime（兼容回退）",
+    "Phase 1 p1-4：新增 API 端点 /api/agent/chat, /api/agent/sessions",
+    "Phase 1 p1-5：测试 Agent 会话 CRUD、Memory 检索、Skill 调用带记忆（12 项新测试 + 8 项回归 = 20/20 通过）",
+    "Phase 2 p2-1：新建 backend/workflows.py — Workflow Engine 核心（定义、执行、变量传递、状态机）",
+    "Phase 2 p2-2：内置工作流 weekly.from_diary、mail.summarize_and_reply",
+    "Phase 2 p2-3：新增 API 端点 /api/workflows、Workflow Skills 注册",
+    "Phase 2 p2-4：测试工作流解析、执行、变量传递、确认门、错误恢复（16 项新测试 + 20 项回归 = 36/36 通过）"
+  ],
+  "in_progress": [
+    "Phase 2 p2-5：更新 .ai-native-dev-state.json 标记 Phase 2 完成"
+  ],
+  "next_tasks": [
+    "Phase 3：前端 AI 原生体验 — ui_patches 驱动渲染、会话恢复、AI 浮窗升级、任务时间线"
+  ],
+  "test_command": "python -m unittest discover -s tests -p 'test_*.py' -v",
+  "last_test_result": "36/36 passed (2026-05-19)",
+  "resume_instructions": "读取 docs/ARCHITECTURE.md 和本状态文件，选择 next_tasks 中第一个未完成任务继续。每轮先写/运行测试，再实现，最后更新本文件。若 token 或时间不足，先保存当前 git diff 摘要、失败测试、下一步命令。",
+  "updated_at": "2026-05-19"
+}

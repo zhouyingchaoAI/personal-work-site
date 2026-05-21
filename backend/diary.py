@@ -48,16 +48,31 @@ def get_diary(date_str, username):
 
 
 def list_diaries(payload, username):
+    payload = payload or {}
     diary_dir = user_diary_dir(username)
     if not diary_dir.exists():
         return {"ok": True, "diaries": []}
+    start = str(payload.get("start", "") or payload.get("start_date", "") or "").strip()
+    end = str(payload.get("end", "") or payload.get("end_date", "") or "").strip()
+    keyword = str(payload.get("keyword", "") or payload.get("q", "") or "").strip().lower()
     items = []
     for p in sorted(diary_dir.glob("*.json"), reverse=True):
         try:
             d = read_json_lenient(p)
+            date = str(d.get("date", p.stem) or p.stem)
+            if start and date < start:
+                continue
+            if end and date > end:
+                continue
+            full_text = "\n".join(str(d.get(k, "") or "") for k in ("today_work", "tomorrow_plan", "thoughts"))
+            if keyword and keyword not in full_text.lower() and keyword not in date.lower():
+                continue
             items.append({
-                "date": d.get("date", p.stem),
-                "today_work_preview": d.get("today_work", "")[:80],
+                "date": date,
+                "today_work": d.get("today_work", ""),
+                "tomorrow_plan": d.get("tomorrow_plan", ""),
+                "thoughts": d.get("thoughts", ""),
+                "today_work_preview": d.get("today_work", "")[:120],
                 "created_at": d.get("created_at", ""),
                 "updated_at": d.get("updated_at", ""),
             })

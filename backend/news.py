@@ -146,6 +146,51 @@ def latest_news_issue():
         return None
 
 
+def news_issue_by_date(date_text):
+    date_value = str(date_text or "").strip()
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", date_value):
+        raise ValueError("资讯日期格式应为 YYYY-MM-DD")
+    path = news_dir() / f"{date_value}.json"
+    if not path.exists():
+        return None
+    try:
+        return read_json_lenient(path)
+    except Exception:
+        return None
+
+
+def news_history(limit=30, include_config_details=False):
+    try:
+        limit = max(1, min(int(limit or 30), 200))
+    except Exception:
+        limit = 30
+    issues = []
+    for path in sorted(news_dir().glob("*.json"), reverse=True):
+        if path.name == "latest.json":
+            continue
+        try:
+            issue = read_json_lenient(path)
+        except Exception:
+            continue
+        public = public_news_issue(issue, include_config_details)
+        if not public:
+            continue
+        issues.append(
+            {
+                "date": public.get("date") or path.stem,
+                "title": public.get("title") or f"{path.stem} 每日资讯",
+                "summary": public.get("summary", ""),
+                "generated_at": public.get("generated_at", ""),
+                "generated_by": public.get("generated_by", ""),
+                "item_count": len(public.get("items") or []),
+                "keywords": (public.get("keywords") or [])[:8],
+            }
+        )
+        if len(issues) >= limit:
+            break
+    return issues
+
+
 def save_news_issue(issue):
     issue_path = news_dir() / f"{issue['date']}.json"
     latest_path = news_dir() / "latest.json"
@@ -165,10 +210,25 @@ def public_news_issue(issue, include_config_details=False):
 
 
 def news_latest(include_config=False):
-    result = {"ok": True, "issue": public_news_issue(latest_news_issue(), include_config)}
+    result = {
+        "ok": True,
+        "issue": public_news_issue(latest_news_issue(), include_config),
+        "history": news_history(30, include_config),
+    }
     if include_config:
         result["config"] = news_config_payload()
     return result
+
+
+def news_history_api(payload, username="", include_config=False):
+    payload = payload or {}
+    date_value = str(payload.get("date") or "").strip()
+    if date_value:
+        issue = news_issue_by_date(date_value)
+        if not issue:
+            return {"ok": False, "error": "没有找到该日期的每日资讯"}
+        return {"ok": True, "issue": public_news_issue(issue, include_config), "history": news_history(30, include_config)}
+    return {"ok": True, "history": news_history(payload.get("limit", 30), include_config)}
 
 
 def local_news_issue(source_results, errors, search_query, auto_search, username):

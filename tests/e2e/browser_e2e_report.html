@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Browser E2E Test Report</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 2rem; background: #f5f5f5; }
+h1 { color: #333; }
+.summary { background: #fff; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.summary span { display: inline-block; margin-right: 1.5rem; font-size: 1.1rem; }
+.pass { color: #2e7d32; font-weight: bold; }
+.fail { color: #c62828; font-weight: bold; }
+.error { color: #ef6c00; font-weight: bold; }
+.skip { color: #757575; font-weight: bold; }
+table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #e0e0e0; }
+th { background: #fafafa; font-weight: 600; }
+tr:hover { background: #f5f5f5; }
+.status { font-weight: 600; }
+.detail { max-height: 200px; overflow: auto; background: #fafafa; padding: 0.5rem; border-radius: 4px; font-size: 0.85rem; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+<h1>Browser E2E Test Report</h1>
+<div class="summary">
+<span>Total: 39</span>
+<span class="pass">Pass: 8</span>
+<span class="fail">Fail: 31</span>
+<span class="error">Error: 0</span>
+<span class="skip">Skip: 0</span>
+<span>Generated: 2026-05-20 14:28:56</span>
+</div>
+<table>
+<thead>
+<tr><th>Test ID</th><th>Description</th><th>Status</th><th>Time</th><th>Detail</th></tr>
+</thead>
+<tbody>
+<tr class="fail"><td>test_browser_e2e.TestAdminFeatures.test_80_config_page_loads</td><td>[E2E-ADMIN-01] 管理员登录后，系统配置页面加载，显示 API/邮件服务器配置。</td><td class="status">FAIL</td><td>3403.7ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 600, in test_80_config_page_loads
+    self.assertTrue(self._wait_for_text("系统配置", timeout=3))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestAuthAndNavigation.test_01_login_page_loads</td><td>[E2E-AUTH-01] 登录页正常加载，包含用户名/密码输入框和登录按钮。</td><td class="status">FAIL</td><td>0.5ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 273, in test_01_login_page_loads
+    self.assertIn("登录", snapshot)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 1098, in assertIn
+    self.fail(self._formatMessage(msg, standardMsg))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 670, in fail
+    raise self.failureException(msg)
+AssertionError: '登录' not found in ''
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestAuthAndNavigation.test_02_login_success</td><td>[E2E-AUTH-02] 正确凭据登录后进入首页，显示工作台和侧边栏导航。</td><td class="status">FAIL</td><td>3082.7ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 280, in test_02_login_success
+    self.assertTrue(self._wait_for_text("工作台", timeout=3))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestAuthAndNavigation.test_04_logout</td><td>[E2E-AUTH-04] 点击退出后返回登录页，清除会话状态。</td><td class="status">FAIL</td><td>3091.2ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 308, in test_04_logout
+    self.assertTrue(self._wait_for_text("登录", timeout=3))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestDashboardAI.test_90_dashboard_ask</td><td>[E2E-DASHBOARD-01] 在首页输入框输入问题并点击提问，触发 AI 响应。</td><td class="status">FAIL</td><td>1310.2ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 626, in test_90_dashboard_ask
+    self.assertTrue(
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true : Dashboard AI command should trigger response
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestDiary.test_30_diary_page_loads</td><td>[E2E-DIARY-01] 日记页面加载，显示日期选择、工作内容/计划/想法输入框。</td><td class="status">FAIL</td><td>3386.4ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 392, in test_30_diary_page_loads
+    self.assertTrue(self._wait_for_text("工作日记", timeout=3))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestDiary.test_31_diary_save_and_list</td><td>[E2E-DIARY-02] 填写日记内容保存后，切换到浏览标签显示在列表中。</td><td class="status">FAIL</td><td>1111.7ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 409, in test_31_diary_save_and_list
+    self.assertIn("测试今日工作", str(list_html))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 1098, in assertIn
+    self.fail(self._formatMessage(msg, standardMsg))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 670, in fail
+    raise self.failureException(msg)
+AssertionError: '测试今日工作' not found in ''
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgent.test_70_agent_opens_and_closes</td><td>[E2E-AGENT-01] 点击头像/悬浮按钮打开助手窗口，点击 X 关闭。</td><td class="status">FAIL</td><td>305.8ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 491, in test_70_agent_opens_and_closes
+    self.assertTrue(str(visible).lower() == "true")
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgent.test_71_agent_sends_message</td><td>[E2E-AGENT-02] 在助手输入框输入消息并发送，消息显示在对话列表中。</td><td class="status">FAIL</td><td>1304.4ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 504, in test_71_agent_sends_message
+    self.assertIn("你好", messages)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 1098, in assertIn
+    self.fail(self._formatMessage(msg, standardMsg))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 670, in fail
+    raise self.failureException(msg)
+AssertionError: '你好' not found in ''
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgent.test_72_agent_direct_skill_date</td><td>[E2E-AGENT-03] 发送"今天几号"，助手通过 utils.get_date Skill 快速返回日期信息。</td><td class="status">FAIL</td><td>1307.6ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 512, in test_72_agent_direct_skill_date
+    self.assertIn("2026", messages)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 1098, in assertIn
+    self.fail(self._formatMessage(msg, standardMsg))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 670, in fail
+    raise self.failureException(msg)
+AssertionError: '2026' not found in ''
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgent.test_73_agent_direct_skill_reports_list</td><td>[E2E-AGENT-04] 发送"查询周报历史报告列表"，助手通过 reports.list Skill 返回报告列表。</td><td class="status">FAIL</td><td>1309.7ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 522, in test_73_agent_direct_skill_reports_list
+    self.assertIn("报告记录", messages)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 1098, in assertIn
+    self.fail(self._formatMessage(msg, standardMsg))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 670, in fail
+    raise self.failureException(msg)
+AssertionError: '报告记录' not found in ''
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgent.test_74_agent_direct_skill_diary_list</td><td>[E2E-AGENT-05] 发送"查看日记列表"，助手通过 diary.list Skill 返回日记记录。</td><td class="status">FAIL</td><td>1305.9ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 530, in test_74_agent_direct_skill_diary_list
+    self.assertIn("日记", messages)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 1098, in assertIn
+    self.fail(self._formatMessage(msg, standardMsg))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 670, in fail
+    raise self.failureException(msg)
+AssertionError: '日记' not found in ''
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgent.test_75_agent_task_timeline</td><td>[E2E-AGENT-06] 发送消息后，助手显示进度时间线（接收指令/匹配 Skill/等待结果）。</td><td class="status">FAIL</td><td>1305.1ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 538, in test_75_agent_task_timeline
+    self.assertTrue(
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true : Timeline should show progress steps
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgent.test_76_agent_session_recovery</td><td>[E2E-AGENT-07] 刷新页面后重新打开助手，自动恢复上次会话和消息历史。</td><td class="status">FAIL</td><td>1612.3ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 554, in test_76_agent_session_recovery
+    self.assertIn("记住测试会话", messages)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 1098, in assertIn
+    self.fail(self._formatMessage(msg, standardMsg))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 670, in fail
+    raise self.failureException(msg)
+AssertionError: '记住测试会话' not found in ''
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgent.test_77_agent_kind_switching</td><td>[E2E-AGENT-08] 助手内切换 Kind（周报/出差/日记等），对话上下文和标题随之变化。</td><td class="status">FAIL</td><td>507.0ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 571, in test_77_agent_kind_switching
+    self.assertIn("周报", str(title))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 1098, in assertIn
+    self.fail(self._formatMessage(msg, standardMsg))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 670, in fail
+    raise self.failureException(msg)
+AssertionError: '周报' not found in ''
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgent.test_78_agent_error_handling</td><td>[E2E-AGENT-09] 当 API 未配置时，助手返回友好错误提示，不崩溃。</td><td class="status">FAIL</td><td>1303.8ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 579, in test_78_agent_error_handling
+    self.assertTrue(
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true : Expected response or error message, got: 
+</pre></td></tr>
+<tr class="pass"><td>test_browser_e2e.TestFloatingAgentDeepEvaluation.test_eval_01_cold_start_latency</td><td>[EVAL-01] 冷启动：首次打开助手窗口的耗时 < 500ms。</td><td class="status">PASS</td><td>302.8ms</td><td></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgentDeepEvaluation.test_eval_02_message_send_latency</td><td>[EVAL-02] 消息发送：从点击发送到用户消息出现在对话列表的耗时 < 100ms。</td><td class="status">FAIL</td><td>1308.9ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 654, in test_eval_02_message_send_latency
+    self.assertLess(elapsed, 100, f"Message send took {elapsed:.0f}ms")
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 1217, in assertLess
+    self.fail(self._formatMessage(msg, standardMsg))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 670, in fail
+    raise self.failureException(msg)
+AssertionError: 1002.8371810913086 not less than 100 : Message send took 1003ms
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgentDeepEvaluation.test_eval_03_skill_response_latency</td><td>[EVAL-03] Skill 响应：直通 Skill（如日期查询）从发送到回复显示的耗时 < 500ms。</td><td class="status">FAIL</td><td>1309.3ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 663, in test_eval_03_skill_response_latency
+    self.assertLess(elapsed, 500, f"Skill response took {elapsed:.0f}ms")
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 1217, in assertLess
+    self.fail(self._formatMessage(msg, standardMsg))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 670, in fail
+    raise self.failureException(msg)
+AssertionError: 1005.0806999206543 not less than 500 : Skill response took 1005ms
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgentDeepEvaluation.test_eval_04_progress_visibility</td><td>[EVAL-04] 进度可见性：发送消息后，进度时间线在 100ms 内显示，且状态标记正确。</td><td class="status">FAIL</td><td>407.9ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 684, in test_eval_04_progress_visibility
+    self.assertTrue(
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true : Progress timeline should show within 100ms
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgentDeepEvaluation.test_eval_05_error_recovery</td><td>[EVAL-05] 错误恢复：API 失败或网络异常后，助手仍可继续发送新消息。</td><td class="status">FAIL</td><td>2308.9ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 696, in test_eval_05_error_recovery
+    self.assertIn("第二条消息", messages)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 1098, in assertIn
+    self.fail(self._formatMessage(msg, standardMsg))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 670, in fail
+    raise self.failureException(msg)
+AssertionError: '第二条消息' not found in ''
+</pre></td></tr>
+<tr class="pass"><td>test_browser_e2e.TestFloatingAgentDeepEvaluation.test_eval_06_session_persistence</td><td>[EVAL-06] 会话持久化：关闭浏览器标签后重新打开，会话 ID 保留在 localStorage 中。</td><td class="status">PASS</td><td>1306.8ms</td><td></td></tr>
+<tr class="pass"><td>test_browser_e2e.TestFloatingAgentDeepEvaluation.test_eval_07_visual_regression</td><td>[EVAL-07] 视觉回归：助手窗口在不同页面（周报/日记/论坛）打开时，布局无错位、无重叠。</td><td class="status">PASS</td><td>1824.7ms</td><td></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgentDeepEvaluation.test_eval_08_kind_context_isolation</td><td>[EVAL-08] Kind 隔离：切换 Kind 后，新对话不携带旧 Kind 的上下文。</td><td class="status">FAIL</td><td>1507.8ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 750, in test_eval_08_kind_context_isolation
+    self.assertEqual(str(kind), "diary")
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 831, in assertEqual
+    assertion_func(first, second, msg=msg)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 1211, in assertMultiLineEqual
+    self.fail(self._formatMessage(msg, standardMsg))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 670, in fail
+    raise self.failureException(msg)
+AssertionError: '' != 'diary'
++ diary
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgentDeepEvaluation.test_eval_09_confirmation_flow</td><td>[EVAL-09] 确认流程：触发需要确认的 Skill 时，用户点击取消后，助手状态正确重置。</td><td class="status">FAIL</td><td>302.7ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 757, in test_eval_09_confirmation_flow
+    self.assertTrue(str(has_dismiss).lower() == "true")
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestFloatingAgentDeepEvaluation.test_eval_10_memory_integration</td><td>[EVAL-10] 记忆集成：通过助手保存记忆后，后续对话中能检索到该记忆。</td><td class="status">FAIL</td><td>1306.6ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 765, in test_eval_10_memory_integration
+    self.assertTrue(
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true : Memory save should be acknowledged
+</pre></td></tr>
+<tr class="pass"><td>test_browser_e2e.TestFloatingAgentDeepEvaluation.test_eval_11_workflow_integration</td><td>[EVAL-11] 工作流集成：通过助手启动工作流，能查看状态并确认继续。</td><td class="status">PASS</td><td>304.5ms</td><td></td></tr>
+<tr class="pass"><td>test_browser_e2e.TestFloatingAgentDeepEvaluation.test_eval_12_mobile_responsiveness</td><td>[EVAL-12] 移动端适配：在 375px 宽度视口下，助手窗口不超出屏幕边界。</td><td class="status">PASS</td><td>303.7ms</td><td></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestForum.test_40_forum_page_loads</td><td>[E2E-FORUM-01] 论坛页面加载，显示话题列表和发起话题按钮。</td><td class="status">FAIL</td><td>3395.2ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 423, in test_40_forum_page_loads
+    self.assertTrue(self._wait_for_text("金点子论坛", timeout=3))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestForum.test_41_forum_create_topic</td><td>[E2E-FORUM-02] 填写标题和内容，点击发布话题，新话题出现在列表顶部。</td><td class="status">FAIL</td><td>1010.8ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 437, in test_41_forum_create_topic
+    self.assertIn("测试话题", str(list_html))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 1098, in assertIn
+    self.fail(self._formatMessage(msg, standardMsg))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 670, in fail
+    raise self.failureException(msg)
+AssertionError: '测试话题' not found in ''
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestMailAssistant.test_60_mail_page_loads</td><td>[E2E-MAIL-01] 邮件助手页面加载，显示收件箱列表和邮件详情区域。</td><td class="status">FAIL</td><td>3401.7ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 474, in test_60_mail_page_loads
+    self.assertTrue(self._wait_for_text("邮件助手", timeout=3))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestNews.test_50_news_page_loads</td><td>[E2E-NEWS-01] 资讯页面加载，显示资讯标题、摘要、条目列表。</td><td class="status">FAIL</td><td>3414.0ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 451, in test_50_news_page_loads
+    self.assertTrue(self._wait_for_text("每日资讯", timeout=3))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true
+</pre></td></tr>
+<tr class="pass"><td>test_browser_e2e.TestNews.test_51_news_refresh</td><td>[E2E-NEWS-02] 点击刷新按钮更新资讯内容。</td><td class="status">PASS</td><td>1305.2ms</td><td></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestTripReport.test_20_trip_page_loads</td><td>[E2E-TRIP-01] 出差报告页面加载，显示 reporter/department/location 等字段。</td><td class="status">FAIL</td><td>3406.2ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 369, in test_20_trip_page_loads
+    self.assertTrue(self._wait_for_text("出差报告助手", timeout=3))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true
+</pre></td></tr>
+<tr class="pass"><td>test_browser_e2e.TestTripReport.test_21_trip_prefill</td><td>[E2E-TRIP-02] 点击"获取最新历史报告"自动填充出差报告字段。</td><td class="status">PASS</td><td>1307.8ms</td><td></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestWeeklyReport.test_10_weekly_page_loads</td><td>[E2E-WEEKLY-01] 周报页面加载，显示日期选择、三个工作区、新增按钮。</td><td class="status">FAIL</td><td>3405.0ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 322, in test_10_weekly_page_loads
+    self.assertTrue(self._wait_for_text("周报时段", timeout=3))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true
+</pre></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestWeeklyReport.test_11_weekly_add_summary_item</td><td>[E2E-WEEKLY-02] 点击"新增"按钮添加本周工作总结条目。</td><td class="status">FAIL</td><td>508.3ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 335, in test_11_weekly_add_summary_item
+    self.assertGreater(int(count or 0), 0)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 1229, in assertGreater
+    self.fail(self._formatMessage(msg, standardMsg))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 670, in fail
+    raise self.failureException(msg)
+AssertionError: 0 not greater than 0
+</pre></td></tr>
+<tr class="pass"><td>test_browser_e2e.TestWeeklyReport.test_12_weekly_load_latest_history</td><td>[E2E-WEEKLY-03] 点击"获取最新历史报告"加载历史数据到表单。</td><td class="status">PASS</td><td>1308.1ms</td><td></td></tr>
+<tr class="fail"><td>test_browser_e2e.TestWeeklyReport.test_13_weekly_diary_summarize</td><td>[E2E-WEEKLY-04] 选择日记日期范围，点击"智能总结"填充周报内容。</td><td class="status">FAIL</td><td>2307.9ms</td><td><pre class="detail">Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 59, in testPartExecutor
+    yield
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 593, in run
+    self._callTestMethod(testMethod)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 550, in _callTestMethod
+    method()
+  File "/Users/zhouyingchao/Documents/codex/personal-work-site/tests/e2e/test_browser_e2e.py", line 355, in test_13_weekly_diary_summarize
+    self.assertTrue(len(str(status)) > 0)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/unittest/case.py", line 682, in assertTrue
+    raise self.failureException(msg)
+AssertionError: False is not true
+</pre></td></tr>
+</tbody>
+</table>
+</body>
+</html>

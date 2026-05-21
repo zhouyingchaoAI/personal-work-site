@@ -183,6 +183,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.send_json(public_skill_docs())
             return
+        if parsed.path == "/api/skill-invocations":
+            qs = urllib.parse.parse_qs(parsed.query)
+            limit = qs.get("limit", ["20"])[0]
+            self.send_json(skill_invocation_history({"limit": limit}, self.current_user().get("username", "")))
+            return
         if parsed.path == "/api/agent-orchestration":
             if not self.require_superadmin():
                 return
@@ -192,6 +197,11 @@ class Handler(BaseHTTPRequestHandler):
             if not self.require_superadmin():
                 return
             self.send_json({"ok": True, "config": read_agent_config()})
+            return
+        if parsed.path == "/api/agent/sessions":
+            qs = urllib.parse.parse_qs(parsed.query)
+            payload = {k: v[0] for k, v in qs.items()}
+            self.send_json(agent_sessions_api(payload, self.current_user().get("username", "")))
             return
         if parsed.path == "/api/mail-config":
             username = self.current_user().get("username", "")
@@ -271,6 +281,12 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/news/latest":
             user = self.current_user() or {}
             self.send_json(news_latest(user.get("role") == "superadmin"))
+            return
+        if parsed.path == "/api/news/history":
+            user = self.current_user() or {}
+            qs = urllib.parse.parse_qs(parsed.query)
+            payload = {k: v[0] for k, v in qs.items()}
+            self.send_json(news_history_api(payload, self.current_user().get("username", ""), user.get("role") == "superadmin"))
             return
         if parsed.path == "/api/news/config":
             if not self.require_superadmin():
@@ -357,6 +373,16 @@ class Handler(BaseHTTPRequestHandler):
                 result = optimize_text(payload)
             elif parsed.path == "/api/agent":
                 result = agent_chat(payload, username)
+            elif parsed.path == "/api/agent/chat":
+                result = agent_chat(payload, username)
+            elif parsed.path == "/api/agent/sessions":
+                result = agent_sessions_api(payload, username)
+            elif parsed.path == "/api/workflows":
+                result = workflows_api(payload, username)
+            elif parsed.path == "/api/skills/execute":
+                result = execute_skill_request(payload, username)
+            elif parsed.path == "/api/skill-invocations":
+                result = skill_invocation_history(payload, username)
             elif parsed.path == "/api/skill-test":
                 if not self.require_superadmin():
                     return
@@ -440,6 +466,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    init_db()
     load_agent_config()
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8765"))

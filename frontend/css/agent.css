@@ -135,16 +135,76 @@
       color: #64748b;
       background: #fff;
       font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-height: 28px;
+    }
+    .agent-step-mark {
+      display: inline-grid;
+      place-items: center;
+      min-width: 13px;
+      height: 13px;
+      border-radius: 999px;
+      font-size: 10px;
+      background: #e2e8f0;
+      color: #475569;
     }
     .agent-step.active {
       color: #1d4ed8;
       border-color: #93c5fd;
       background: #eff6ff;
     }
+    .agent-step.active .agent-step-mark {
+      background: #bfdbfe;
+      color: #1d4ed8;
+    }
     .agent-step.done {
       color: #047857;
       border-color: #86efac;
       background: #ecfdf5;
+    }
+    .agent-step.done .agent-step-mark {
+      background: #bbf7d0;
+      color: #047857;
+    }
+    .agent-step.error {
+      color: #b91c1c;
+      border-color: #fecaca;
+      background: #fef2f2;
+    }
+    .agent-step.error .agent-step-mark {
+      background: #fecaca;
+      color: #b91c1c;
+    }
+    .agent-window.agent-busy .agent-input-wrap {
+      opacity: .82;
+    }
+    .agent-window.agent-busy #agentSend {
+      cursor: wait;
+    }
+    .agent-msg-error {
+      border-color: #fecaca !important;
+      background: #fff7f7 !important;
+      color: #7f1d1d !important;
+      display: grid;
+      gap: 6px;
+    }
+    .agent-error-title {
+      font-weight: 850;
+      color: #991b1b;
+    }
+    .agent-error-body {
+      line-height: 1.55;
+    }
+    .agent-error-hint {
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #fee2e2;
+      color: #7f1d1d;
+      font-size: 12px;
+      line-height: 1.45;
     }
     .agent-card {
       display: grid;
@@ -269,6 +329,64 @@
       color: #1d4ed8;
       border-color: #bfdbfe;
     }
+    .agent-action.active {
+      background: #1d4ed8;
+      color: #fff;
+      border-color: #1d4ed8;
+    }
+    .agent-confirm-box {
+      border: 1px solid #bfdbfe;
+      border-radius: 12px;
+      background: #eff6ff;
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      min-width: min(320px, 78vw);
+    }
+    .agent-confirm-title {
+      font-size: 14px;
+      font-weight: 850;
+      color: #1e3a8a;
+    }
+    .agent-confirm-content {
+      color: #475569;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .agent-confirm-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+    .agent-toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      z-index: 5000;
+      animation: agentToastIn .3s ease;
+    }
+    .agent-toast-info {
+      background: #1e293b;
+      color: #fff;
+    }
+    .agent-toast-success {
+      background: #047857;
+      color: #fff;
+    }
+    .agent-toast-error {
+      background: #dc2626;
+      color: #fff;
+    }
+    @keyframes agentToastIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
     .skill-hero,
     .skill-protocol {
       background: #fff;
@@ -381,4 +499,64 @@
       grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
       gap: 14px;
       align-items: start;
+    }
+
+    /* Floating assistant refinements: keep markdown/card content readable in the
+       existing floating interaction, without introducing a sidebar. */
+    .agent-window {
+      width: min(460px, calc(100vw - 36px));
+      max-height: min(680px, calc(100vh - 120px));
+      min-height: 440px;
+      overflow: hidden;
+    }
+    .agent-body { min-height: 0; }
+    .agent-messages {
+      background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+      min-height: 0;
+    }
+    .agent-msg {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .agent-msg.user {
+      white-space: pre-wrap;
+    }
+    .agent-msg.assistant {
+      max-width: min(92%, 390px);
+      line-height: 1.65;
+    }
+    .agent-msg.assistant p:first-child,
+    .agent-msg.assistant ul:first-child,
+    .agent-msg.assistant ol:first-child { margin-top: 0 !important; }
+    .agent-msg.assistant p:last-child,
+    .agent-msg.assistant ul:last-child,
+    .agent-msg.assistant ol:last-child { margin-bottom: 0 !important; }
+    .agent-card,
+    .agent-intro,
+    .agent-confirm-box {
+      min-width: 0;
+      width: 100%;
+    }
+    .agent-actions {
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .agent-action {
+      flex: 1 1 78px;
+      white-space: nowrap;
+    }
+    .agent-input-wrap {
+      background: #fff;
+    }
+    .agent-input-wrap textarea {
+      resize: none;
+    }
+    .agent-float.agent-open .agent-toggle {
+      transform: scale(.76);
+      opacity: .42;
+      filter: saturate(.9);
+    }
+    .agent-float.agent-open .agent-toggle:hover {
+      opacity: .72;
+      transform: scale(.8);
     }

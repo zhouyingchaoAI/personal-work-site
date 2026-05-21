@@ -5,6 +5,19 @@ Keep feature code here grouped by responsibility; cross-feature functions remain
 through the runtime during this incremental modularization.
 """
 
+# Import memory skills so they are available in the shared namespace
+# (backend.runtime loads memory.py before skills_agent.py)
+try:
+    from backend.memory import (
+        memory_remember_skill,
+        memory_search_skill,
+        memory_forget_skill,
+        memory_summarize_skill,
+    )
+except Exception:
+    # Fallback: will be available via globals after runtime exec
+    pass
+
 def load_agent_config():
     """启动时加载 agent_config.json 并覆盖默认提示词和工作流。"""
     global WEEKLY_AGENT_SYSTEM, TRIP_AGENT_SYSTEM, DIARY_AGENT_SYSTEM
@@ -145,7 +158,7 @@ def weekly_send_skill_detail():
 
 
 def skill_defs():
-    return [
+    base = [
         {
             "name": "reports.list",
             "module": "报告",
@@ -313,6 +326,87 @@ def skill_defs():
             "safe": True,
         },
         {
+            "name": "memory.remember",
+            "module": "记忆",
+            "title": "保存记忆",
+            "description": "保存用户偏好、事件、事实等记忆条目，供后续 Agent 调用时检索。",
+            "parameters": {
+                "content": "记忆内容，必填",
+                "type": "记忆类型：preference/event/fact/note/context，默认 note",
+                "metadata": "额外元数据对象，可选",
+                "source": "来源，可选",
+                "confidence": "置信度 0-1，默认 1.0"
+            },
+            "safe": False,
+        },
+        {
+            "name": "memory.search",
+            "module": "记忆",
+            "title": "搜索记忆",
+            "description": "通过关键词全文搜索用户的记忆条目。",
+            "parameters": {
+                "query": "搜索关键词，可选",
+                "type": "按类型过滤，可选",
+                "limit": "返回数量，默认 10"
+            },
+            "safe": True,
+        },
+        {
+            "name": "memory.forget",
+            "module": "记忆",
+            "title": "删除记忆",
+            "description": "删除指定 ID 的记忆条目。",
+            "parameters": {"id": "记忆 ID"},
+            "safe": False,
+        },
+        {
+            "name": "memory.summarize",
+            "module": "记忆",
+            "title": "总结记忆",
+            "description": "总结用户近期的记忆条目。",
+            "parameters": {"type": "按类型过滤，可选", "days": "最近多少天，默认 30"},
+            "safe": True,
+        },
+        {
+            "name": "workflow.list",
+            "module": "工作流",
+            "title": "列出工作流",
+            "description": "列出所有可用的工作流定义。",
+            "parameters": {},
+            "safe": True,
+        },
+        {
+            "name": "workflow.run",
+            "module": "工作流",
+            "title": "运行工作流",
+            "description": "启动一个工作流实例，按步骤执行 Skill 调用。",
+            "parameters": {
+                "workflow_id": "工作流 ID",
+                "inputs": "初始输入变量对象，可选"
+            },
+            "safe": False,
+        },
+        {
+            "name": "workflow.status",
+            "module": "工作流",
+            "title": "查看工作流状态",
+            "description": "获取工作流实例的当前状态和步骤结果。",
+            "parameters": {"instance_id": "工作流实例 ID"},
+            "safe": True,
+        },
+        {
+            "name": "workflow.confirm",
+            "module": "工作流",
+            "title": "确认并继续工作流",
+            "description": "对暂停中的工作流步骤进行确认，然后继续执行。",
+            "parameters": {
+                "instance_id": "工作流实例 ID",
+                "confirmed": "是否确认，默认 true",
+                "override_arguments": "参数覆盖对象，可选"
+            },
+            "safe": False,
+        },
+        {
             "name": "utils.get_date",
             "module": "通用",
             "title": "获取日期信息",
@@ -321,6 +415,7 @@ def skill_defs():
             "safe": True,
         },
     ]
+    return base
 
 
 def skill_doc_markdown():
@@ -666,11 +761,11 @@ def get_date_skill(args):
     weekday_names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
     weekday = weekday_names[today.weekday()]
 
-    # 本周起止（周一到周日）
+    # 工作周起止（周一到周五），与周报页面默认时段保持一致。
     monday = today - timedelta(days=today.weekday())
-    sunday = monday + timedelta(days=6)
+    friday = monday + timedelta(days=4)
     week_start = monday.strftime(date_fmt)
-    week_end = sunday.strftime(date_fmt)
+    week_end = friday.strftime(date_fmt)
 
     # 本月起止
     month_start = today.replace(day=1)
@@ -753,6 +848,22 @@ def execute_skill(name, arguments, username):
         return forum_add_comment(args, username)
     if name == "news.latest":
         return news_latest(False)
+    if name == "memory.remember":
+        return globals().get("memory_remember_skill", lambda a, u: {"ok": False, "error": "memory 模块未加载"})(args, username)
+    if name == "memory.search":
+        return globals().get("memory_search_skill", lambda a, u: {"ok": False, "error": "memory 模块未加载"})(args, username)
+    if name == "memory.forget":
+        return globals().get("memory_forget_skill", lambda a, u: {"ok": False, "error": "memory 模块未加载"})(args, username)
+    if name == "memory.summarize":
+        return globals().get("memory_summarize_skill", lambda a, u: {"ok": False, "error": "memory 模块未加载"})(args, username)
+    if name == "workflow.list":
+        return globals().get("workflow_list_skill", lambda a, u: {"ok": False, "error": "workflow 模块未加载"})(args, username)
+    if name == "workflow.run":
+        return globals().get("workflow_run_skill", lambda a, u: {"ok": False, "error": "workflow 模块未加载"})(args, username)
+    if name == "workflow.status":
+        return globals().get("workflow_status_skill", lambda a, u: {"ok": False, "error": "workflow 模块未加载"})(args, username)
+    if name == "workflow.confirm":
+        return globals().get("workflow_confirm_skill", lambda a, u: {"ok": False, "error": "workflow 模块未加载"})(args, username)
     raise ValueError("未知 Skill：" + str(name))
 
 
@@ -921,6 +1032,70 @@ def _clean_agent_reply(text):
 
 
 def agent_chat(payload, username=""):
+    """Delegate to the new AI-native Agent Runtime if available.
+
+    Falls back to legacy inline implementation if agent_runtime module
+    is not loaded (e.g. during partial imports in tests).
+    """
+    # Check if agent_runtime's agent_chat is available and different from this function
+    runtime_chat = globals().get("agent_chat")
+    if runtime_chat is not None and runtime_chat is not agent_chat:
+        return runtime_chat(payload, username)
+
+    # Legacy implementation kept for compatibility during transition
+    return _legacy_agent_chat(payload, username)
+
+
+def _build_ui_patches_from_skill_calls(executed_calls):
+    """Auto-generate ui_patches from executed skill call results for AI-native frontend."""
+    patches = []
+    for call in executed_calls:
+        name = call.get("name", "")
+        result = call.get("result", {}) or {}
+        if name == "weekly.compose" and result.get("draft"):
+            patches.append({"op": "set_field", "selector": "#weeklyDraft", "value": result["draft"]})
+            patches.append({
+                "op": "show_card",
+                "card_type": "success",
+                "data": {
+                    "title": "周报草稿已生成",
+                    "message": f"工作总结 {len(result['draft'].get('weekly_summary') or [])} 项 · 重点跟进 {len(result['draft'].get('weekly_follow') or [])} 项 · 下周计划 {len(result['draft'].get('weekly_next') or [])} 项",
+                },
+            })
+        elif name == "weekly.preview" and result.get("preview_image_url"):
+            patches.append({
+                "op": "show_card",
+                "card_type": "preview",
+                "data": result,
+            })
+        elif name == "weekly.send_confirmed" and result.get("ok"):
+            patches.append({
+                "op": "show_card",
+                "card_type": "success",
+                "data": {"title": "周报已发送", "message": result.get("message", "")},
+            })
+        elif name == "diary.save" and result.get("ok"):
+            patches.append({
+                "op": "show_card",
+                "card_type": "success",
+                "data": {"title": "日记已保存", "message": result.get("message", "")},
+            })
+        elif name == "mail.send" and result.get("ok"):
+            patches.append({
+                "op": "show_card",
+                "card_type": "success",
+                "data": {"title": "邮件已发送", "message": result.get("message", "")},
+            })
+        elif name == "document.generate" and result.get("ok"):
+            patches.append({
+                "op": "show_card",
+                "card_type": "preview",
+                "data": result,
+            })
+    return patches
+
+
+def _legacy_agent_chat(payload, username=""):
     kind = payload.get("kind", "weekly")
     messages = payload.get("messages", [])
     settings = assistant_settings()
@@ -930,13 +1105,13 @@ def agent_chat(payload, username=""):
     system = AGENT_SYSTEM_PROMPTS.get(kind) or AGENT_SYSTEM_PROMPTS.get("weekly")
     system = (
         system
-        + "\\n\\n你现在运行在“智能办公助手 Skill 模式”。"
-        + "\\n如果用户要求你操作软件功能，请从下面 Skill 中选择一个调用。"
-        + "\\n周报工作流必须按顺序执行：1) weekly.compose 规范化并填入周报结构；2) weekly.preview 生成周报文件、预览图片和邮件草稿；3) 只有用户明确确认预览无误后，才能调用 weekly.send_confirmed 发送邮件。"
-        + "\\n调用时必须且只能输出严格 JSON（禁止 Markdown、XML、\[TOOL_CALL\]）：{\"reply\":\"说明\",\"skill_call\":{\"name\":\"skill.name\",\"arguments\":{}}}"
-        + "\\n如果不需要操作软件功能，直接自然语言回复。"
-        + "\\n如需当前日期、本周起止日期、今天是星期几等时间信息，可调用 utils.get_date。"
-        + "\\n可用 Skill：\\n"
+        + "\n\n你现在运行在「智能办公助手 Skill 模式」。"
+        + "\n如果用户要求你操作软件功能，请从下面 Skill 中选择一个调用。"
+        + "\n周报工作流必须按顺序执行：1) weekly.compose 规范化并填入周报结构；2) weekly.preview 生成周报文件、预览图片和邮件草稿；3) 只有用户明确确认预览无误后，才能调用 weekly.send_confirmed 发送邮件。"
+        + '\n调用时必须且只能输出严格 JSON（禁止 Markdown、XML、[TOOL_CALL]）：{"reply":"说明","skill_call":{"name":"skill.name","arguments":{}}}'
+        + "\n如果不需要操作软件功能，直接自然语言回复。"
+        + "\n如需当前日期、本周起止日期、今天是星期几等时间信息，可调用 utils.get_date。"
+        + "\n可用 Skill：\n"
         + json.dumps(skill_defs(), ensure_ascii=False)
     )
     api_messages = [{"role": "system", "content": system}]
@@ -969,13 +1144,15 @@ def agent_chat(payload, username=""):
             if not skill_call:
                 # 没有新的 Skill 调用，直接返回最终回复
                 final_reply = _clean_agent_reply(content)
+                ui_patches = _build_ui_patches_from_skill_calls(executed_calls)
                 if executed_calls:
                     return {
                         "ok": True,
                         "reply": final_reply,
                         "skill_calls": executed_calls,
+                        "ui_patches": ui_patches,
                     }
-                return {"ok": True, "reply": final_reply}
+                return {"ok": True, "reply": final_reply, "ui_patches": ui_patches}
             # 执行 Skill
             result = execute_skill(skill_call["name"], skill_call["arguments"], username)
             executed_calls.append({
@@ -995,10 +1172,12 @@ def agent_chat(payload, username=""):
                 ),
             })
         # 达到最大轮次，返回最后一次回复
+        ui_patches = _build_ui_patches_from_skill_calls(executed_calls)
         return {
             "ok": True,
             "reply": content,
             "skill_calls": executed_calls,
+            "ui_patches": ui_patches,
         }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}

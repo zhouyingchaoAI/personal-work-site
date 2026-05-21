@@ -639,14 +639,13 @@ def compose_draft(kind, file_name=None, username=None):
         if summary_text:
             body += summary_text + "\n\n"
         body += (
-            "本周主要工作内容已在附件中汇总，如有需要补充或调整的地方，我会及时完善。\n\n"
             f"{sender}\n"
             f"{datetime.now().strftime('%Y年%m月%d日')}"
         )
         body_html = f'<p>{html_escape(config.get("weekly_greeting", "领导您好："))}</p><p>附件为我的本周工作周报《{html_escape(path.name)}》，请查收。</p>'
         if weekly_table_html:
             body_html += weekly_table_html
-        body_html += f'<p>本周主要工作内容已在附件中汇总，如有需要补充或调整的地方，我会及时完善。</p><p>{html_escape(sender)}<br>{datetime.now().strftime("%Y年%m月%d日")}</p>'
+        body_html += f'<p>{html_escape(sender)}<br>{datetime.now().strftime("%Y年%m月%d日")}</p>'
         to_addr = mail.get("weekly_to", "")
         cc_addr = mail.get("weekly_cc", "")
     else:
@@ -660,14 +659,13 @@ def compose_draft(kind, file_name=None, username=None):
         if summary_text:
             body += summary_text + "\n\n"
         body += (
-            "出差事项、过程记录和相关结论已在附件中说明，如需进一步补充材料，我会及时整理。\n\n"
             f"{sender}\n"
             f"{datetime.now().strftime('%Y年%m月%d日')}"
         )
         body_html = f'<p>{html_escape(config.get("trip_greeting", "领导您好："))}</p><p>附件为我的出差报告《{html_escape(path.name)}》，请查收。</p>'
         if trip_table_html:
             body_html += trip_table_html
-        body_html += f'<p>出差事项、过程记录和相关结论已在附件中说明，如需进一步补充材料，我会及时整理。</p><p>{html_escape(sender)}<br>{datetime.now().strftime("%Y年%m月%d日")}</p>'
+        body_html += f'<p>{html_escape(sender)}<br>{datetime.now().strftime("%Y年%m月%d日")}</p>'
         to_addr = mail.get("trip_to", "")
         cc_addr = mail.get("trip_cc", "")
 

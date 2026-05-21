@@ -312,26 +312,34 @@
       <div class="task-panel hidden" id="newsPanel">
         <div class="news-layout" id="newsLayout">
           <div class="news-card superadmin-only hidden" id="newsConfigCard">
-            <h3>资讯收集配置</h3>
-            <label>网页路径</label>
-            <div id="newsSources"></div>
-            <div class="toolbar">
-              <button type="button" class="secondary" id="newsAddSource">新增网页</button>
+            <div class="news-config-head">
+              <div>
+                <h3>资讯收集配置</h3>
+                <div class="news-issue-meta">维护来源、搜索关键词和自动更新。</div>
+              </div>
+              <button type="button" class="secondary" id="newsConfigToggle">展开</button>
             </div>
-            <label>大模型自动搜索关键词</label>
-            <textarea id="newsSearchQuery" placeholder="轨道交通 OR 城市轨道 OR 地铁 OR 智慧轨交"></textarea>
-            <div class="row">
-              <label><input id="newsAutoSearch" type="checkbox" style="width:auto" /> 允许大模型自动网络搜索</label>
-              <label><input id="newsAutoPush" type="checkbox" style="width:auto" /> 每日自动更新推送</label>
-            </div>
-            <label>推送时间</label>
-            <input id="newsPushTime" type="time" value="08:30" />
-            <div class="toolbar">
-              <button type="button" id="newsSaveConfig">保存配置</button>
-              <button type="button" class="warn" id="newsGenerateNow"><span class="icon" data-icon="sparkles"></span> 立即生成今日资讯</button>
+            <div class="news-config-body hidden" id="newsConfigBody">
+              <label>网页路径</label>
+              <div id="newsSources"></div>
+              <div class="toolbar">
+                <button type="button" class="secondary" id="newsAddSource">新增网页</button>
+              </div>
+              <label>大模型自动搜索关键词</label>
+              <textarea id="newsSearchQuery" placeholder="轨道交通 OR 城市轨道 OR 地铁 OR 智慧轨交"></textarea>
+              <div class="row">
+                <label><input id="newsAutoSearch" type="checkbox" style="width:auto" /> 允许大模型自动网络搜索</label>
+                <label><input id="newsAutoPush" type="checkbox" style="width:auto" /> 每日自动更新推送</label>
+              </div>
+              <label>推送时间</label>
+              <input id="newsPushTime" type="time" value="08:30" />
+              <div class="toolbar">
+                <button type="button" id="newsSaveConfig">保存配置</button>
+                <button type="button" class="warn" id="newsGenerateNow"><span class="icon" data-icon="sparkles"></span> 立即生成今日资讯</button>
+              </div>
+              <div class="hint">自动搜索会通过平台配置的大模型 API 发起；若模型平台不支持联网工具，将主要基于配置网页内容生成。</div>
             </div>
             <div id="newsConfigStatus" class="status"></div>
-            <div class="hint">自动搜索会通过平台配置的大模型 API 发起；若模型平台不支持联网工具，将主要基于配置网页内容生成。</div>
           </div>
           <div class="news-card">
             <div class="news-issue-head">
@@ -344,6 +352,15 @@
             <div class="news-summary" id="newsSummary">暂无摘要。</div>
             <div class="news-list" id="newsItems"></div>
             <div class="news-keywords" id="newsKeywords"></div>
+          </div>
+          <div class="news-card">
+            <div class="news-issue-head">
+              <div>
+                <div class="news-issue-title">历史资讯</div>
+                <div class="news-issue-meta" id="newsHistoryMeta">查看已保存的每日资讯。</div>
+              </div>
+            </div>
+            <div class="news-list" id="newsHistoryList"></div>
           </div>
         </div>
       </div>
@@ -1023,8 +1040,9 @@
       </div>
     </div>
   </div>
-  <div class="agent-float hidden" id="agentFloat">
-    <button class="agent-toggle" id="agentToggle" type="button" title="犇犇" onclick="openAgentFromAvatar()"><img class="agent-avatar" src="/personal-office-assistant/assets/ai-assistant-avatar.png" alt="犇犇" /></button>
+  <!-- Legacy floating agent (hidden when native sidebar active) -->
+  <div class="agent-float" id="agentFloat">
+    <button class="agent-toggle" id="agentToggle" type="button" title="犇犇"><img class="agent-avatar" src="/personal-office-assistant/assets/ai-assistant-avatar.png" alt="犇犇" /></button>
     <div class="agent-window hidden" id="agentWindow">
       <div class="agent-header">
         <span><img class="agent-avatar" src="/personal-office-assistant/assets/ai-assistant-avatar.png" alt="" /> 犇犇</span>

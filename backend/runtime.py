@@ -13,6 +13,7 @@ APP_ENTRY = APP_ROOT / "app.py"
 MODULE_DIR = Path(__file__).resolve().parent
 MODULES = [
     "core.py",
+    "db.py",
     "reports.py",
     "mail.py",
     "text_tools.py",
@@ -21,6 +22,10 @@ MODULES = [
     "forum.py",
     "news.py",
     "documents.py",
+    "skill_runtime.py",
+    "agent_runtime.py",
+    "memory.py",
+    "workflows.py",
     "server.py",
 ]
 

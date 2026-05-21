@@ -22,14 +22,20 @@
       agentToggle.addEventListener('click', event => {
         event.stopPropagation();
         if (Date.now() < suppressClickUntil) return;
-        openAgentFromAvatar();
+        if (typeof openAgentFromAvatar === 'function') openAgentFromAvatar();
+        else if (typeof toggleAgent === 'function') toggleAgent();
       });
-      el('agentClose').addEventListener('click', () => toggleAgent(false));
-      el('agentSend').addEventListener('click', () => sendAgentMessage(el('agentInput').value));
+      el('agentClose').addEventListener('click', () => {
+        if (typeof toggleAgent === 'function') toggleAgent(false);
+        else el('agentWindow')?.classList.add('hidden');
+      });
+      el('agentSend').addEventListener('click', () => {
+        if (typeof sendAgentMessage === 'function') sendAgentMessage(el('agentInput').value);
+      });
       el('agentInput').addEventListener('keydown', e => {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
           e.preventDefault();
-          sendAgentMessage(el('agentInput').value);
+          if (typeof sendAgentMessage === 'function') sendAgentMessage(el('agentInput').value);
         }
       });
       if (typeof updateAgentChrome === 'function') updateAgentChrome(typeof agentKindForTask === 'function' ? agentKindForTask() : 'dashboard');
@@ -94,8 +100,6 @@
           agentHeader.style.cursor = 'move';
           if (moved) {
             suppressClickUntil = Date.now() + 250;
-          } else if (pointerStartedOnToggle) {
-            openAgentFromAvatar();
           }
           pointerStartedOnToggle = false;
         });

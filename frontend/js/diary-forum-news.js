@@ -43,6 +43,7 @@
         await apiPost('/api/diary/save', payload);
         el('diaryStatus').textContent = '保存成功';
         el('diaryStatus').className = 'status ok';
+        renderDiaryList();
         setTimeout(() => { el('diaryStatus').textContent = ''; }, 2000);
       } catch (err) {
         el('diaryStatus').textContent = err.message;
@@ -486,6 +487,46 @@
       `).join('') : '<div class="forum-empty">暂无资讯条目。</div>';
       el('newsKeywords').innerHTML = (issue.keywords || []).map(k => `<span class="news-keyword">${escapeHtml(k)}</span>`).join('');
     }
+    function renderNewsHistory(history = [], activeDate = '') {
+      const list = el('newsHistoryList');
+      if (!list) return;
+      el('newsHistoryMeta').textContent = history.length ? `已保存 ${history.length} 期每日资讯。` : '暂无历史资讯。';
+      if (!history.length) {
+        list.innerHTML = '<div class="forum-empty">暂无历史资讯，生成后会自动保存。</div>';
+        return;
+      }
+      list.innerHTML = history.map(item => `
+        <div class="news-item news-history-item ${item.date === activeDate ? 'active' : ''}" data-date="${escapeHtml(item.date || '')}">
+          <div class="news-history-date">${escapeHtml(item.date || '')}</div>
+          <div class="news-history-main">
+            <div class="news-item-title">${escapeHtml(item.title || item.date || '每日资讯')}</div>
+            <div class="news-history-summary">${escapeHtml(item.summary || '暂无摘要。')}</div>
+          </div>
+          <div class="news-history-count">${item.item_count || 0} 条</div>
+        </div>
+      `).join('');
+      list.querySelectorAll('.news-history-item').forEach(item => {
+        item.addEventListener('click', () => loadNewsIssueByDate(item.dataset.date));
+      });
+    }
+    async function loadNewsIssueByDate(date) {
+      if (!date) return;
+      try {
+        const data = await api('/api/news/history?date=' + encodeURIComponent(date));
+        renderNewsIssue(data.issue);
+        renderNewsHistory(data.history || [], data.issue?.date || date);
+      } catch (err) {
+        el('newsConfigStatus').textContent = err.message;
+        el('newsConfigStatus').className = 'status err';
+      }
+    }
+    function setNewsConfigCollapsed(collapsed) {
+      const body = el('newsConfigBody');
+      const button = el('newsConfigToggle');
+      if (!body || !button) return;
+      body.classList.toggle('hidden', collapsed);
+      button.textContent = collapsed ? '展开' : '收起';
+    }
     async function loadNews() {
       try {
         const data = await api('/api/news/latest');
@@ -498,6 +539,8 @@
           el('newsPushTime').value = cfg.push_time || '08:30';
         }
         renderNewsIssue(data.issue);
+        renderNewsHistory(data.history || [], data.issue?.date || '');
+        setNewsConfigCollapsed(true);
       } catch (err) {
         el('newsConfigStatus').textContent = err.message;
         el('newsConfigStatus').className = 'status err';
@@ -507,6 +550,9 @@
       const current = collectNewsSources();
       current.push({ name: '', url: '' });
       renderNewsSources(current);
+    });
+    el('newsConfigToggle').addEventListener('click', () => {
+      setNewsConfigCollapsed(el('newsConfigBody').classList.contains('hidden') ? false : true);
     });
     el('newsRefresh').addEventListener('click', loadNews);
     el('newsSaveConfig').addEventListener('click', async () => {
@@ -536,6 +582,8 @@
           auto_search: el('newsAutoSearch').checked
         });
         renderNewsIssue(result.issue);
+        const latest = await api('/api/news/history');
+        renderNewsHistory(latest.history || [], result.issue?.date || '');
         el('newsConfigStatus').textContent = '今日资讯已生成';
         el('newsConfigStatus').className = 'status ok';
       } catch (err) {

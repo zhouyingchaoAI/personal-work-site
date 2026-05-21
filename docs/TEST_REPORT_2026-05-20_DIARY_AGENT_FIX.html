@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>智能办公平台 - 日记助手与悬浮助手修复测试报告</title>
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: rgba(15, 28, 49, .92);
+      --panel2: rgba(18, 38, 66, .88);
+      --line: rgba(125, 211, 252, .22);
+      --text: #e5f4ff;
+      --muted: #93a7bd;
+      --ok: #2dd4bf;
+      --warn: #f59e0b;
+      --bad: #fb7185;
+      --blue: #38bdf8;
+      --purple: #a78bfa;
+    }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top left, rgba(56,189,248,.22), transparent 32%), linear-gradient(135deg, #050814 0%, #07111f 45%, #0b1728 100%);
+      color: var(--text);
+      font: 14px/1.72 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 36px 22px 56px; }
+    .hero { border: 1px solid var(--line); background: linear-gradient(135deg, rgba(14,165,233,.18), rgba(167,139,250,.12)); border-radius: 24px; padding: 30px; box-shadow: 0 24px 70px rgba(0,0,0,.32); }
+    h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: .02em; }
+    h2 { margin: 28px 0 12px; font-size: 21px; }
+    h3 { margin: 18px 0 8px; font-size: 16px; color: #bfdbfe; }
+    .subtitle { color: var(--muted); margin: 0; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 22px; }
+    .card { border: 1px solid var(--line); background: var(--panel); border-radius: 18px; padding: 18px; }
+    .metric { font-size: 28px; font-weight: 800; color: var(--ok); }
+    .label { color: var(--muted); }
+    .status-ok { color: var(--ok); font-weight: 700; }
+    .status-warn { color: var(--warn); font-weight: 700; }
+    .section { margin-top: 22px; border: 1px solid var(--line); background: var(--panel); border-radius: 20px; padding: 22px; }
+    table { width: 100%; border-collapse: collapse; overflow: hidden; border-radius: 14px; }
+    th, td { border-bottom: 1px solid rgba(148,163,184,.18); padding: 10px 12px; text-align: left; vertical-align: top; }
+    th { color: #bae6fd; background: rgba(14,165,233,.10); }
+    tr:last-child td { border-bottom: none; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    code { color: #bae6fd; background: rgba(56,189,248,.12); border: 1px solid rgba(56,189,248,.18); padding: 1px 6px; border-radius: 6px; }
+    pre { white-space: pre-wrap; word-break: break-word; background: rgba(2,6,23,.72); border: 1px solid rgba(148,163,184,.20); border-radius: 14px; padding: 14px; color: #dbeafe; }
+    .pill { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; margin: 3px 5px 3px 0; color: #dff7ff; background: rgba(56,189,248,.10); }
+    .ok-dot::before { content: "✓"; color: var(--ok); font-weight: 900; margin-right: 6px; }
+    .warn-dot::before { content: "!"; color: var(--warn); font-weight: 900; margin-right: 6px; }
+    ul { margin-top: 8px; }
+    .footer { color: var(--muted); margin-top: 28px; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <h1>智能办公平台 - 日记助手与悬浮助手修复测试报告</h1>
+      <p class="subtitle">生成时间：2026-05-20 16:20:25 CST ｜ 项目：/Users/zhouyingchao/Documents/codex/personal-work-site ｜ 服务：http://127.0.0.1:8765</p>
+      <div class="grid">
+        <div class="card"><div class="metric">53/53</div><div class="label">单元测试通过</div></div>
+        <div class="card"><div class="metric">通过</div><div class="label">JS/Python 语法检查</div></div>
+        <div class="card"><div class="metric">通过</div><div class="label">真实浏览器回归验证</div></div>
+        <div class="card"><div class="metric">0</div><div class="label">最终验证阶段控制台错误</div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>一、结论</h2>
+      <p><span class="status-ok">本轮核心问题已修复并验证通过。</span></p>
+      <ul>
+        <li class="ok-dot">“查看日记列表”已能返回具体日期和日记摘要，不再只返回数量。</li>
+        <li class="ok-dot">“帮我记录今天的工作日记……”已能完整走通：识别意图 → 调用 diary.save → 保存数据 → 显示成功卡片 → 列表可查。</li>
+        <li class="ok-dot">日记保存后页面列表会自动刷新。</li>
+        <li class="ok-dot">日记类直连 Skill 查询会跳过页面上下文，降低误判与响应不稳定。</li>
+        <li class="ok-dot">悬浮助手仍保留原悬浮形态，没有切换为侧边栏。</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>二、修复内容</h2>
+      <table>
+        <thead><tr><th>模块</th><th>文件</th><th>修复点</th></tr></thead>
+        <tbody>
+          <tr><td>Agent 后端路由</td><td><code>backend/agent_runtime.py</code></td><td>新增日记保存直接解析；diary.list/diary.save 路由优先于日期查询；日期查询改为更精确匹配；diary.list 回复展示日期和摘要；diary.save 返回结构化成功卡片。</td></tr>
+          <tr><td>日记数据接口</td><td><code>backend/diary.py</code></td><td>增强 list_diaries：支持 start/end/keyword 过滤，返回 today_work/tomorrow_plan/thoughts 等完整字段，preview 增至 120 字符。</td></tr>
+          <tr><td>悬浮助手前端</td><td><code>frontend/js/mail-agent.js</code></td><td>扩展日记直连查询识别；优化 payload；跳过 diary.list/diary.save 泛化卡片；保留超时、防重发、结构化错误卡片能力。</td></tr>
+          <tr><td>日记页面</td><td><code>frontend/js/diary-forum-news.js</code></td><td>保存日记成功后调用 renderDiaryList() 自动刷新列表。</td></tr>
+          <tr><td>回归测试</td><td><code>tests/unit/test_agent_runtime.py</code><br><code>tests/unit/test_floating_agent_frontend.py</code></td><td>新增日记列表、日记保存、直连查询、泛化卡片去重等回归测试。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <h2>三、验证结果</h2>
+      <h3>1. 单元测试</h3>
+      <pre>命令：python3 -m unittest discover -s tests/unit -p 'test_*.py' -v
+结果：Ran 53 tests in 0.538s - OK</pre>
+      <h3>2. 语法检查</h3>
+      <pre>命令：node --check frontend/js/mail-agent.js
+命令：node --check frontend/js/diary-forum-news.js
+命令：python3 -m py_compile app.py backend/*.py
+结果：全部通过，无输出错误。</pre>
+      <h3>3. 浏览器功能验证</h3>
+      <table>
+        <thead><tr><th>用例</th><th>实际结果</th><th>状态</th></tr></thead>
+        <tbody>
+          <tr><td>登录 admin/admin123</td><td>登录成功，进入智能办公平台。</td><td class="status-ok">通过</td></tr>
+          <tr><td>进入工作日记页面</td><td>日记表单、列表、AI 智能记录入口显示正常。</td><td class="status-ok">通过</td></tr>
+          <tr><td>调用日记列表 API</td><td>返回 1 条记录，包含 date、today_work、tomorrow_plan、thoughts。</td><td class="status-ok">通过</td></tr>
+          <tr><td>悬浮助手发送“查看日记列表”</td><td>请求体为 {kind: diary, messages: [{role: user, content: 查看日记列表}]}，未附带页面上下文；回复包含日期和摘要。</td><td class="status-ok">通过</td></tr>
+          <tr><td>悬浮助手发送“帮我记录今天的工作日记……”</td><td>成功保存 2026-05-20 日记，展示“工作日记已保存”成功卡片，列表 API 可查到更新后的内容。</td><td class="status-ok">通过</td></tr>
+          <tr><td>视觉检查</td><td>页面和悬浮助手整体正常，回复完整可读，成功卡片正常。</td><td class="status-ok">通过</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <h2>四、浏览器实测证据</h2>
+      <h3>日记列表查询回复</h3>
+      <pre>查看日记列表
+
+已查询到 1 条工作日记记录，最近记录如下：
+1. 2026-05-20：日记助手完整链路修复</pre>
+      <h3>日记保存闭环回复</h3>
+      <pre>帮我记录今天的工作日记：今天完成最终浏览器回归验证；明天整理完整测试报告；想法是日记助手闭环已经稳定。
+
+已保存 2026-05-20 的工作日记：今日工作：最终浏览器回归验证；明日计划：明天整理完整测试报告；想法心得：日记助手闭环已经稳定
+
+工作日记已保存
+2026-05-20 的日记已写入，可在工作日记列表中查看。</pre>
+      <h3>视觉结论</h3>
+      <p>页面布局清晰，悬浮日记助手显示正常，回复内容和成功卡片完整可读。唯一轻微问题是悬浮助手会覆盖底层表单右侧区域，但不影响当前助手使用。</p>
+    </section>
+
+    <section class="section">
+      <h2>五、当前改动范围</h2>
+      <pre>backend/diary.py                |  19 +-
+backend/runtime.py              |   5 +
+backend/server.py               |  21 ++
+backend/skills_agent.py         | 197 +++++++++++++-
+frontend/css/agent.css          | 178 ++++++++++++
+frontend/index.html             |   5 +-
+frontend/js/boot.js             |  16 +-
+frontend/js/diary-forum-news.js |   1 +
+frontend/js/mail-agent.js       | 589 +++++++++++++++++++++++++++++++++-------
+9 files changed, 907 insertions(+), 124 deletions(-)</pre>
+      <p>另外当前仓库中存在较多新增文件/目录属于此前 AI 原生架构、测试框架、文档等工作内容：<code>backend/agent_runtime.py</code>、<code>backend/db.py</code>、<code>backend/memory.py</code>、<code>backend/skill_runtime.py</code>、<code>backend/workflows.py</code>、<code>tests/</code>、<code>docs/</code> 等。</p>
+    </section>
+
+    <section class="section">
+      <h2>六、遗留问题与建议</h2>
+      <ul>
+        <li class="warn-dot">邮件助手页面切换问题此前已定位，但本轮未修复，建议下一轮处理。</li>
+        <li class="warn-dot">悬浮助手默认位置会遮挡右侧部分表单，建议下一轮增加拖动位置记忆或默认避让主内容区。</li>
+        <li class="warn-dot">完整 40 个浏览器 E2E 用例需要进一步接入真实浏览器工具注入，目前本轮以单元测试 + 真实浏览器手工自动化验证为准。</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>七、建议下一步</h2>
+      <ol>
+        <li>修复邮件助手页面切换 bug。</li>
+        <li>优化悬浮助手位置：支持拖动、记忆位置、默认避让右侧表单。</li>
+        <li>把真实浏览器验证沉淀为稳定 E2E 自动化脚本。</li>
+        <li>清理/确认新增文件后统一提交。</li>
+      </ol>
+    </section>
+
+    <p class="footer">报告文件：/Users/zhouyingchao/Documents/codex/personal-work-site/docs/TEST_REPORT_2026-05-20_DIARY_AGENT_FIX.html</p>
+  </main>
+</body>
+</html>

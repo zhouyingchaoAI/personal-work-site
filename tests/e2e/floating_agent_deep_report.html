@@ -1,0 +1,73 @@
+<!doctype html><html><head><meta charset="utf-8"><title>悬浮助手深度测试收尾报告</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:28px;background:#f8fafc;color:#0f172a}h1{margin-bottom:4px}.meta{color:#64748b}.card{background:white;border:1px solid #dbe5f1;border-radius:14px;padding:18px;margin:16px 0;box-shadow:0 8px 22px #0f172a0d}table{width:100%;border-collapse:collapse}td,th{border:1px solid #e2e8f0;padding:10px;vertical-align:top}th{background:#eff6ff;text-align:left}.ok td:first-child{color:#047857;font-weight:800}.fail td:first-child{color:#b91c1c;font-weight:800}pre{white-space:pre-wrap;max-height:280px;overflow:auto;margin:0;font-size:12px}li{margin:6px 0}code{font-size:12px}</style></head><body><h1>悬浮助手深度测试收尾报告</h1><div class="meta">生成时间：2026-05-20 15:42:43<br>项目：/Users/zhouyingchao/Documents/codex/personal-work-site</div><div class="card"><h2>结论</h2><p>本轮针对悬浮助手的显示、等待态、回复、异常、重复发送、上下文负载和事件绑定做了优化。最终单元回归、JS 语法、Python 编译均通过；真实浏览器验证报告列表 Skill 和异常卡片均通过。</p></div><div class="card"><h2>关键修复</h2><ul><li>新增前端超时与 AbortController，避免一直“思考中”。</li><li>新增 agentIsSending 函数级锁，防止快速点击/快捷键重复请求。</li><li>错误回复改为结构化卡片，区分网络异常、超时、登录失效、AI 配置缺失。</li><li>renderAgentMessages 不再重置后端下发的 timeline。</li><li>直连 Skill 查询跳过大页面上下文，payload 更小、更快。</li><li>屏蔽 reports.list 等直连 Skill 的重复泛化卡片。</li><li>DOM 点击/键盘绑定统一由 boot.js 管理，避免双重绑定。</li><li>优化悬浮窗口、进度条、错误卡片、Markdown 表格/代码显示。</li></ul></div><div class="card"><h2>浏览器实测</h2><ul><li>报告列表查询：1 次请求成功，payload 无页面上下文，完成态 timeline 正常，无“reports.list 已完成”重复卡片。</li><li>异常模拟：拦截 /api/agent/chat 抛出 Failed to fetch 后，显示“网络连接异常”结构化错误卡片，按钮和输入框恢复可用。</li><li>视觉检查：窗口仍为悬浮形态，错误卡片可读，按钮和输入框正常。</li></ul></div><div class="card"><h2>自动化结果</h2><table><thead><tr><th>项目</th><th>命令</th><th>退出码</th><th>输出</th></tr></thead><tbody><tr class="ok"><td>unit</td><td><code>python3 -m unittest discover -s tests/unit -p &#x27;test_*.py&#x27; -v</code></td><td>0</td><td><pre>test_add_and_get_messages (test_agent_runtime.AgentRuntimeTests) ... ok
+test_agent_chat_direct_date_skill_does_not_call_llm (test_agent_runtime.AgentRuntimeTests) ... ok
+test_agent_chat_direct_reports_list_does_not_call_llm (test_agent_runtime.AgentRuntimeTests) ... ok
+test_agent_chat_returns_immediately_after_skill_call (test_agent_runtime.AgentRuntimeTests) ... ok
+test_agent_chat_without_api_records_error_event (test_agent_runtime.AgentRuntimeTests) ... ok
+test_agent_chat_without_api_returns_error (test_agent_runtime.AgentRuntimeTests)
+When no AI API is configured, agent_chat should return an error. ... ok
+test_agent_events_api_returns_session_events (test_agent_runtime.AgentRuntimeTests) ... ok
+test_agent_sessions_api_crud (test_agent_runtime.AgentRuntimeTests) ... ok
+test_agent_sessions_api_list (test_agent_runtime.AgentRuntimeTests) ... ok
+test_build_agent_response_structure (test_agent_runtime.AgentRuntimeTests) ... ok
+test_create_and_get_session (test_agent_runtime.AgentRuntimeTests) ... ok
+test_list_sessions (test_agent_runtime.AgentRuntimeTests) ... ok
+test_memory_context_injection (test_agent_runtime.AgentRuntimeTests) ... ok
+test_update_session (test_agent_runtime.AgentRuntimeTests) ... ok
+test_memory_forget (test_agent_runtime.MemorySkillTests) ... ok
+test_memory_remember_and_search (test_agent_runtime.MemorySkillTests) ... ok
+test_memory_summarize (test_agent_runtime.MemorySkillTests) ... ok
+test_init_db_creates_ai_native_tables (test_db.DatabaseFoundationTests) ... ok
+test_record_agent_event_and_filter_by_session (test_db.DatabaseFoundationTests) ... ok
+test_record_skill_invocation_and_fetch_recent (test_db.DatabaseFoundationTests) ... ok
+test_remember_and_list_memory_items (test_db.DatabaseFoundationTests) ... ok
+test_agent_chat_has_frontend_timeout (test_floating_agent_frontend.FloatingAgentFrontendRegressionTests) ... ok
+test_context_payload_is_skipped_for_direct_queries (test_floating_agent_frontend.FloatingAgentFrontendRegressionTests) ... ok
+test_direct_skill_results_do_not_render_duplicate_generic_cards (test_floating_agent_frontend.FloatingAgentFrontendRegressionTests) ... ok
+test_dom_event_bindings_are_owned_by_boot_js (test_floating_agent_frontend.FloatingAgentFrontendRegressionTests) ... ok
+test_errors_render_as_structured_recoverable_cards (test_floating_agent_frontend.FloatingAgentFrontendRegressionTests) ... ok
+test_render_messages_does_not_reset_custom_timeline (test_floating_agent_frontend.FloatingAgentFrontendRegressionTests) ... ok
+test_send_has_function_level_pending_guard (test_floating_agent_frontend.FloatingAgentFrontendRegressionTests) ... ok
+test_execute_get_date_skill_returns_expected_keys (test_skills_agent_regression.SkillDefinitionRegressionTests) ... ok
+test_parse_skill_call_returns_none_for_plain_answer (test_skills_agent_regression.SkillDefinitionRegressionTests) ... ok
+test_parse_skill_call_supports_plain_and_markdown_json (test_skills_agent_regression.SkillDefinitionRegressionTests) ... ok
+test_skill_names_are_unique_and_have_required_fields (test_skills_agent_regression.SkillDefinitionRegressionTests) ... ok
+test_unknown_skill_raises_clear_error (test_skills_agent_regression.SkillDefinitionRegressionTests) ... ok
+test_confirm_and_resume (test_workflows.WorkflowEngineTests) ... ok
+test_confirm_cancel (test_workflows.WorkflowEngineTests) ... ok
+test_execute_workflow_not_found (test_workflows.WorkflowEngineTests) ... ok
+test_execute_workflow_runs_to_completion (test_workflows.WorkflowEngineTests) ... ok
+test_execute_workflow_with_confirmation (test_workflows.WorkflowEngineTests) ... ok
+test_get_workflow (test_workflows.WorkflowEngineTests) ... ok
+test_instance_lifecycle (test_workflows.WorkflowEngineTests) ... ok
+test_interpolate_missing_raises (test_workflows.WorkflowEngineTests) ... ok
+test_interpolate_nested_dict (test_workflows.WorkflowEngineTests) ... ok
+test_interpolate_simple (test_workflows.WorkflowEngineTests) ... ok
+test_interpolate_with_default (test_workflows.WorkflowEngineTests) ... ok
+test_list_user_workflows (test_workflows.WorkflowEngineTests) ... ok
+test_list_workflows (test_workflows.WorkflowEngineTests) ... ok
+test_workflow_api_list (test_workflows.WorkflowEngineTests) ... ok
+test_workflow_api_run (test_workflows.WorkflowEngineTests) ... ok
+test_workflow_api_status (test_workflows.WorkflowEngineTests) ... ok
+
+----------------------------------------------------------------------
+Ran 49 tests in 0.362s
+
+OK</pre></td></tr><tr class="ok"><td>js_syntax</td><td><code>node --check frontend/js/mail-agent.js</code></td><td>0</td><td><pre></pre></td></tr><tr class="ok"><td>py_compile</td><td><code>python3 -m py_compile app.py backend/*.py</code></td><td>0</td><td><pre></pre></td></tr><tr class="ok"><td>git_status</td><td><code>git status --short</code></td><td>0</td><td><pre>M backend/runtime.py
+ M backend/server.py
+ M backend/skills_agent.py
+ M frontend/css/agent.css
+ M frontend/index.html
+ M frontend/js/boot.js
+ M frontend/js/mail-agent.js
+?? .ai-native-dev-state.json
+?? backend/agent_runtime.py
+?? backend/db.py
+?? backend/memory.py
+?? backend/skill_runtime.py
+?? backend/workflows.py
+?? docs/
+?? frontend/css/agent-native.css
+?? frontend/js/agent-native.js
+?? nohup.out
+?? scripts/
+?? tests/</pre></td></tr></tbody></table></div></body></html>
