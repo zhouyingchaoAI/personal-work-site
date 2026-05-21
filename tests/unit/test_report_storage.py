@@ -1,3 +1,4 @@
+import base64
 import tempfile
 import unittest
 from pathlib import Path
@@ -185,6 +186,28 @@ class ReportStorageTests(unittest.TestCase):
         finally:
             rt.read_config = old_read_config
             rt.newest = old_newest
+
+    def test_report_template_upload_and_delete_are_global(self):
+        raw = b"template bytes"
+        payload = {
+            "kind": "weekly",
+            "file": {
+                "name": "edited.xlsx",
+                "data": base64.b64encode(raw).decode("ascii"),
+            },
+        }
+
+        saved = rt.save_report_template(payload, "newuser")
+        path = Path(saved["template"]["path"])
+
+        self.assertEqual(path, rt.report_template_path("weekly"))
+        self.assertEqual(path.read_bytes(), raw)
+        info = rt.report_template_info("newuser")
+        self.assertTrue(info["templates"]["weekly"]["configured"])
+
+        deleted = rt.delete_report_template({"kind": "weekly"}, "newuser")
+        self.assertFalse(rt.report_template_path("weekly").exists())
+        self.assertFalse(deleted["templates"]["weekly"]["configured"])
 
 
 if __name__ == "__main__":

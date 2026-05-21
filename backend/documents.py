@@ -39,6 +39,21 @@ def generated_report_path(name, username=None, kind=None):
     return base / name
 
 
+def configured_template_path(kind, username=None):
+    path = report_template_path(kind)
+    return path if path.exists() and path.is_file() else None
+
+
+def template_for_report(kind, username=None, include_generated=False):
+    configured = configured_template_path(kind, username)
+    if configured:
+        return configured
+    finder = newest_any if include_generated else newest
+    item = finder(kind, username, fallback_shared=True)
+    path = Path((item or {}).get("path", ""))
+    return path if path.exists() and path.is_file() else None
+
+
 def report_kind_from_name(name):
     name = Path(name or "").name
     suffix = Path(name).suffix.lower()
@@ -57,6 +72,58 @@ def normalize_report_period_name(period):
 
     text = re.sub(r"(20[0-9]{2})[.\-/年]0?([0-9]{1,2})[.\-/月]0?([0-9]{1,2})(?:日)?", repl, text)
     return re.sub(r"[^0-9A-Za-z.\-\u4e00-\u9fff]+", "", text)
+
+
+def report_template_info(username=None):
+    templates = {}
+    for kind in ("weekly", "trip"):
+        path = configured_template_path(kind, username)
+        templates[kind] = {
+            "kind": kind,
+            "configured": bool(path),
+            "name": path.name if path else "",
+            "mtime": path.stat().st_mtime if path else None,
+            "download_url": f"/download-template?kind={kind}",
+        }
+    return {"ok": True, "templates": templates}
+
+
+def save_report_template(payload, username=None):
+    kind = safe_report_kind(payload.get("kind"))
+    if kind not in {"weekly", "trip"}:
+        raise ValueError("请选择模板类型")
+    file_item = payload.get("file") or {}
+    name = Path(file_item.get("name", "")).name
+    suffix = Path(name).suffix.lower()
+    if kind == "weekly" and suffix not in {".xlsx", ".xls"}:
+        raise ValueError("周报模板只支持 .xlsx 或 .xls 文件")
+    if kind == "trip" and suffix != ".docx":
+        raise ValueError("出差报告模板只支持 .docx 文件")
+    data = file_item.get("data", "")
+    if "," in data:
+        data = data.split(",", 1)[1]
+    raw = base64.b64decode(data)
+    if not raw:
+        raise ValueError("模板文件内容为空")
+    path = report_template_path(kind)
+    if kind == "weekly" and suffix == ".xls":
+        path = path.with_suffix(".xls")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    for old in path.parent.glob("template.*"):
+        if old != path:
+            old.unlink()
+    path.write_bytes(raw)
+    return {"ok": True, "template": {"kind": kind, "name": path.name, "path": str(path), "mtime": path.stat().st_mtime}}
+
+
+def delete_report_template(payload, username=None):
+    kind = safe_report_kind(payload.get("kind"))
+    removed = []
+    for path in report_template_path(kind).parent.glob("template.*"):
+        if path.is_file():
+            removed.append(path.name)
+            path.unlink()
+    return {"ok": True, "deleted": removed, "templates": report_template_info(username)["templates"]}
 
 
 def upload_history_reports(payload, username=None):
@@ -267,7 +334,7 @@ def build_weekly_prefill(max_row, read_cell, source_name):
 
 
 def weekly_prefill(username=None):
-    template = Path((newest_any("weekly", username, fallback_shared=True) or {}).get("path", ""))
+    template = Path(template_for_report("weekly", username, include_generated=True) or "")
     if not template.exists():
         return {"weekly_summary": "", "weekly_follow": "", "weekly_next": ""}
 
@@ -733,7 +800,7 @@ def generate_trip_default_docx(output, values):
 
 
 def generate_trip(payload, username=None):
-    template = Path((newest("trip", username, fallback_shared=True) or {}).get("path", ""))
+    template = Path(template_for_report("trip", username) or "")
 
     start = (payload.get("trip_start") or datetime.now().strftime("%Y%m%d")).replace("-", "")
     end = (payload.get("trip_end") or start).replace("-", "")[-4:]

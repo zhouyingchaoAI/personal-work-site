@@ -248,6 +248,34 @@
       }
     }
 
+    function renderReportTemplates() {
+      const info = state.reportTemplates || {};
+      const kind = el('templateKind')?.value || 'weekly';
+      const current = info[kind] || {};
+      const label = kind === 'weekly' ? '周报' : '出差报告';
+      const link = el('downloadTemplateLink');
+      if (!el('templateStatus')) return;
+      if (current.configured) {
+        el('templateStatus').textContent = `${label}已保存平台模板：${current.name}。所有用户生成文件时会优先使用它。`;
+        link.href = resourceUrl(current.download_url || `/download-template?kind=${kind}`);
+        link.classList.remove('hidden');
+      } else {
+        el('templateStatus').textContent = `${label}未保存平台模板。生成时会先找历史报告，没有历史报告再使用系统内置基础模板。`;
+        link.classList.add('hidden');
+      }
+    }
+
+    async function loadReportTemplates() {
+      if (!el('templateStatus')) return;
+      const data = await api('/api/report-templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      state.reportTemplates = data.templates || {};
+      renderReportTemplates();
+    }
+
     async function loadAdminConfig() {
       if (!state.user?.is_admin) return;
       const data = await api('/api/admin-config');

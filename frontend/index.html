@@ -900,6 +900,28 @@
         </div>
         <div class="hint">上传后的文件会保存到当前用户的个人历史报告空间，并自动出现在“发送报告邮件”的报告列表中。</div>
         <div class="upload-list" id="uploadList"></div>
+        <div class="history-tools" style="margin-top:18px">
+          <h2 style="margin:0">平台模板配置</h2>
+        </div>
+        <div class="row">
+          <div>
+            <label>模板类型</label>
+            <select id="templateKind">
+              <option value="weekly">周报模板（.xlsx / .xls）</option>
+              <option value="trip">出差报告模板（.docx）</option>
+            </select>
+          </div>
+          <div>
+            <label>上传编辑后的模板</label>
+            <input id="templateFile" type="file" accept=".xlsx,.xls,.docx" />
+          </div>
+        </div>
+        <div class="toolbar">
+          <button id="uploadTemplateButton" type="button">保存为平台模板</button>
+          <a id="downloadTemplateLink" class="download-link hidden" href="#" target="_blank">下载当前模板编辑</a>
+          <button id="deleteTemplateButton" class="secondary" type="button">删除平台模板</button>
+        </div>
+        <div class="hint" id="templateStatus">未加载模板配置。</div>
         <div class="history-tools">
           <h2 style="margin:0">历史报告管理</h2>
           <select id="historyKind">

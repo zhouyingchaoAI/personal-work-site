@@ -100,6 +100,15 @@ def user_generated_kind_dir(username, kind):
     return user_generated_dir(username) / safe_report_kind(kind)
 
 
+def report_template_dir():
+    return USER_DATA_DIR / "templates"
+
+
+def report_template_path(kind):
+    suffix = ".xlsx" if safe_report_kind(kind) == "weekly" else ".docx"
+    return report_template_dir() / safe_report_kind(kind) / f"template{suffix}"
+
+
 def user_draft_dir(username):
     return user_root(username) / "drafts"
 

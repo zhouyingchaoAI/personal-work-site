@@ -310,6 +310,23 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(raw)
             return
+        if parsed.path == "/download-template":
+            qs = urllib.parse.parse_qs(parsed.query)
+            kind = safe_report_kind(qs.get("kind", ["weekly"])[0])
+            path = configured_template_path(kind, self.current_user().get("username", ""))
+            if path is None:
+                self.send_json({"error": "平台还没有保存自定义模板，请先上传模板。"}, status=404)
+                return
+            raw = path.read_bytes()
+            ctype, _ = mimetypes.guess_type(str(path))
+            self.send_response(200)
+            self.send_header("Content-Type", ctype or "application/octet-stream")
+            self.send_header("Content-Length", str(len(raw)))
+            encoded_name = urllib.parse.quote(path.name)
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{encoded_name}")
+            self.end_headers()
+            self.wfile.write(raw)
+            return
         if parsed.path == "/preview-image":
             if not self.require_user():
                 return
@@ -393,6 +410,12 @@ class Handler(BaseHTTPRequestHandler):
                 result = save_agent_config(payload)
             elif parsed.path == "/api/upload-history":
                 result = upload_history_reports(payload, username)
+            elif parsed.path == "/api/report-template":
+                result = save_report_template(payload, username)
+            elif parsed.path == "/api/report-template-delete":
+                result = delete_report_template(payload, username)
+            elif parsed.path == "/api/report-templates":
+                result = report_template_info(username)
             elif parsed.path == "/api/delete-report":
                 result = delete_report_file(payload, username)
             elif parsed.path == "/api/delete-history":

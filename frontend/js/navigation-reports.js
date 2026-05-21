@@ -136,7 +136,10 @@
       el('mailPanel').classList.toggle('hidden', !isAssistant || !isMail);
       el('uploadPanel').classList.toggle('hidden', !isAssistant || !isHistory);
       if (isMail) renderReports();
-      if (isHistory) renderHistoryReports();
+      if (isHistory) {
+        renderHistoryReports();
+        loadReportTemplates();
+      }
       el('status').textContent = '';
       el('status').className = 'status';
     }

@@ -380,6 +380,47 @@
       saveFormDraft();
     });
     el('historyKind').addEventListener('change', renderHistoryReports);
+    el('templateKind')?.addEventListener('change', renderReportTemplates);
+    el('uploadTemplateButton')?.addEventListener('click', async () => {
+      const file = el('templateFile').files[0];
+      if (!file) {
+        el('templateStatus').textContent = '请先选择要保存的模板文件。';
+        return;
+      }
+      el('uploadTemplateButton').disabled = true;
+      el('templateStatus').textContent = '正在保存模板...';
+      try {
+        const result = await api('/api/report-template', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            kind: el('templateKind').value,
+            file: { name: file.name, data: await readFileAsBase64(file) }
+          })
+        });
+        el('templateFile').value = '';
+        await loadReportTemplates();
+        el('templateStatus').textContent = `模板已保存：${result.template.name}`;
+      } catch (err) {
+        el('templateStatus').textContent = err.message;
+      } finally {
+        el('uploadTemplateButton').disabled = false;
+      }
+    });
+    el('deleteTemplateButton')?.addEventListener('click', async () => {
+      if (!confirm('确定删除平台模板吗？删除后所有用户都会回退到历史报告或内置基础模板。')) return;
+      try {
+        const result = await api('/api/report-template-delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind: el('templateKind').value })
+        });
+        state.reportTemplates = result.templates || {};
+        renderReportTemplates();
+      } catch (err) {
+        el('templateStatus').textContent = err.message;
+      }
+    });
     if (el('profileButton')) el('profileButton').addEventListener('click', openProfileModal);
     if (el('profileClose')) el('profileClose').addEventListener('click', closeProfileModal);
     if (el('profileModal')) el('profileModal').addEventListener('click', event => {
