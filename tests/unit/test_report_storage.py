@@ -124,6 +124,68 @@ class ReportStorageTests(unittest.TestCase):
         finally:
             rt.read_config = old_read_config
 
+    def test_generate_weekly_without_existing_template_creates_initial_workbook(self):
+        old_read_config = rt.read_config
+        old_newest_any = rt.newest_any
+        try:
+            rt.read_config = lambda: {
+                "users": [{"username": "newuser", "password": "x", "role": "member", "name": "新用户"}],
+                "user_mail_settings": {},
+            }
+            rt.newest_any = lambda *args, **kwargs: None
+
+            path = rt.generate_weekly(
+                {
+                    "period": "2026.05.18-2026.05.22",
+                    "weekly_summary": [{"category": "测试", "content": "首次生成", "status": "完成", "plan": ""}],
+                    "weekly_follow": [],
+                    "weekly_next": [],
+                },
+                "newuser",
+            )
+
+            self.assertTrue(path.exists())
+            self.assertEqual(path.name, "新用户工作周报2026.5.18-2026.5.22.xlsx")
+            self.assertEqual(path.parent, rt.user_generated_kind_dir("newuser", "weekly"))
+        finally:
+            rt.read_config = old_read_config
+            rt.newest_any = old_newest_any
+
+    def test_generate_trip_without_existing_template_creates_initial_docx(self):
+        old_read_config = rt.read_config
+        old_newest = rt.newest
+        try:
+            rt.read_config = lambda: {
+                "users": [{"username": "newuser", "password": "x", "role": "member", "name": "新用户"}],
+                "user_mail_settings": {},
+            }
+            rt.newest = lambda *args, **kwargs: None
+
+            path = rt.generate_trip(
+                {
+                    "department": "场景研究院",
+                    "location": "长沙",
+                    "trip_start": "2026-05-18",
+                    "trip_end": "2026-05-20",
+                    "purpose": "首次出差",
+                    "itinerary": "客户现场",
+                    "details": "完成沟通",
+                    "issues": "无",
+                    "suggestions": "持续跟进",
+                },
+                "newuser",
+            )
+
+            self.assertTrue(path.exists())
+            self.assertEqual(path.name, "出差报告-20260518-0520-新用户.docx")
+            self.assertEqual(path.parent, rt.user_generated_kind_dir("newuser", "trip"))
+            preview = rt.preview_docx(path)
+            self.assertIn("新用户", preview)
+            self.assertIn("首次出差", preview)
+        finally:
+            rt.read_config = old_read_config
+            rt.newest = old_newest
+
 
 if __name__ == "__main__":
     unittest.main()

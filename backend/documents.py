@@ -386,7 +386,7 @@ def trip_prefill(username=None):
 
 def generate_weekly(payload, username=None):
     try:
-        from openpyxl import load_workbook
+        from openpyxl import Workbook, load_workbook
         from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     except ModuleNotFoundError as exc:
         if exc.name == "openpyxl":
@@ -394,17 +394,19 @@ def generate_weekly(payload, username=None):
         raise
 
     template = Path((newest_any("weekly", username, fallback_shared=True) or {}).get("path", ""))
-    if not template.exists() or not template.is_file():
-        raise ValueError("没有找到周报模板")
 
     period = (payload.get("period") or datetime.now().strftime("%Y.%m.%d-%Y.%m.%d")).strip()
     safe_period = normalize_report_period_name(period)
     output = generated_report_path(f"{safe_display_name(username)}工作周报{safe_period}.xlsx", username, "weekly")
-    if template.resolve() == output.resolve():
-        fallback = newest("weekly", username, fallback_shared=True)
-        if fallback and Path(fallback.get("path", "")).resolve() != output.resolve():
-            template = Path(fallback["path"])
-    shutil.copy2(template, output)
+    if template.exists() and template.is_file():
+        if template.resolve() == output.resolve():
+            fallback = newest("weekly", username, fallback_shared=True)
+            if fallback and Path(fallback.get("path", "")).resolve() != output.resolve():
+                template = Path(fallback["path"])
+        shutil.copy2(template, output)
+    else:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        Workbook().save(output)
 
     wb = load_workbook(output)
     ws = wb[wb.sheetnames[0]]
@@ -638,10 +640,100 @@ def generate_trip_from_docx_template(template, output, values):
         temp_output.replace(output)
 
 
+def generate_trip_default_docx(output, values):
+    def text_node(parent, text):
+        node = ET.SubElement(parent, w_tag("t"))
+        node.set(f"{{{XML_NS}}}space", "preserve")
+        node.text = str(text or "")
+
+    def paragraph(text, bold=False):
+        p = ET.Element(w_tag("p"))
+        r = ET.SubElement(p, w_tag("r"))
+        if bold:
+            r_pr = ET.SubElement(r, w_tag("rPr"))
+            ET.SubElement(r_pr, w_tag("b"))
+        text_node(r, text)
+        return p
+
+    def cell(text, grid_span=1, bold=False):
+        tc = ET.Element(w_tag("tc"))
+        tc_pr = ET.SubElement(tc, w_tag("tcPr"))
+        if grid_span > 1:
+            span = ET.SubElement(tc_pr, w_tag("gridSpan"))
+            span.set(w_tag("val"), str(grid_span))
+        tc.append(paragraph(text, bold))
+        return tc
+
+    def row(*cells):
+        tr = ET.Element(w_tag("tr"))
+        for item in cells:
+            tr.append(item)
+        return tr
+
+    document = ET.Element(w_tag("document"))
+    body = ET.SubElement(document, w_tag("body"))
+    body.append(paragraph("出差报告", True))
+    table = ET.SubElement(body, w_tag("tbl"))
+    tbl_pr = ET.SubElement(table, w_tag("tblPr"))
+    borders = ET.SubElement(tbl_pr, w_tag("tblBorders"))
+    for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        border = ET.SubElement(borders, w_tag(side))
+        border.set(w_tag("val"), "single")
+        border.set(w_tag("sz"), "4")
+        border.set(w_tag("space"), "0")
+        border.set(w_tag("color"), "BFC7D1")
+    grid = ET.SubElement(table, w_tag("tblGrid"))
+    for width in ("1300", "1300", "1000", "1700", "1300", "2100"):
+        col = ET.SubElement(grid, w_tag("gridCol"))
+        col.set(w_tag("w"), width)
+
+    table.extend(
+        [
+            row(cell("报告人", bold=True), cell(values.get("reporter", "")), cell("部门", bold=True), cell(values.get("department", "")), cell("出差地点", bold=True), cell(values.get("location", ""))),
+            row(cell("出差时间", bold=True), cell(values.get("date_text", ""), 5)),
+            row(cell("出差目的", bold=True), cell(values.get("purpose", ""), 5)),
+            row(cell("行程概览", bold=True), cell(values.get("itinerary", ""), 5)),
+            row(cell("工作详情", bold=True), cell(values.get("details", ""), 5)),
+            row(cell("问题与反馈", bold=True), cell(values.get("issues", ""), 5)),
+            row(cell("总结与建议", bold=True), cell(values.get("suggestions", ""), 5)),
+        ]
+    )
+    sect_pr = ET.SubElement(body, w_tag("sectPr"))
+    pg_sz = ET.SubElement(sect_pr, w_tag("pgSz"))
+    pg_sz.set(w_tag("w"), "11906")
+    pg_sz.set(w_tag("h"), "16838")
+    pg_mar = ET.SubElement(sect_pr, w_tag("pgMar"))
+    pg_mar.set(w_tag("top"), "1440")
+    pg_mar.set(w_tag("right"), "1440")
+    pg_mar.set(w_tag("bottom"), "1440")
+    pg_mar.set(w_tag("left"), "1440")
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temp_output = output.with_suffix(output.suffix + ".tmp")
+    with zipfile.ZipFile(temp_output, "w", zipfile.ZIP_DEFLATED) as target:
+        target.writestr(
+            "[Content_Types].xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+            "</Types>",
+        )
+        target.writestr(
+            "_rels/.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+            "</Relationships>",
+        )
+        target.writestr("word/_rels/document.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>')
+        target.writestr("word/document.xml", ET.tostring(document, encoding="utf-8", xml_declaration=True))
+    temp_output.replace(output)
+
+
 def generate_trip(payload, username=None):
     template = Path((newest("trip", username, fallback_shared=True) or {}).get("path", ""))
-    if not template.exists() or template.suffix.lower() != ".docx":
-        raise ValueError("没有找到 Word 出差报告模板")
 
     start = (payload.get("trip_start") or datetime.now().strftime("%Y%m%d")).replace("-", "")
     end = (payload.get("trip_end") or start).replace("-", "")[-4:]
@@ -659,7 +751,10 @@ def generate_trip(payload, username=None):
         "issues": payload.get("issues", ""),
         "suggestions": payload.get("suggestions", ""),
     }
-    generate_trip_from_docx_template(template, output, values)
+    if template.exists() and template.suffix.lower() == ".docx":
+        generate_trip_from_docx_template(template, output, values)
+    else:
+        generate_trip_default_docx(output, values)
     return output
 
 
