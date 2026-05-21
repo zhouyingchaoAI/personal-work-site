@@ -1,21 +1,44 @@
-# 个人工作报告邮件助手
+# 个人智能办公助手
 
-这个本地网站会自动读取上级目录里的 `周报` 文件夹，识别最新周报和最新出差报告，生成邮件主题、正文，并把报告文件作为附件发送。
+这是一个本地优先的个人智能办公工作台。它把周报、出差报告、邮件、工作日记、每日资讯、金点子论坛和悬浮智能体集中到同一个 Web 应用里，适合个人或小团队在内网/本机环境中使用。
 
-项目已拆分为前后端分离、按模块组织的结构：
+## 主要能力
 
-- 后端入口：`app.py`
-- 后端模块：`backend/`，按配置用户、报表、邮件、Skill/Agent、日记、论坛、资讯、文档生成、HTTP 服务拆分
-- 前端入口：`frontend/index.html`
-- 前端脚本模块：`frontend/js/`
-- 前端样式模块：`frontend/css/`，由 `frontend/styles.css` 聚合
-- 前端配置：`frontend/config.js`，单独部署前端时可配置后端 API 地址
+- 周报助手：填写本周工作总结、重点跟进和下周计划，按标准 Excel 模板生成周报。
+- 出差报告助手：维护出差地点、时间、目的、行程、过程记录和结论，按标准 Word 模板生成出差报告。
+- 邮件发送：为周报和出差报告生成邮件草稿，自动带出当前账号的收件人、抄送和邮件签名。
+- 普通邮件处理：读取收件箱、查看邮件详情、撰写邮件并发送附件。
+- 工作日记：记录每日工作，可用于后续整理周报素材。
+- 每日资讯：配置资讯源和搜索关键词，生成并保存历史资讯。
+- 金点子论坛：发布话题、评论、点赞，沉淀团队想法。
+- 悬浮智能体：在页面内对话式处理周报、出差报告、日记、邮件和历史查询。
+- 多用户：每个账号拥有独立资料、邮件配置、签名、草稿、历史报告和临时生成文件。
 
-现在也支持按引导表单新建标准文件：
+## 项目结构
 
-- 周报：复制最近的 `.xlsx` 周报模板，写入“本周工作总结 / 重点工作跟进 / 下周工作计划”
-- 出差报告：复制最近的 `.docx` 出差报告模板，写入报告人、部门、地点、时间、目的、行程、详情、问题、建议
-- 新生成的文件会放到 `generated` 文件夹，并自动设为当前邮件附件
+- `app.py`：后端启动入口。
+- `backend/`：后端功能模块，包括用户配置、报告生成、邮件、Agent、日记、论坛、资讯、Skill 和 HTTP 服务。
+- `frontend/index.html`：前端页面入口。
+- `frontend/js/`：前端交互模块。
+- `frontend/css/`：前端样式模块，由 `frontend/styles.css` 聚合。
+- `frontend/config.js`：前端部署配置，可设置 API 地址和相对路径。
+- `user_data/`：用户数据目录，按账号隔离保存资料、报告、草稿、日记和邮件缓存。
+
+## 报告文件规则
+
+每个用户的周报和出差报告分开存储：
+
+- 临时周报：`user_data/<用户名>/generated/weekly/`
+- 临时出差报告：`user_data/<用户名>/generated/trip/`
+- 历史周报：`user_data/<用户名>/reports/weekly/`
+- 历史出差报告：`user_data/<用户名>/reports/trip/`
+
+点击“按标准模板生成文件”时，文件会先进入临时目录。只有邮件成功发送后，才会移动到对应历史目录。同日期同文件名会直接覆盖，不再追加 `-生成1` 这类后缀。
+
+文件识别规则：
+
+- 周报：文件名包含 `工作周报`，格式为 `.xlsx` 或 `.xls`。
+- 出差报告：文件名以 `出差报告` 开头，格式为 `.docx` 或 `.md`。
 
 ## 启动
 
@@ -30,45 +53,37 @@ python3 app.py
 http://127.0.0.1:8765
 ```
 
-也可以使用英文相对地址：
+也可以使用相对访问地址：
 
 ```text
-/personal-office-assistant
 http://127.0.0.1:8765/personal-office-assistant
 ```
 
-## 邮箱配置
+## 配置
 
-复制一份配置文件：
+首次使用可以复制示例配置：
 
 ```bash
 cp config.example.json config.json
 ```
 
-然后把 `config.json` 里的邮箱信息改成自己的。建议使用邮箱的 SMTP 授权码，不要使用网页登录密码。
+系统支持在页面中配置：
 
-也可以用环境变量配置：
+- 用户账号和中文名
+- 每个用户的发件邮箱、SMTP/IMAP 账号
+- 周报收件人和抄送
+- 出差报告收件人和抄送
+- 每个用户自己的邮件签名
+- AI 接口地址、模型和提示词
+- 每日资讯源和搜索配置
 
-```bash
-export SMTP_HOST=smtp.example.com
-export SMTP_PORT=587
-export SMTP_USER=your-email@example.com
-export SMTP_PASSWORD=your-smtp-authorization-code
-export SMTP_FROM=your-email@example.com
-python3 app.py
-```
+建议使用邮箱 SMTP/IMAP 授权码，不要使用网页登录密码。
 
-如果没有配置 SMTP，点击发送时不会真的发出邮件，会在 `drafts` 文件夹里生成 `.eml` 邮件草稿。
-
-## 文件规则
-
-- 周报：文件名包含 `工作周报`，格式为 `.xlsx` 或 `.xls`
-- 出差报告：文件名以 `出差报告` 开头，格式为 `.docx` 或 `.md`
-- 附件会使用 `周报` 文件夹里的原始文件
+如果某个账号没有配置 SMTP，发送时不会真的发出邮件，会在该用户的 `drafts` 目录生成 `.eml` 草稿。
 
 ## 部署
 
-### 方式一：直接后台运行（推荐本地/测试）
+本地后台运行：
 
 ```bash
 ./start.sh
@@ -80,7 +95,7 @@ python3 app.py
 kill $(cat app.pid)
 ```
 
-### 方式二：macOS 开机自启
+macOS 开机自启：
 
 ```bash
 cp deploy/com.personal.work-site.plist ~/Library/LaunchAgents/
@@ -94,7 +109,7 @@ launchctl start com.personal.work-site
 tail -f app.log
 ```
 
-### 方式三：Linux 服务器（systemd）
+Linux systemd：
 
 ```bash
 sudo cp deploy/personal-work-site.service /etc/systemd/system/
@@ -103,15 +118,15 @@ sudo systemctl enable personal-work-site
 sudo systemctl start personal-work-site
 ```
 
-查看状态：
-
-```bash
-sudo systemctl status personal-work-site
-```
-
-### 方式四：Docker（可选）
+Docker：
 
 ```bash
 docker build -t personal-work-site .
 docker run -d -p 8765:8765 -v $(pwd)/config.json:/app/config.json personal-work-site
+```
+
+## 测试
+
+```bash
+PYTHONPYCACHEPREFIX=/tmp/pws-pycache python3 -m unittest discover -s tests/unit -p 'test_*.py' -v
 ```
