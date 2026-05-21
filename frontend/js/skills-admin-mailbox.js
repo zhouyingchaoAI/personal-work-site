@@ -285,6 +285,7 @@
 
     async function loadMailConfig() {
       const data = await api('/api/mail-config');
+      state.mailSignature = data.email_signature || '';
       const ref = data.reference || {};
       const setVal = (id, val, refVal) => {
         const node = el(id);
@@ -597,6 +598,35 @@
       el('assistantMailPreview').innerHTML = textToHtml(el('assistantMailBody').value || '暂无正文内容');
     }
 
+    function mailSignatureText() {
+      return String(state.mailSignature || '').trim();
+    }
+
+    function appendMailSignatureText(body) {
+      const text = String(body || '').trimEnd();
+      const signature = mailSignatureText();
+      if (!signature) return text;
+      if (text.endsWith(signature)) return text;
+      return text ? `${text}\n\n${signature}` : signature;
+    }
+
+    function ensureAssistantMailSignature(force = false) {
+      const node = el('assistantMailBody');
+      const signature = mailSignatureText();
+      if (!node || !signature) return;
+      if (force || !node.value.trim()) {
+        node.value = appendMailSignatureText(node.value);
+        renderAssistantMailPreview();
+      }
+    }
+
+    async function refreshMailSignature() {
+      if (!state.user) return '';
+      const data = await api('/api/mail-config');
+      state.mailSignature = data.email_signature || '';
+      return state.mailSignature;
+    }
+
     function clearAssistantMail() {
       el('assistantMailTo').value = '';
       el('assistantMailCc').value = '';
@@ -605,6 +635,7 @@
       el('assistantMailFiles').value = '';
       state.assistantMailFiles = [];
       renderAssistantMailFiles();
+      ensureAssistantMailSignature(true);
       renderAssistantMailPreview();
       el('assistantMailStatus').textContent = '';
       el('assistantMailStatus').className = 'status';
@@ -626,6 +657,7 @@
         defaultAssistantPrompt = session.assistant_prompt || defaultAssistantPrompt;
         if (session.authenticated) {
           applyUser(session.user);
+          await refreshMailSignature();
           await loadReports();
         } else {
           applyUser(null);

@@ -215,6 +215,7 @@
         loadSkills();
       }
       if (task === 'mailassistant') {
+        ensureAssistantMailSignature();
         loadMailbox();
       }
       if (task === 'diary') {
@@ -227,4 +228,3 @@
         loadNews();
       }
     }
-

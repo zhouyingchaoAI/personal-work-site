@@ -657,7 +657,7 @@ def compose_draft(kind, file_name=None, username=None):
     path = Path(report["path"])
     preview = preview_file(path)
     preview_html = preview_file_html(path)
-    sender = display_name_for_user(username)
+    today_text = datetime.now().strftime("%Y年%m月%d日")
     if kind == "weekly":
         subject = f"【周报】{path.stem}"
         summary_text, summary_html = format_weekly_body(path)
@@ -668,14 +668,13 @@ def compose_draft(kind, file_name=None, username=None):
         )
         if summary_text:
             body += summary_text + "\n\n"
-        body += (
-            f"{sender}\n"
-            f"{datetime.now().strftime('%Y年%m月%d日')}"
-        )
+        body += f"{today_text}"
+        body = append_email_signature(body, username)
         body_html = f'<p>{html_escape(config.get("weekly_greeting", "领导您好："))}</p><p>附件为我的本周工作周报《{html_escape(path.name)}》，请查收。</p>'
         if weekly_table_html:
             body_html += weekly_table_html
-        body_html += f'<p>{html_escape(sender)}<br>{datetime.now().strftime("%Y年%m月%d日")}</p>'
+        body_html += f'<p>{html_escape(today_text)}</p>'
+        body_html = append_email_signature_html(body_html, username)
         to_addr = mail.get("weekly_to", "")
         cc_addr = mail.get("weekly_cc", "")
     else:
@@ -688,14 +687,13 @@ def compose_draft(kind, file_name=None, username=None):
         )
         if summary_text:
             body += summary_text + "\n\n"
-        body += (
-            f"{sender}\n"
-            f"{datetime.now().strftime('%Y年%m月%d日')}"
-        )
+        body += f"{today_text}"
+        body = append_email_signature(body, username)
         body_html = f'<p>{html_escape(config.get("trip_greeting", "领导您好："))}</p><p>附件为我的出差报告《{html_escape(path.name)}》，请查收。</p>'
         if trip_table_html:
             body_html += trip_table_html
-        body_html += f'<p>{html_escape(sender)}<br>{datetime.now().strftime("%Y年%m月%d日")}</p>'
+        body_html += f'<p>{html_escape(today_text)}</p>'
+        body_html = append_email_signature_html(body_html, username)
         to_addr = mail.get("trip_to", "")
         cc_addr = mail.get("trip_cc", "")
 
@@ -711,4 +709,5 @@ def compose_draft(kind, file_name=None, username=None):
         "download_url": "/download?file=" + urllib.parse.quote(report["name"]),
         "preview": preview,
         "preview_html": preview_html,
+        "email_signature": email_signature_for_user(username),
     }

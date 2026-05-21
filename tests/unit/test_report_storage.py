@@ -80,6 +80,50 @@ class ReportStorageTests(unittest.TestCase):
         self.assertIn(visible.name, names)
         self.assertNotIn(legacy.name, names)
 
+    def test_build_message_appends_current_user_signature(self):
+        old_read_config = rt.read_config
+        try:
+            rt.read_config = lambda: {
+                "users": [{"username": "yilujian", "password": "x", "role": "member", "name": "易鲁剑"}],
+                "user_mail_settings": {
+                    "yilujian": {
+                        "user_email": "yilujian@example.com",
+                        "email_signature": "易鲁剑\nE-mail: yilujian@example.com",
+                    }
+                },
+            }
+
+            msg = rt.build_message(
+                {"to": "leader@example.com", "subject": "测试", "body": "正文"},
+                "yilujian",
+            )
+
+            body = msg.get_content()
+            self.assertIn("正文", body)
+            self.assertIn("易鲁剑", body)
+            self.assertIn("E-mail: yilujian@example.com", body)
+        finally:
+            rt.read_config = old_read_config
+
+    def test_html_signature_check_does_not_match_attachment_name(self):
+        old_read_config = rt.read_config
+        try:
+            rt.read_config = lambda: {
+                "users": [{"username": "yilujian", "password": "x", "role": "member", "name": "易鲁剑"}],
+                "user_mail_settings": {
+                    "yilujian": {
+                        "user_email": "yilujian@example.com",
+                        "email_signature": "易鲁剑",
+                    }
+                },
+            }
+
+            html = rt.append_email_signature_html("<p>附件：易鲁剑工作周报.xlsx</p>", "yilujian")
+
+            self.assertTrue(html.endswith("<p>易鲁剑</p>"))
+        finally:
+            rt.read_config = old_read_config
+
 
 if __name__ == "__main__":
     unittest.main()

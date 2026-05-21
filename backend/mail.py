@@ -316,6 +316,32 @@ def split_addresses(value):
     return [item.strip() for item in re.split(r"[;,]", value or "") if item.strip()]
 
 
+def email_signature_for_user(username=None):
+    mail_cfg = user_mail_config(username)
+    return mail_cfg.get("email_signature") or default_email_signature_for_user(username) or ""
+
+
+def append_email_signature(body, username=None):
+    text = str(body or "")
+    signature = email_signature_for_user(username)
+    if not signature:
+        return text
+    if text.rstrip().endswith(signature.strip()):
+        return text
+    return text.rstrip() + "\n\n" + signature.strip()
+
+
+def append_email_signature_html(body_html, username=None):
+    html = str(body_html or "")
+    signature = email_signature_for_user(username)
+    if not signature:
+        return html
+    sig_html = html_escape(signature.strip()).replace("\n", "<br>")
+    if html.rstrip().endswith(f"<p>{sig_html}</p>"):
+        return html
+    return html.rstrip() + f'<p>{sig_html}</p>'
+
+
 def build_message(payload, username=None):
     settings = smtp_settings(username)
     mail_cfg = user_mail_config(username)
@@ -324,19 +350,10 @@ def build_message(payload, username=None):
     if not from_addr:
         from_addr = "no-reply@local"
 
-    config = read_config()
-    user_mail = config.get("user_mail_settings", {}).get(username or "", {})
-    signature = user_mail.get("email_signature", default_email_signature_for_user(username)) or ""
-    body = payload.get("body", "") or ""
-    if signature:
-        if not body.endswith(signature):
-            body = body + signature
-
+    body = append_email_signature(payload.get("body", "") or "", username)
     body_html = payload.get("body_html", "") or ""
-    if signature and body_html:
-        sig_html = html_escape(signature).replace("\n", "<br>")
-        if sig_html not in body_html:
-            body_html = body_html + "<br>" + sig_html
+    if body_html:
+        body_html = append_email_signature_html(body_html, username)
 
     msg = EmailMessage()
     msg["From"] = from_addr

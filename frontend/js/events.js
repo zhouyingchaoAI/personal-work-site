@@ -57,7 +57,7 @@
             to: el('assistantMailTo').value,
             cc: el('assistantMailCc').value,
             subject: el('assistantMailSubject').value,
-            body: el('assistantMailBody').value,
+            body: appendMailSignatureText(el('assistantMailBody').value),
             attachments
           })
         });
@@ -263,6 +263,7 @@
         el('mailImapPassword').value = '';
         el('mailPasswordHint').textContent = 'SMTP 密码/授权码状态：' + (result.mail_config.smtp_password_masked || '未配置');
         el('mailImapPasswordHint').textContent = 'IMAP 密码/授权码状态：' + (result.mail_config.imap_password_masked || '未配置');
+        state.mailSignature = result.mail_config.email_signature || '';
         el('mailConfigStatus').textContent = '邮件配置已保存。';
         el('mailConfigStatus').className = 'status ok';
       } catch (err) {

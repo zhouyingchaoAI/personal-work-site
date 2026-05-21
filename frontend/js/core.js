@@ -7,7 +7,7 @@
 2、语言简洁明了，体现实际工作量和推进成果。
 3、修正错别字、病句和不通顺表达。
 4、不要编造不存在的事项，不要写空话套话。`;
-    let state = { reports: [], selected: null, task: 'weekly', subTab: 'edit', user: null, weeklyPrefilled: false, tripPrefilled: false, modalSave: null, restoringDraft: false, assistantMailFiles: [], forumSelected: null, forumCommentPage: 1, currentSkill: null, agentStage: 0 };
+    let state = { reports: [], selected: null, task: 'weekly', subTab: 'edit', user: null, mailSignature: '', weeklyPrefilled: false, tripPrefilled: false, modalSave: null, restoringDraft: false, assistantMailFiles: [], forumSelected: null, forumCommentPage: 1, currentSkill: null, agentStage: 0 };
     const FORM_DRAFT_PREFIX = 'personalWorkSite.formDraft.v2';
     const el = id => document.getElementById(id);
     const lucideIcons = {
@@ -127,6 +127,7 @@
           el('tripReporter').value = user.name || user.username || '';
         }
       }
+      if (!authed) state.mailSignature = '';
       document.querySelectorAll('.admin-only').forEach(node => {
         node.classList.toggle('hidden', !user?.is_admin);
       });
