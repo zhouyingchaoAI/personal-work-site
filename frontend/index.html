@@ -75,6 +75,10 @@
             <span class="nav-icon" data-icon="inbox"></span>
             <span class="task-name">邮件助手</span>
           </button>
+          <button class="task-card" type="button" data-task="lobsterbase">
+            <span class="nav-icon" data-icon="bot"></span>
+            <span class="task-name">龙虾基地</span>
+          </button>
         </div>
       </div>
       <div class="nav-group">
@@ -181,6 +185,22 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+      <div class="task-panel hidden" id="lobsterBasePanel">
+        <div class="lobster-shell">
+          <div class="lobster-toolbar">
+            <div>
+              <h3>龙虾基地</h3>
+              <p>复用当前办公助手账号登录 OpenClaw 龙虾平台，可创建和管理自己的龙虾。</p>
+            </div>
+            <div class="lobster-actions">
+              <button type="button" class="secondary" id="lobsterRefreshButton"><span class="icon" data-icon="refresh-cw"></span> 刷新</button>
+              <a class="secondary" id="lobsterOpenLink" href="/openclaw/" target="_blank" rel="noopener">新窗口打开</a>
+            </div>
+          </div>
+          <div id="lobsterStatus" class="status">进入页面后自动登录龙虾平台...</div>
+          <iframe id="lobsterFrame" class="lobster-frame" title="龙虾基地" src="about:blank"></iframe>
         </div>
       </div>
       <div class="page-header hidden" id="pageHeader">
@@ -1025,10 +1045,11 @@
   </div>
   <script src="/personal-office-assistant/frontend/config.js" defer></script>
   <script src="/personal-office-assistant/frontend/js/core.js" defer></script>
-  <script src="/personal-office-assistant/frontend/js/navigation-reports.js" defer></script>
+  <script src="/personal-office-assistant/frontend/js/navigation-reports.js?v=20260527b" defer></script>
   <script src="/personal-office-assistant/frontend/js/weekly-trip-forms.js" defer></script>
   <script src="/personal-office-assistant/frontend/js/skills-admin-mailbox.js" defer></script>
-  <script src="/personal-office-assistant/frontend/js/events.js" defer></script>
+  <script src="/personal-office-assistant/frontend/js/openclaw-base.js?v=20260527b" defer></script>
+  <script src="/personal-office-assistant/frontend/js/events.js?v=20260527b" defer></script>
   <script src="/personal-office-assistant/frontend/js/diary-forum-news.js" defer></script>
   <script src="/personal-office-assistant/frontend/js/mail-agent.js" defer></script>
   <script src="/personal-office-assistant/frontend/js/boot.js" defer></script>

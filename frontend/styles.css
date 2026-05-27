@@ -5,3 +5,46 @@
 @import url("/personal-office-assistant/frontend/css/diary-forum-news.css");
 @import url("/personal-office-assistant/frontend/css/agent.css");
 @import url("/personal-office-assistant/frontend/css/responsive.css");
+
+
+.lobster-shell {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 10px;
+  min-height: calc(100vh - 132px);
+}
+
+.lobster-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid #dbe5f1;
+  background: transparent;
+}
+
+.lobster-toolbar h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.lobster-toolbar p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.lobster-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lobster-frame {
+  width: 100%;
+  min-height: calc(100vh - 220px);
+  border: 0;
+  border-radius: 8px;
+  background: #fff;
+}

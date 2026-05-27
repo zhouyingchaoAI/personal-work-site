@@ -139,6 +139,58 @@ class Handler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/api/openclaw-sso":
+            user = self.require_user()
+            if not user:
+                return
+            target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
+            public_url = os.getenv("OPENCLAW_PLATFORM_PUBLIC_URL", "/openclaw").rstrip("/")
+            secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "openclaw-office-sso-dev")
+            current_user_info = public_user(user)
+            payload = {
+                "username": current_user_info.get("username", ""),
+                "display_name": current_user_info.get("name") or current_user_info.get("username", ""),
+                "role": current_user_info.get("role", "member"),
+                "name": current_user_info.get("name", ""),
+                "avatar_url": current_user_info.get("avatar_url", ""),
+                "bio": current_user_info.get("bio", ""),
+                "hobbies": current_user_info.get("hobbies", ""),
+                "is_admin": bool(current_user_info.get("is_admin")),
+                "is_superadmin": bool(current_user_info.get("is_superadmin")),
+            }
+            try:
+                parsed_target = urllib.parse.urlparse(target)
+                targets = [target + "/api/auth/office-sso"]
+                if parsed_target.path.rstrip("/").endswith("/openclaw"):
+                    origin = urllib.parse.urlunparse((parsed_target.scheme, parsed_target.netloc, "", "", "", ""))
+                    targets.append(origin.rstrip("/") + "/api/auth/office-sso")
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                last_error = None
+                data = None
+                for sso_url in targets:
+                    try:
+                        req = urllib.request.Request(
+                            sso_url,
+                            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                            headers={
+                                "Content-Type": "application/json",
+                                "X-OpenClaw-Office-SSO-Secret": secret,
+                            },
+                            method="POST",
+                        )
+                        with opener.open(req, timeout=15) as resp:
+                            data = json.loads(resp.read().decode("utf-8"))
+                        break
+                    except urllib.error.HTTPError as exc:
+                        last_error = exc
+                        if exc.code != 404:
+                            raise
+                if data is None:
+                    raise last_error or RuntimeError("龙虾平台未返回登录凭据")
+                self.send_json({"ok": True, "token": data.get("token", ""), "user": data.get("user"), "url": public_url + "/"})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": f"龙虾平台单点登录失败：{exc}"}, status=502)
+            return
         if parsed.path == "/api/admin-config":
             if not self.require_admin():
                 return

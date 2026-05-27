@@ -164,6 +164,10 @@
       el('mailPanel').classList.add('hidden');
       el('uploadPanel').classList.add('hidden');
       el('mailAssistantPanel').classList.toggle('hidden', task !== 'mailassistant');
+      el('lobsterBasePanel').classList.toggle('hidden', task !== 'lobsterbase');
+      if (task === 'lobsterbase' && typeof loadOpenClawBase === 'function') {
+        setTimeout(() => loadOpenClawBase(true), 0);
+      }
       el('diaryPanel').classList.toggle('hidden', task !== 'diary');
       el('forumPanel').classList.toggle('hidden', task !== 'forum');
       el('newsPanel').classList.toggle('hidden', task !== 'news');
@@ -176,7 +180,7 @@
         state.subTab = 'edit';
         document.querySelectorAll('.sub-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.sub === 'edit'));
       }
-      const titles = { dashboard: '工作台', weekly: '周报助手', trip: '出差报告助手', diary: '工作日记', forum: '金点子论坛', news: '每日资讯', mailassistant: '邮件助手', config: '系统配置', mailconfig: '邮件配置', skills: '系统 Skill', usermanage: '用户管理' };
+      const titles = { dashboard: '工作台', weekly: '周报助手', trip: '出差报告助手', diary: '工作日记', forum: '金点子论坛', news: '每日资讯', mailassistant: '邮件助手', lobsterbase: '龙虾基地', config: '系统配置', mailconfig: '邮件配置', skills: '系统 Skill', usermanage: '用户管理' };
       const descs = {
         dashboard: '智能办公一站式工作台',
         weekly: '填写周报、发送邮件、管理历史周报',
@@ -185,6 +189,7 @@
         forum: '智能体或成员发起每日话题，大家围绕创意、改进和机会展开讨论',
         news: '收集轨道交通关键资讯，调用平台大模型生成每日简报',
         mailassistant: '查看收件箱、阅读邮件、发送普通邮件',
+        lobsterbase: '创建、管理和连接自己的 OpenClaw 龙虾',
         config: '管理员配置 AI 接口和系统参数',
         mailconfig: '配置发件邮箱、收件人和抄送地址',
         skills: '查看已安装 Skill、能力说明、调用参数和示例',

@@ -168,6 +168,8 @@
       }
     });
 
+    el('lobsterRefreshButton')?.addEventListener('click', () => loadOpenClawBase(true));
+
     el('changePassButton').addEventListener('click', () => {
       el('passOld').value = '';
       el('passNew').value = '';

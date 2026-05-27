@@ -1,0 +1,21 @@
+services:
+  personal-work-site:
+    image: personal-work-site:v1
+    build: .
+    container_name: personal-work-site
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8765
+      OPENCLAW_PLATFORM_INTERNAL_URL: http://host.docker.internal:18080/openclaw
+      OPENCLAW_PLATFORM_PUBLIC_URL: https://yfdemo.chencytech.com/openclaw
+      OPENCLAW_OFFICE_SSO_SECRET: openclaw-office-sso-dev
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./user_data:/app/user_data
+      - ./backend/generated:/app/backend/generated
+      - ./backend/drafts:/app/backend/drafts

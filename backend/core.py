@@ -19,6 +19,7 @@ import ssl
 import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -174,6 +175,76 @@ def read_agent_config():
 
 def write_agent_config(cfg):
     AGENT_CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def openclaw_sync_user(user, action="upsert"):
+    if not user:
+        return {"ok": False, "skipped": True}
+    target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
+    secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "openclaw-office-sso-dev")
+    info = public_user(user)
+    payload = {
+        "action": action,
+        "username": info.get("username", ""),
+        "display_name": info.get("name") or info.get("username", ""),
+        "role": info.get("role", "member"),
+        "name": info.get("name", ""),
+        "avatar_url": info.get("avatar_url", ""),
+        "bio": info.get("bio", ""),
+        "hobbies": info.get("hobbies", ""),
+        "is_admin": bool(info.get("is_admin")),
+        "is_superadmin": bool(info.get("is_superadmin")),
+    }
+    parsed_target = urllib.parse.urlparse(target)
+    targets = [target + "/api/auth/office-user-sync"]
+    if parsed_target.path.rstrip("/").endswith("/openclaw"):
+        origin = urllib.parse.urlunparse((parsed_target.scheme, parsed_target.netloc, "", "", "", ""))
+        targets.append(origin.rstrip("/") + "/api/auth/office-user-sync")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    last_error = None
+    for sync_url in targets:
+        try:
+            req = urllib.request.Request(
+                sync_url,
+                data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                headers={"Content-Type": "application/json", "X-OpenClaw-Office-SSO-Secret": secret},
+                method="POST",
+            )
+            with opener.open(req, timeout=10) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code != 404:
+                raise
+    raise last_error or RuntimeError("龙虾平台用户同步失败")
+
+
+def openclaw_sync_deleted_username(username):
+    target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
+    secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "openclaw-office-sso-dev")
+    payload = {"action": "delete", "username": username}
+    parsed_target = urllib.parse.urlparse(target)
+    targets = [target + "/api/auth/office-user-sync"]
+    if parsed_target.path.rstrip("/").endswith("/openclaw"):
+        origin = urllib.parse.urlunparse((parsed_target.scheme, parsed_target.netloc, "", "", "", ""))
+        targets.append(origin.rstrip("/") + "/api/auth/office-user-sync")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    last_error = None
+    for sync_url in targets:
+        try:
+            req = urllib.request.Request(
+                sync_url,
+                data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                headers={"Content-Type": "application/json", "X-OpenClaw-Office-SSO-Secret": secret},
+                method="POST",
+            )
+            with opener.open(req, timeout=10) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code != 404:
+                raise
+    raise last_error or RuntimeError("龙虾平台用户删除同步失败")
 
 
 def public_user(user):
@@ -389,9 +460,11 @@ def add_user(payload, caller_username):
     users = config.setdefault("users", [])
     if any(u.get("username") == new_username for u in users):
         raise ValueError("该用户名已存在")
-    users.append({"username": new_username, "password": password, "role": role, "name": name})
+    new_user = {"username": new_username, "password": password, "role": role, "name": name}
+    users.append(new_user)
     write_config(config)
     ensure_user_space(new_username)
+    openclaw_sync_user(new_user, "upsert")
     return {"ok": True, "users": user_list(caller_username)}
 
 
@@ -410,6 +483,7 @@ def delete_user(payload, caller_username):
         raise ValueError("不能删除超级管理员")
     config["users"] = [u for u in users if u.get("username") != target_username]
     write_config(config)
+    openclaw_sync_deleted_username(target_username)
     return {"ok": True, "users": user_list(caller_username)}
 
 
@@ -457,6 +531,7 @@ def update_user(payload, caller_username):
     if new_role is not None and caller_role == "superadmin":
         target["role"] = new_role
     write_config(config)
+    openclaw_sync_user(target, "upsert")
     return {"ok": True, "users": user_list(caller_username)}
 
 
@@ -497,6 +572,7 @@ def save_user_profile(payload, username):
     if avatar_path.exists():
         target["avatar_url"] = f"/user-avatar/{urllib.parse.quote(username)}.png?v={int(avatar_path.stat().st_mtime)}"
     write_config(config)
+    openclaw_sync_user(target, "upsert")
     return {"ok": True, "user": public_user(target)}
 
 
