@@ -9,6 +9,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     OPENCLAW_OFFICE_SSO_SECRET=openclaw-office-sso-dev
 
 WORKDIR /app
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY . /app
 
 RUN mkdir -p /app/user_data /app/backend/generated /app/backend/drafts \
