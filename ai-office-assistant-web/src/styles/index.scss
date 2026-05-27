@@ -1,0 +1,57 @@
+:root {
+  --color-primary: #15499c;
+  --color-primary-hover: #1d5cab;
+  --color-primary-active: #123f87;
+  --color-primary-dark: #0b3475;
+  --color-primary-soft: #edf4ff;
+  --color-primary-border: #b9c9e4;
+  --color-primary-ring: rgba(21, 73, 156, 0.16);
+  --color-primary-shadow: rgba(21, 73, 156, 0.18);
+  --color-primary-gradient: linear-gradient(135deg, #1d5cab, #15499c);
+  --color-text: #14213d;
+  --color-muted: #64748b;
+  --color-soft: #edf4ff;
+  --color-border: #dbe7fb;
+  --color-panel: rgba(255, 255, 255, 0.86);
+  --shadow-panel: 0 18px 48px rgba(68, 112, 181, 0.16);
+  --radius-panel: 24px;
+  --radius-card: 18px;
+  font-family:
+    Inter, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  color: var(--color-text);
+  background: #f7faff;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.text-button {
+  padding: 0;
+  color: var(--color-primary);
+  background: transparent;
+  border: 0;
+}
