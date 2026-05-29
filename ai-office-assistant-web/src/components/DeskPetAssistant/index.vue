@@ -136,6 +136,13 @@ const pageConfigs: Record<MenuId, DeskPetConfig> = {
     summary: '我可以整理账号权限、生成用户说明，或帮助排查角色配置问题。',
     actions: ['整理账号权限', '生成用户说明', '排查角色配置'],
   },
+  mcp: {
+    agent: 'dashboard',
+    title: 'MCP 服务助手',
+    intro: 'Hi~ 我可以帮你检查 MCP 服务配置。',
+    summary: '我可以说明连接配置、检查密钥状态，或帮你梳理外部客户端接入步骤。',
+    actions: ['检查 MCP 状态', '说明连接配置', '梳理接入步骤'],
+  },
 }
 
 const currentConfig = computed(() => pageConfigs[props.activeMenu])

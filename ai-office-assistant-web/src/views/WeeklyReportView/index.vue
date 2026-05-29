@@ -5,13 +5,14 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { Calendar, Delete, Document, Download, EditPen, Setting, Upload, View } from '@element-plus/icons-vue'
 import IconTextButton from '../../components/IconTextButton/index.vue'
 import weeklyEmptyPlaceholder from '../../assets/weekly-empty-placeholder.png'
-import { authState } from '../../services/authSession'
+import { authState, defaultOptimizePrompt } from '../../services/authSession'
 import {
   deleteHistory,
   deleteReport,
   downloadUrl,
   generateWeekly,
   getDraft,
+  getMailConfig,
   getReports,
   getWeeklyPrefill,
   optimizeText,
@@ -121,15 +122,6 @@ const sectionFields: Record<SectionId, EditField[]> = {
   ],
 }
 
-const fieldPrompts: Record<RowField, string> = {
-  category: '请提炼为 2-6 个字的工作分类，保留业务含义，不添加新事项。',
-  content: '请优化为清楚、具体、可汇报的工作描述，保留原意，不添加未提供的事项。',
-  status: '请优化为简洁的完成情况描述，突出结果和状态。',
-  progress: '请优化为明确的推进状态描述，说明当前进展。',
-  plan: '请优化为清晰的下一步动作，表达具体、可执行。',
-  difficulty: '请优化为问题和所需支持描述，表达客观、具体。',
-}
-
 const backendUrl = import.meta.env.VITE_PERSONAL_WORK_BACKEND_URL?.replace(/\/$/, '') || ''
 const elementLocale = zhCn
 
@@ -174,7 +166,14 @@ const editForm = reactive<Record<RowField, string>>({
   difficulty: '',
 })
 
-const promptForm = reactive<Record<RowField, string>>({ ...fieldPrompts })
+const promptForm = reactive<Record<RowField, string>>({
+  category: '',
+  content: '',
+  status: '',
+  progress: '',
+  plan: '',
+  difficulty: '',
+})
 // AI 优化结果先暂存，用户对比后再决定是否写回输入框。
 const fieldOptimizePreview = reactive<Record<RowField, FieldOptimizePreview | null>>({
   category: null,
@@ -440,6 +439,10 @@ function canOptimizeField(field: EditField) {
   return field.key !== 'category'
 }
 
+function optimizePrompt(fieldKey: RowField) {
+  return promptForm[fieldKey] || defaultOptimizePrompt()
+}
+
 function isRequiredField(field: EditField) {
   return field.key === 'category' || field.key === 'content' || field.key === 'progress'
 }
@@ -589,7 +592,7 @@ function beginEdit(sectionId: SectionId, row: WeeklyRow, isNew = false) {
     const fieldKey = key as RowField
     // 历史重点跟进行可能把当前进展写在 content 字段，编辑时迁移到 progress。
     editForm[fieldKey] = sectionId === 'follow' && fieldKey === 'progress' ? String(row.progress || row.content || '') : String(row[fieldKey] || '')
-    promptForm[fieldKey] = fieldPrompts[fieldKey]
+    promptForm[fieldKey] = ''
     fieldOptimizePreview[fieldKey] = null
   })
   fieldOptimizing.value = ''
@@ -723,12 +726,12 @@ function acceptOptimizePreview(field: EditField) {
 
 function openPromptEditor(field: EditField) {
   promptEditor.value = field.key
-  promptDraft.value = promptForm[field.key]
+  promptDraft.value = optimizePrompt(field.key)
 }
 
 function savePromptEditor() {
   if (!promptEditor.value) return
-  promptForm[promptEditor.value] = promptDraft.value.trim() || fieldPrompts[promptEditor.value]
+  promptForm[promptEditor.value] = promptDraft.value.trim()
   promptEditor.value = ''
   ElMessage.success('提示词已更新')
 }
@@ -941,6 +944,17 @@ function applyDraft(draft: DraftResponse) {
   clearSendReview()
 }
 
+async function loadWeeklyMailRecipients() {
+  if (mailDraft.to && mailDraft.cc) return
+  try {
+    const config = await getMailConfig()
+    if (!mailDraft.to) mailDraft.to = config.weekly_to || ''
+    if (!mailDraft.cc) mailDraft.cc = config.weekly_cc || ''
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : '邮件配置读取失败', 'error')
+  }
+}
+
 async function loadDraft(name: string) {
   loading.draft = true
   try {
@@ -1087,7 +1101,7 @@ async function optimizeEditField(field: EditField) {
   fieldOptimizing.value = field.key
   fieldOptimizePreview[field.key] = null
   try {
-    const result = await optimizeText(original, promptForm[field.key])
+    const result = await optimizeText(original, optimizePrompt(field.key))
     fieldOptimizePreview[field.key] = {
       original,
       suggestion: result.text || original,
@@ -1144,7 +1158,10 @@ async function switchWeeklyTab(tab: WeeklyTabId) {
   }
   if (activeWeeklyTab.value === tab) return
   commitEditSilently(tab === 'edit')
-  if (tab === 'mail' && (isReportDirty.value || !mailDraft.body)) refreshInstantPreview()
+  if (tab === 'mail') {
+    if (isReportDirty.value || !mailDraft.body) refreshInstantPreview()
+    await loadWeeklyMailRecipients()
+  }
   activeStep.value = stepForWeeklyTab(tab)
   if (tab !== 'mail') clearSendReview()
   await scrollStepTop()
@@ -1659,9 +1676,9 @@ onMounted(initializeWeekly)
     >
       <el-input v-model="promptDraft" type="textarea" :autosize="{ minRows: 5, maxRows: 8 }" />
       <template #footer>
-        <div class="weekly-edit-actions">
-          <el-button @click="promptEditor = ''">取消</el-button>
-          <el-button type="primary" @click="savePromptEditor">保存提示词</el-button>
+        <div class="weekly-prompt-actions prompt-dialog-actions">
+          <el-button class="prompt-dialog-button" @click="promptEditor = ''">取消</el-button>
+          <el-button class="prompt-dialog-button prompt-dialog-button--primary" @click="savePromptEditor">保存</el-button>
         </div>
       </template>
     </el-dialog>

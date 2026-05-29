@@ -16,7 +16,7 @@ const emit = defineEmits<{
   logout: []
 }>()
 
-const fullWidthMenus: MenuId[] = ['weekly', 'trip', 'diary', 'forum', 'news', 'mailassistant', 'lobsterbase', 'config', 'mailconfig', 'skills', 'usermanage']
+const fullWidthMenus: MenuId[] = ['weekly', 'trip', 'diary', 'forum', 'news', 'mailassistant', 'lobsterbase', 'config', 'mailconfig', 'skills', 'usermanage', 'mcp']
 </script>
 
 <template>

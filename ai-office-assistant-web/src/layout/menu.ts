@@ -1,12 +1,12 @@
 import type { Component } from 'vue'
 import {
   Calendar,
+  Connection,
   HomeFilled,
   Message,
   Notebook,
   Opportunity,
   Ship,
-  QuestionFilled,
   Reading,
   Setting,
   Tools,
@@ -29,6 +29,7 @@ export type MenuId =
   | 'config'
   | 'skills'
   | 'usermanage'
+  | 'mcp'
 
 export type SidebarIconTone = 'home' | 'blue' | 'purple' | 'green' | 'orange' | 'deep-blue' | 'line'
 export type SidebarMenuGroup = 'main' | 'footer'
@@ -55,10 +56,11 @@ export const sidebarMenuItems: SidebarMenuItem[] = [
   { id: 'mailassistant', label: '邮件助手', icon: Message, iconTone: 'blue', group: 'main', roles: ['member', 'admin', 'superadmin'] },
   { id: 'lobsterbase', label: '龙虾基地', icon: Ship, iconTone: 'green', group: 'main', roles: ['member', 'admin', 'superadmin'] },
   { id: 'config', label: '设置', icon: Setting, iconTone: 'line', group: 'footer', roles: ['member', 'admin', 'superadmin'] },
-  { id: 'help', label: '帮助与反馈', icon: QuestionFilled, iconTone: 'line', group: 'footer', roles: ['member', 'admin', 'superadmin'] },
+  // { id: 'help', label: '帮助与反馈', icon: QuestionFilled, iconTone: 'line', group: 'footer', roles: ['member', 'admin', 'superadmin'] },
   { id: 'mailconfig', label: '邮件配置', icon: Message, iconTone: 'blue', group: 'main', roles: ['member', 'admin', 'superadmin'], showInSidebar: false },
   { id: 'skills', label: '系统 Skill', icon: Tools, iconTone: 'line', group: 'footer', roles: ['superadmin'], showInSidebar: false },
   { id: 'usermanage', label: '用户管理', icon: UserFilled, iconTone: 'line', group: 'footer', roles: ['superadmin'], showInSidebar: false },
+  { id: 'mcp', label: 'MCP 服务', icon: Connection, iconTone: 'line', group: 'footer', roles: ['admin', 'superadmin'], showInSidebar: false },
 ]
 
 export function isMenuId(value: string): value is MenuId {
@@ -67,7 +69,7 @@ export function isMenuId(value: string): value is MenuId {
 
 export function isMenuVisible(menuId: MenuId, user: User) {
   // 设置类隐藏路由进入设置页后再按 tab 权限渲染。
-  if (['config', 'mailconfig', 'skills', 'usermanage'].includes(menuId)) return true
+  if (['config', 'mailconfig', 'skills', 'usermanage', 'mcp'].includes(menuId)) return true
   return sidebarMenuItems.some((item) => item.id === menuId && item.roles.includes(user.role))
 }
 

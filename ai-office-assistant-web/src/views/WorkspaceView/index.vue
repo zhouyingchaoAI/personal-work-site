@@ -159,7 +159,7 @@ async function handleLogout() {
     <MailAssistantView v-else-if="activeMenu === 'mailassistant'" />
     <LobsterBaseView v-else-if="activeMenu === 'lobsterbase'" />
     <SettingsView
-      v-else-if="['config', 'mailconfig', 'skills', 'usermanage'].includes(activeMenu)"
+      v-else-if="['config', 'mailconfig', 'skills', 'usermanage', 'mcp'].includes(activeMenu)"
       :active-menu="activeMenu"
       @select-menu="selectMenu"
     />
@@ -207,14 +207,17 @@ async function handleLogout() {
         </div>
         <ul v-if="recentReports.length" class="home-record-list">
           <li v-for="item in recentReports" :key="item.name">
-            <a :href="reportDownloadUrl(item.name)" target="_blank" rel="noopener">
+            <div class="home-record-row">
               <span :class="['home-record-icon', `home-record-icon--${reportRecordTone(item)}`]">
                 {{ reportRecordIcon(item) }}
               </span>
               <strong>{{ item.name }}</strong>
               <em :class="`home-record-tag--${reportRecordTone(item)}`">{{ reportRecordTag(item) }}</em>
               <time>{{ formatRecentTime(item.mtime) }}</time>
-            </a>
+              <a class="home-record-view" :href="reportDownloadUrl(item.name)" target="_blank" rel="noopener" :aria-label="`查看 ${item.name}`">
+                查看
+              </a>
+            </div>
           </li>
         </ul>
         <div v-else class="home-record-empty">
@@ -284,7 +287,7 @@ async function handleLogout() {
       </section>
     </aside>
 
-    <aside v-else-if="!['weekly', 'trip', 'diary', 'forum', 'news', 'mailassistant', 'lobsterbase', 'config', 'mailconfig', 'skills', 'usermanage'].includes(activeMenu)" class="assistant-panel">
+    <aside v-else-if="!['weekly', 'trip', 'diary', 'forum', 'news', 'mailassistant', 'lobsterbase', 'config', 'mailconfig', 'skills', 'usermanage', 'mcp'].includes(activeMenu)" class="assistant-panel">
       <section class="assistant-hero">
         <div class="speech-bubble">
           Hi，{{ user.name || user.username }}！今天想先从哪件事开始呢？

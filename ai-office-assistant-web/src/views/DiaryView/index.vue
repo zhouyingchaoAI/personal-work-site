@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowRight, Delete, EditPen, Search } from '@element-plus/icons-vue'
 import IconTextButton from '../../components/IconTextButton/index.vue'
+import { defaultOptimizePrompt } from '../../services/authSession'
 import {
   deleteDiary,
   getDiary,
@@ -50,12 +51,6 @@ const diarySections: DiarySection[] = [
   },
 ]
 
-const fieldPrompts: Record<DiaryFieldKey, string> = {
-  today_work: '请将今日工作内容润色为清楚、具体、适合沉淀到工作日记和周报素材的表达，保留原意，不添加未提供的事项。',
-  tomorrow_plan: '请将明日工作计划润色为清晰、可执行、有优先级感的表达，保留原意，不添加未提供的事项。',
-  thoughts: '请将思路与想法润色为自然、简洁、便于复盘的表达，保留原意，不添加未提供的事项。',
-}
-
 const weekdayTexts = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
 
 const today = toDateInputValue(new Date())
@@ -80,7 +75,11 @@ const diaryForm = reactive<Record<DiaryFieldKey, string>>({
   tomorrow_plan: '',
   thoughts: '',
 })
-const promptForm = reactive<Record<DiaryFieldKey, string>>({ ...fieldPrompts })
+const promptForm = reactive<Record<DiaryFieldKey, string>>({
+  today_work: '',
+  tomorrow_plan: '',
+  thoughts: '',
+})
 const optimizePreview = reactive<Record<DiaryFieldKey, DiaryOptimizePreview | null>>({
   today_work: null,
   tomorrow_plan: null,
@@ -220,14 +219,18 @@ function handleDiaryFieldInput(key: DiaryFieldKey) {
 
 function openPromptEditor(section: DiarySection) {
   promptEditor.value = section.key
-  promptDraft.value = promptForm[section.key]
+  promptDraft.value = optimizePrompt(section.key)
 }
 
 function savePromptEditor() {
   if (!promptEditor.value) return
-  promptForm[promptEditor.value] = promptDraft.value.trim() || fieldPrompts[promptEditor.value]
+  promptForm[promptEditor.value] = promptDraft.value.trim()
   promptEditor.value = ''
   ElMessage.success('提示词已更新')
+}
+
+function optimizePrompt(fieldKey: DiaryFieldKey) {
+  return promptForm[fieldKey] || defaultOptimizePrompt()
 }
 
 async function optimizeDiaryField(section: DiarySection) {
@@ -239,7 +242,7 @@ async function optimizeDiaryField(section: DiarySection) {
   optimizingField.value = section.key
   optimizePreview[section.key] = null
   try {
-    const result = await optimizeText(original, promptForm[section.key])
+    const result = await optimizeText(original, optimizePrompt(section.key))
     optimizePreview[section.key] = {
       original,
       suggestion: result.text || original,
@@ -598,9 +601,9 @@ onMounted(initializeDiary)
     >
       <el-input v-model="promptDraft" type="textarea" :autosize="{ minRows: 5, maxRows: 8 }" />
       <template #footer>
-        <div class="diary-prompt-actions">
-          <el-button @click="promptEditor = ''">取消</el-button>
-          <el-button type="primary" @click="savePromptEditor">保存提示词</el-button>
+        <div class="diary-prompt-actions prompt-dialog-actions">
+          <el-button class="prompt-dialog-button" @click="promptEditor = ''">取消</el-button>
+          <el-button class="prompt-dialog-button prompt-dialog-button--primary" @click="savePromptEditor">保存</el-button>
         </div>
       </template>
     </el-dialog>

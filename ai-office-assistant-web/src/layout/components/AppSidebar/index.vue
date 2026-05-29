@@ -16,7 +16,7 @@ const mainItems = computed(() => props.items.filter((item) => item.group === 'ma
 const footerItems = computed(() => props.items.filter((item) => item.group === 'footer'))
 
 function isActive(item: SidebarMenuItem) {
-  if (item.id === 'config') return ['config', 'mailconfig', 'skills', 'usermanage'].includes(props.activeMenu)
+  if (item.id === 'config') return ['config', 'mailconfig', 'skills', 'usermanage', 'mcp'].includes(props.activeMenu)
   return props.activeMenu === item.id
 }
 </script>

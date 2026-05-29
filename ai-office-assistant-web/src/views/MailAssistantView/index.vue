@@ -90,11 +90,13 @@ function readFileAsBase64(file: File) {
 }
 
 function downloadMailAttachment(file: MailAttachment) {
-  if (!file.download_url) {
-    ElMessage.warning('该附件暂无下载地址')
+  const downloadUrl = file.download_url || ''
+  // 收件箱原始附件不能复用报告文件下载口，否则后端会按报告目录查找并返回 404。
+  if (!downloadUrl || /(?:^|\/)download\?/.test(downloadUrl)) {
+    ElMessage.warning('当前仅支持查看附件信息，暂不支持下载收件箱原始附件')
     return
   }
-  window.open(mailboxAttachmentDownloadUrl(file.download_url), '_blank')
+  window.open(mailboxAttachmentDownloadUrl(downloadUrl), '_blank')
 }
 
 async function loadSignature() {

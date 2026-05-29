@@ -303,11 +303,11 @@ $panel-shadow: 0 14px 30px rgba(70, 111, 173, 0.09);
     border-top: 1px solid #edf2f9;
   }
 
-  a {
+  .home-record-row {
     display: grid;
     width: 100%;
     min-height: 39px;
-    grid-template-columns: 26px minmax(0, 1fr) 118px 104px;
+    grid-template-columns: 26px minmax(0, 1fr) 118px 104px 58px;
     align-items: center;
     gap: 12px;
     padding: 6px 0;
@@ -315,10 +315,8 @@ $panel-shadow: 0 14px 30px rgba(70, 111, 173, 0.09);
     color: $text-main;
     background: transparent;
     text-align: left;
-    text-decoration: none;
 
-    &:hover strong,
-    &:focus strong {
+    &:hover strong {
       color: $blue;
     }
   }
@@ -348,6 +346,28 @@ $panel-shadow: 0 14px 30px rgba(70, 111, 173, 0.09);
     color: #627595;
     font-size: 13px;
     font-weight: 650;
+  }
+}
+
+.home-record-view {
+  display: inline-flex;
+  width: 58px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+  border: 1px solid #cfe0f5;
+  border-radius: 6px;
+  color: #15499c;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+
+  &:hover,
+  &:focus {
+    border-color: #a9bdd9;
+    background: #edf4ff;
   }
 }
 
@@ -920,8 +940,8 @@ $panel-shadow: 0 14px 30px rgba(70, 111, 173, 0.09);
     min-height: 138px;
   }
 
-  .home-record-list a {
-    grid-template-columns: 26px minmax(0, 1fr);
+  .home-record-list .home-record-row {
+    grid-template-columns: 26px minmax(0, 1fr) auto;
     gap: 8px;
 
     em,

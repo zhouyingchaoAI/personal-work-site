@@ -538,11 +538,56 @@ export interface OpenClawSsoResponse {
   error?: string
 }
 
+export interface McpConfigResponse {
+  ok: boolean
+  enabled: boolean
+  mcp_secret_masked: string
+  protocol_version: string
+  server_name: string
+  server_version: string
+  skill_count: number
+  endpoint_hint: string
+}
+
+export interface McpConfigSavePayload {
+  generate?: boolean
+  clear?: boolean
+  mcp_secret?: string
+}
+
+export interface McpConfigSaveResponse {
+  ok: boolean
+  message?: string
+  mcp_secret?: string
+}
+
+export interface LobsterAgent {
+  agent_id: number
+  agent_name: string
+  provider?: string
+  model?: string
+  status?: string
+  mcp_services?: Array<{ name?: string }>
+}
+
+export interface LobsterListResponse {
+  ok: boolean
+  agents: LobsterAgent[]
+  error?: string
+}
+
+export interface McpLobsterInstallResponse {
+  ok: boolean
+  error?: string
+  detail?: string
+}
+
 export type AgentKind = 'weekly' | 'trip' | 'diary' | 'mailassistant' | 'news' | 'forum' | 'dashboard'
 
 const backendUrl = import.meta.env.VITE_PERSONAL_WORK_BACKEND_URL?.replace(/\/$/, '') || ''
 const backendOrigin = backendUrl ? new URL(backendUrl).origin : ''
 const backendBasePath = backendUrl ? new URL(backendUrl).pathname.replace(/\/$/, '') : ''
+const defaultBackendBasePath = '/personal-office-assistant'
 const passthroughResourcePattern = /^(https?:|\/\/|data:|blob:|mailto:|tel:|cid:|#)/i
 const sessionFreePaths = new Set(['/login', '/logout', '/session'])
 let loginRedirecting = false
@@ -550,7 +595,8 @@ let loginRedirecting = false
 function normalizeResourcePath(path: string) {
   const value = String(path || '').trim()
   if (!value || passthroughResourcePattern.test(value)) return value
-  const withoutBase = backendBasePath && value.startsWith(`${backendBasePath}/`) ? value.slice(backendBasePath.length) : value
+  const basePath = backendBasePath || defaultBackendBasePath
+  const withoutBase = basePath && value.startsWith(`${basePath}/`) ? value.slice(basePath.length) : value
   return withoutBase.startsWith('/') ? withoutBase : `/${withoutBase}`
 }
 
@@ -812,6 +858,22 @@ export function openclawSso() {
   return request<OpenClawSsoResponse>('/openclaw-sso')
 }
 
+export function getMcpConfig() {
+  return request<McpConfigResponse>('/mcp-config')
+}
+
+export function saveMcpConfig(payload: McpConfigSavePayload) {
+  return post<McpConfigSaveResponse>('/mcp-config', payload)
+}
+
+export function listMyLobsters() {
+  return request<LobsterListResponse>('/my-lobsters')
+}
+
+export function installMcpToLobster(agentId: number) {
+  return post<McpLobsterInstallResponse>('/install-mcp-to-lobster', { agent_id: agentId })
+}
+
 export function deleteReport(name: string) {
   return post<{ ok: boolean; deleted: string }>('/delete-report', { name })
 }
@@ -848,6 +910,13 @@ export function resourceUrl(path: string) {
   const value = normalizeResourcePath(path)
   if (!value || passthroughResourcePattern.test(value)) return value
   return backendUrl ? `${backendUrl}${value}` : `/personal-work-resource${value}`
+}
+
+export function mcpEndpointUrl() {
+  // MCP 客户端需要访问后端公开路径，不能使用前端开发代理地址。
+  const basePath = backendBasePath || defaultBackendBasePath
+  if (backendOrigin) return `${backendOrigin}${basePath}/mcp`
+  return `${window.location.origin}${basePath}/mcp`
 }
 
 export function openclawPlatformUrl(path: string) {

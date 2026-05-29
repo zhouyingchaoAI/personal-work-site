@@ -13,7 +13,7 @@ import {
   View,
 } from '@element-plus/icons-vue'
 import IconTextButton from '../../components/IconTextButton/index.vue'
-import { authState } from '../../services/authSession'
+import { authState, defaultOptimizePrompt } from '../../services/authSession'
 import {
   deleteReportTemplate,
   deleteHistory,
@@ -21,6 +21,7 @@ import {
   downloadUrl,
   generateTrip,
   getDraft,
+  getMailConfig,
   getReportTemplates,
   getReports,
   getTripPrefill,
@@ -119,14 +120,6 @@ const tripGroups: TripGroup[] = [
   },
 ]
 
-const fieldPrompts: Partial<Record<TripFieldKey, string>> = {
-  purpose: '请将出差目的优化为清晰、具体、适合正式报告的表述，保留原意，不添加未提供的事项。',
-  itinerary: '请将行程概览优化为按时间或事项推进的报告文本，语言简洁、层次清楚。',
-  details: '请将工作详情优化为正式出差报告中的工作过程和成果描述，突出事实、动作和结果。',
-  issues: '请将问题与反馈优化为客观、具体、便于后续跟进的表达。',
-  suggestions: '请将总结与建议优化为可执行、可复盘的报告结论，表达稳妥专业。',
-}
-
 const activeStep = ref(1)
 const activeTab = ref<TripTabId>('edit')
 const activeGroupId = ref('details')
@@ -176,7 +169,13 @@ const tripForm = reactive<Record<TripFieldKey, string>>({
   suggestions: '',
 })
 
-const promptForm = reactive<Partial<Record<TripFieldKey, string>>>({ ...fieldPrompts })
+const promptForm = reactive<Partial<Record<TripFieldKey, string>>>({
+  purpose: '',
+  itinerary: '',
+  details: '',
+  issues: '',
+  suggestions: '',
+})
 
 // AI 优化结果先暂存，用户确认采纳后才写回输入框。
 const fieldOptimizePreview = reactive<Partial<Record<TripFieldKey, FieldOptimizePreview | null>>>({})
@@ -281,13 +280,14 @@ function stepForTab(tab: TripTabId) {
   return 1
 }
 
-function switchTripTab(tab: TripTabId) {
+async function switchTripTab(tab: TripTabId) {
   if (tab === 'history') {
     void openHistoryDrawer()
     return
   }
   activeTab.value = tab
   activeStep.value = stepForTab(tab)
+  if (tab === 'mail') await loadTripMailRecipients()
 }
 
 function todayText() {
@@ -344,6 +344,10 @@ function canOptimizeField(field: TripField) {
   return Boolean(field.multiline)
 }
 
+function optimizePrompt(fieldKey: TripFieldKey) {
+  return promptForm[fieldKey] || defaultOptimizePrompt()
+}
+
 function groupPreview(group: TripGroup) {
   const values = group.fields
     .map((field) => {
@@ -384,7 +388,7 @@ function handleEditInput(fieldKey: TripFieldKey) {
 function openPromptEditor(field: TripField) {
   if (!canOptimizeField(field)) return
   promptEditor.value = field.key
-  promptDraft.value = promptForm[field.key] || fieldPrompts[field.key] || ''
+  promptDraft.value = optimizePrompt(field.key)
 }
 
 function closePromptEditor() {
@@ -394,7 +398,7 @@ function closePromptEditor() {
 
 function savePromptEditor() {
   if (!promptEditor.value) return
-  promptForm[promptEditor.value] = promptDraft.value.trim() || fieldPrompts[promptEditor.value] || ''
+  promptForm[promptEditor.value] = promptDraft.value.trim()
   closePromptEditor()
   ElMessage.success('提示词已更新')
 }
@@ -413,7 +417,7 @@ async function optimizeTripField(field: TripField) {
   activeOptimizeField.value = field.key
   fieldOptimizePreview[field.key] = null
   try {
-    const result = await optimizeText(original, promptForm[field.key] || fieldPrompts[field.key] || '请优化这段出差报告内容，保持事实准确、表达清楚。')
+    const result = await optimizeText(original, optimizePrompt(field.key))
     fieldOptimizePreview[field.key] = {
       original,
       suggestion: result.text || original,
@@ -530,6 +534,17 @@ function applyDraft(draft: DraftResponse) {
   previewSource.value = draft.attachment ? 'generated' : 'instant'
   isReportDirty.value = false
   clearSendReview()
+}
+
+async function loadTripMailRecipients() {
+  if (mailDraft.to && mailDraft.cc) return
+  try {
+    const config = await getMailConfig()
+    if (!mailDraft.to) mailDraft.to = config.trip_to || ''
+    if (!mailDraft.cc) mailDraft.cc = config.trip_cc || ''
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : '邮件配置读取失败', 'error')
+  }
 }
 
 async function loadDraft(name: string) {
@@ -1257,9 +1272,9 @@ onMounted(initializeTrip)
     >
       <el-input v-model="promptDraft" type="textarea" :autosize="{ minRows: 5, maxRows: 8 }" />
       <template #footer>
-        <div class="trip-prompt-actions">
-          <el-button @click="closePromptEditor">取消</el-button>
-          <el-button type="primary" @click="savePromptEditor">保存</el-button>
+        <div class="trip-prompt-actions prompt-dialog-actions">
+          <el-button class="prompt-dialog-button" @click="closePromptEditor">取消</el-button>
+          <el-button class="prompt-dialog-button prompt-dialog-button--primary" @click="savePromptEditor">保存</el-button>
         </div>
       </template>
     </el-dialog>

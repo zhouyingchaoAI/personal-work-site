@@ -115,3 +115,45 @@ button {
     background: linear-gradient(135deg, #2467ba, #123f87);
   }
 }
+
+.weekly-prompt-actions.prompt-dialog-actions,
+.trip-prompt-actions.prompt-dialog-actions,
+.diary-prompt-actions.prompt-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.prompt-dialog-button.el-button {
+  min-width: 60px;
+  height: 32px;
+  margin-left: 0;
+  padding: 0 16px;
+  border: 1px solid #d8e2f2;
+  border-radius: 4px;
+  color: #23395f;
+  background: #ffffff;
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 500;
+
+  &:hover,
+  &:focus {
+    border-color: #b7c9e6;
+    color: var(--color-primary);
+    background: #f8fbff;
+  }
+
+  &.prompt-dialog-button--primary {
+    border-color: var(--color-primary);
+    color: #ffffff;
+    background: var(--color-primary);
+
+    &:hover,
+    &:focus {
+      border-color: var(--color-primary-hover);
+      color: #ffffff;
+      background: var(--color-primary-hover);
+    }
+  }
+}

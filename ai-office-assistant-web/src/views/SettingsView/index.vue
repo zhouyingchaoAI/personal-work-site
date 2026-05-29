@@ -2,8 +2,12 @@
 import { computed, onMounted, reactive, ref, watch, type Component } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  Connection,
+  CopyDocument,
   Delete,
   EditPen,
+  Key,
+  Link,
   MagicStick,
   Message,
   Plus,
@@ -18,31 +22,38 @@ import type { MenuId } from '../../layout/menu'
 import {
   addAdminUser,
   deleteAdminUser,
+  getMcpConfig,
   getAdminConfig,
   getAgentConfig,
   getAgentOrchestration,
   getMailConfig,
   listAdminModels,
   listAdminUsers,
+  listMyLobsters,
   listSkills,
+  mcpEndpointUrl,
   resourceUrl,
   runSkillTest,
   saveAdminConfig,
   saveAgentConfig,
   saveMailConfig,
+  saveMcpConfig,
   saveServerConfig,
   testAdminModel,
   testMailConfig,
   updateAdminUser,
+  installMcpToLobster,
   type AdminConfig,
   type AgentConfig,
+  type LobsterAgent,
   type MailConfig,
+  type McpConfigResponse,
   type SkillDefinition,
   type User,
 } from '../../services/personalWorkApi'
 import './index.scss'
 
-type SettingsTab = 'mailconfig' | 'config' | 'skills' | 'usermanage'
+type SettingsTab = 'mailconfig' | 'config' | 'skills' | 'usermanage' | 'mcp'
 
 const props = defineProps<{
   activeMenu: MenuId
@@ -59,6 +70,7 @@ const loadedTabs = reactive<Record<SettingsTab, boolean>>({
   config: false,
   skills: false,
   usermanage: false,
+  mcp: false,
 })
 const loading = reactive({
   mailConfig: false,
@@ -76,6 +88,10 @@ const loading = reactive({
   skillTest: false,
   users: false,
   addUser: false,
+  mcpConfig: false,
+  mcpSecret: false,
+  lobsters: false,
+  mcpInstall: false,
 })
 
 const mailForm = reactive({
@@ -141,6 +157,7 @@ const skillTestArgs = ref('{}')
 const skillTestInstruction = ref('')
 const skillConfirmUnsafe = ref(false)
 const skillTestResult = ref('点击“运行测试”后，这里会显示 Skill 返回结果。')
+const addUserDialog = ref(false)
 
 const users = ref<User[]>([])
 const userDrafts = reactive<Record<string, { name: string; password: string; role: User['role'] }>>({})
@@ -150,6 +167,12 @@ const newUser = reactive<{ username: string; name: string; password: string; rol
   password: '',
   role: 'member',
 })
+const mcpConfig = ref<McpConfigResponse | null>(null)
+const mcpNewSecret = ref('')
+const mcpStatus = ref('')
+const lobsters = ref<LobsterAgent[]>([])
+const lobsterStatus = ref('')
+const installingLobsterId = ref<number | null>(null)
 
 const agentLabels = [
   { key: 'weekly', label: '周报助手' },
@@ -160,6 +183,7 @@ const agentLabels = [
   { key: 'forum', label: '论坛助手' },
   { key: 'dashboard', label: '总助手' },
 ]
+const mcpModules = ['周报', '出差报告', '工作日记', '邮件', '金点子论坛', '资讯', '报告', '通用', '记忆', '工作流']
 
 const tabItems = computed(() => {
   const items: Array<{ id: SettingsTab; label: string; icon: Component; visible: boolean }> = [
@@ -167,9 +191,46 @@ const tabItems = computed(() => {
     { id: 'config', label: '系统配置', icon: Setting, visible: !!user.value?.is_admin },
     { id: 'skills', label: '系统 Skill', icon: Tools, visible: !!user.value?.is_superadmin },
     { id: 'usermanage', label: '用户管理', icon: UserFilled, visible: !!user.value?.is_superadmin },
+    { id: 'mcp', label: 'MCP 服务', icon: Connection, visible: !!user.value?.is_admin },
   ]
   return items.filter((item) => item.visible)
 })
+const mcpEnabled = computed(() => !!mcpConfig.value?.enabled)
+const mcpEndpoint = computed(() => mcpEndpointUrl())
+const mcpUsername = computed(() => user.value?.username || '<username>')
+// 管理员只能查看 MCP 状态，密钥启停由超级管理员控制。
+const mcpSecretDescription = computed(() => {
+  if (mcpEnabled.value) return '密钥已配置，MCP 端点正在响应请求。生成新密钥后旧密钥立即失效。'
+  return user.value?.is_superadmin
+    ? '未配置密钥，MCP 端点处于禁用状态。点击“生成新密钥”激活服务。'
+    : '未配置密钥，MCP 端点处于禁用状态。请联系超级管理员生成密钥。'
+})
+const mcpClaudeConfig = computed(() =>
+  JSON.stringify(
+    {
+      mcpServers: {
+        'personal-office-assistant': {
+          type: 'http',
+          url: mcpEndpoint.value,
+          headers: {
+            Authorization: 'Bearer <mcp_secret>',
+            'X-MCP-Username': mcpUsername.value,
+          },
+        },
+      },
+    },
+    null,
+    2,
+  ),
+)
+const mcpCurlExample = computed(
+  () =>
+    `curl -X POST ${mcpEndpoint.value} \\\n` +
+    `  -H "Content-Type: application/json" \\\n` +
+    `  -H "Authorization: Bearer <mcp_secret>" \\\n` +
+    `  -H "X-MCP-Username: ${mcpUsername.value}" \\\n` +
+    `  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'`,
+)
 const skillModules = computed(() => ['all', ...Array.from(new Set(skills.value.map((skill) => skill.module).filter(Boolean)))])
 const filteredSkills = computed(() => {
   const keyword = skillSearch.value.trim().toLowerCase()
@@ -191,6 +252,7 @@ function roleLabel(role: User['role']) {
 function canOpenTab(tab: SettingsTab) {
   if (tab === 'mailconfig') return true
   if (tab === 'config') return !!user.value?.is_admin
+  if (tab === 'mcp') return !!user.value?.is_admin
   return !!user.value?.is_superadmin
 }
 
@@ -198,6 +260,7 @@ function tabPermissionText(tab: SettingsTab) {
   if (tab === 'config') return '系统配置仅管理员可访问。'
   if (tab === 'skills') return '系统 Skill 仅超级管理员可访问。'
   if (tab === 'usermanage') return '用户管理仅超级管理员可访问。'
+  if (tab === 'mcp') return 'MCP 服务仅管理员可访问。'
   return '当前账号无法访问该模块。'
 }
 
@@ -205,6 +268,7 @@ function tabFromMenu(menu: MenuId): SettingsTab {
   if (menu === 'mailconfig') return 'mailconfig'
   if (menu === 'skills') return 'skills'
   if (menu === 'usermanage') return 'usermanage'
+  if (menu === 'mcp') return 'mcp'
   return user.value?.is_admin ? 'config' : 'mailconfig'
 }
 
@@ -337,6 +401,7 @@ async function handleSaveAdminConfig() {
   try {
     const result = await saveAdminConfig(adminConfigPayload())
     applyAdminConfig(result.config)
+    authState.assistantPrompt = result.config.assistant_prompt || ''
     ElMessage.success('系统配置已保存')
   } catch (error) {
     ElMessage.error(errorMessage(error))
@@ -517,6 +582,18 @@ async function loadUsers() {
   }
 }
 
+function resetNewUser() {
+  newUser.username = ''
+  newUser.name = ''
+  newUser.password = ''
+  newUser.role = 'member'
+}
+
+function openAddUserDialog() {
+  resetNewUser()
+  addUserDialog.value = true
+}
+
 async function handleAddUser() {
   if (!newUser.username.trim() || !newUser.password.trim()) {
     ElMessage.warning('请填写用户名和初始密码')
@@ -531,10 +608,7 @@ async function handleAddUser() {
       role: newUser.role,
     })
     users.value = result.users || []
-    newUser.username = ''
-    newUser.name = ''
-    newUser.password = ''
-    newUser.role = 'member'
+    addUserDialog.value = false
     ElMessage.success('用户已新增')
     await loadUsers()
   } catch (error) {
@@ -579,6 +653,129 @@ async function handleDeleteUser(item: User) {
   }
 }
 
+function copyTextFallback(text: string) {
+  // 非安全上下文无法使用 Clipboard API，降级为临时文本域复制。
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.style.cssText = 'position:fixed;opacity:0;top:0;left:0;'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  try {
+    document.execCommand('copy')
+    ElMessage.success('已复制')
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
+function copyText(text: string) {
+  if (!text) return
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => ElMessage.success('已复制')).catch(() => copyTextFallback(text))
+    return
+  }
+  copyTextFallback(text)
+}
+
+function isMcpInstalled(agent: LobsterAgent) {
+  return (agent.mcp_services || []).some((service) => service.name === 'personal-office-assistant')
+}
+
+async function loadLobsters() {
+  if (!user.value?.is_admin) return
+  loading.lobsters = true
+  lobsterStatus.value = ''
+  try {
+    const result = await listMyLobsters()
+    if (!result.ok) throw new Error(result.error || '龙虾列表加载失败')
+    lobsters.value = result.agents || []
+  } catch (error) {
+    lobsters.value = []
+    lobsterStatus.value = errorMessage(error)
+  } finally {
+    loading.lobsters = false
+  }
+}
+
+async function loadMcpConfig() {
+  if (!user.value?.is_admin) return
+  loading.mcpConfig = true
+  mcpStatus.value = ''
+  try {
+    mcpConfig.value = await getMcpConfig()
+    loadedTabs.mcp = true
+    await loadLobsters()
+  } catch (error) {
+    mcpStatus.value = errorMessage(error)
+  } finally {
+    loading.mcpConfig = false
+  }
+}
+
+async function handleGenerateMcpSecret() {
+  if (!user.value?.is_superadmin) return
+  try {
+    await ElMessageBox.confirm('生成新密钥后，旧密钥立即失效，已接入的客户端需更新配置。确定继续？', '生成 MCP 密钥', {
+      confirmButtonText: '生成',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    loading.mcpSecret = true
+    const result = await saveMcpConfig({ generate: true })
+    mcpNewSecret.value = result.mcp_secret || ''
+    ElMessage.success(result.message || '新密钥已生成')
+    await loadMcpConfig()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(errorMessage(error))
+  } finally {
+    loading.mcpSecret = false
+  }
+}
+
+async function handleClearMcpSecret() {
+  if (!user.value?.is_superadmin) return
+  try {
+    await ElMessageBox.confirm('清除密钥后 MCP 服务立即停止响应，所有客户端连接将断开。确定清除？', '清除 MCP 密钥', {
+      confirmButtonText: '清除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    loading.mcpSecret = true
+    const result = await saveMcpConfig({ clear: true })
+    mcpNewSecret.value = ''
+    ElMessage.success(result.message || 'MCP 密钥已清除')
+    await loadMcpConfig()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(errorMessage(error))
+  } finally {
+    loading.mcpSecret = false
+  }
+}
+
+async function handleInstallMcpToLobster(agent: LobsterAgent) {
+  if (!mcpEnabled.value) {
+    ElMessage.warning('请先生成 MCP 密钥')
+    return
+  }
+  installingLobsterId.value = agent.agent_id
+  loading.mcpInstall = true
+  lobsterStatus.value = `正在安装到「${agent.agent_name}」...`
+  try {
+    const result = await installMcpToLobster(agent.agent_id)
+    if (!result.ok) throw new Error(result.error || result.detail || '安装失败')
+    lobsterStatus.value = `已成功安装到「${agent.agent_name}」，重启龙虾后生效。`
+    await loadLobsters()
+  } catch (error) {
+    lobsterStatus.value = errorMessage(error)
+  } finally {
+    installingLobsterId.value = null
+    loading.mcpInstall = false
+  }
+}
+
 async function loadActiveTab() {
   // 无权限 tab 只展示提示，不发起管理接口请求。
   if (!canOpenTab(activeTab.value)) return
@@ -586,14 +783,18 @@ async function loadActiveTab() {
   if (activeTab.value === 'config' && !loadedTabs.config) await loadAdminConfig()
   if (activeTab.value === 'skills' && !loadedTabs.skills) await loadSkills()
   if (activeTab.value === 'usermanage' && !loadedTabs.usermanage) await loadUsers()
+  if (activeTab.value === 'mcp' && !loadedTabs.mcp) await loadMcpConfig()
 }
 
 watch(
   () => props.activeMenu,
   (menu) => {
     const nextTab = tabFromMenu(menu)
+    if (activeTab.value === nextTab) {
+      void loadActiveTab()
+      return
+    }
     activeTab.value = nextTab
-    void loadActiveTab()
   },
 )
 
@@ -602,20 +803,20 @@ watch(activeTab, () => {
 })
 
 onMounted(() => {
-  activeTab.value = tabFromMenu(props.activeMenu)
-  void loadActiveTab()
+  const nextTab = tabFromMenu(props.activeMenu)
+  if (activeTab.value === nextTab) {
+    void loadActiveTab()
+    return
+  }
+  activeTab.value = nextTab
 })
 </script>
 
 <template>
   <section class="workspace-main settings-main">
     <header class="settings-page-head">
-      <div>
-        <span class="settings-kicker">
-          <el-icon><Setting /></el-icon>
-          设置
-        </span>
-        <h2>设置中心</h2>
+      <div class="settings-title-block">
+        <h1>设置中心</h1>
         <p>管理邮箱账号、系统参数、Skill 能力和用户权限</p>
       </div>
       <div class="settings-tabs" role="tablist" aria-label="设置模块">
@@ -896,35 +1097,12 @@ onMounted(() => {
             <h3>用户管理</h3>
             <span>管理系统用户、角色权限和密码。</span>
           </div>
-          <button class="settings-button settings-button--ghost" type="button" :disabled="loading.users" @click="loadUsers">
-            <el-icon><Refresh /></el-icon>
-            刷新
-          </button>
-        </div>
-
-        <div class="settings-grid user-create-grid">
-          <label>
-            <span>用户名</span>
-            <input v-model="newUser.username" placeholder="zhangsan" />
-          </label>
-          <label>
-            <span>显示名称</span>
-            <input v-model="newUser.name" placeholder="张三" />
-          </label>
-          <label>
-            <span>角色权限</span>
-            <el-select v-model="newUser.role" class="settings-select">
-              <el-option label="普通成员" value="member" />
-              <el-option label="管理员" value="admin" />
-              <el-option label="超级管理员" value="superadmin" />
-            </el-select>
-          </label>
-          <label>
-            <span>初始密码</span>
-            <input v-model="newUser.password" type="password" placeholder="至少 4 位" />
-          </label>
-          <div class="settings-actions">
-            <button class="settings-button settings-button--primary" type="button" :disabled="loading.addUser" @click="handleAddUser">
+          <div class="settings-section-actions">
+            <button class="settings-button settings-button--ghost" type="button" :disabled="loading.users" @click="loadUsers">
+              <el-icon><Refresh /></el-icon>
+              刷新
+            </button>
+            <button class="settings-button settings-button--primary" type="button" @click="openAddUserDialog">
               <el-icon><Plus /></el-icon>
               新增用户
             </button>
@@ -973,7 +1151,185 @@ onMounted(() => {
           <div v-if="!users.length" class="settings-empty">暂无用户。</div>
         </div>
       </section>
+
+      <section v-else-if="activeTab === 'mcp'" class="settings-panel settings-mcp-panel">
+        <div class="settings-section-head">
+          <div>
+            <h3>MCP 服务管理</h3>
+            <span>通过 Model Context Protocol（MCP）将平台 Skill 开放给外部 AI 客户端。</span>
+          </div>
+          <button class="settings-button settings-button--ghost" type="button" :disabled="loading.mcpConfig" @click="loadMcpConfig">
+            <el-icon><Refresh /></el-icon>
+            刷新状态
+          </button>
+        </div>
+
+        <div class="settings-mcp-overview">
+          <div class="settings-mcp-overview-main">
+            <span :class="['settings-mcp-status-badge', { enabled: mcpEnabled }]">
+              {{ mcpEnabled ? '已启用' : '未启用' }}
+            </span>
+            <span>{{ mcpConfig?.skill_count || 0 }} 个工具可用</span>
+            <span>协议 {{ mcpConfig?.protocol_version || '-' }}</span>
+          </div>
+          <div class="settings-mcp-endpoint">
+            <code>{{ mcpEndpoint }}</code>
+            <button class="settings-button settings-button--ghost" type="button" @click="copyText(mcpEndpoint)">
+              <el-icon><CopyDocument /></el-icon>
+              复制
+            </button>
+          </div>
+        </div>
+
+        <h4 class="settings-subtitle">密钥管理</h4>
+        <div class="settings-mcp-secret-card">
+          <div>
+            <strong>MCP 访问密钥</strong>
+            <span>{{ mcpSecretDescription }}</span>
+            <em>状态：{{ mcpConfig?.mcp_secret_masked || '未读取' }}</em>
+          </div>
+          <div v-if="user?.is_superadmin" class="settings-section-actions">
+            <button class="settings-button settings-button--primary settings-button--warn" type="button" :disabled="loading.mcpSecret" @click="handleGenerateMcpSecret">
+              <el-icon><Key /></el-icon>
+              生成新密钥
+            </button>
+            <button v-if="mcpEnabled" class="settings-button settings-button--danger" type="button" :disabled="loading.mcpSecret" @click="handleClearMcpSecret">
+              清除密钥
+            </button>
+          </div>
+        </div>
+
+        <div v-if="mcpNewSecret" class="settings-mcp-new-secret">
+          <div>
+            <strong>新密钥已生成</strong>
+            <span>请立即复制保存，页面刷新后不再显示明文。</span>
+          </div>
+          <code>{{ mcpNewSecret }}</code>
+          <button class="settings-button settings-button--ghost" type="button" @click="copyText(mcpNewSecret)">
+            <el-icon><CopyDocument /></el-icon>
+            复制密钥
+          </button>
+        </div>
+
+        <div v-if="mcpStatus" class="settings-empty settings-mcp-status-message">{{ mcpStatus }}</div>
+
+        <h4 class="settings-subtitle">连接方式</h4>
+        <div class="settings-mcp-connect-grid">
+          <article class="settings-mcp-connect-card">
+            <div class="settings-mcp-connect-head">
+              <span><el-icon><Connection /></el-icon></span>
+              <div>
+                <strong>Claude Desktop / Claude Code MCP 配置</strong>
+                <em>添加到 ~/.claude/settings.json 的 mcpServers 字段，或 claude_desktop_config.json。</em>
+              </div>
+            </div>
+            <pre>{{ mcpClaudeConfig }}</pre>
+            <button class="settings-button settings-button--ghost" type="button" @click="copyText(mcpClaudeConfig)">
+              <el-icon><CopyDocument /></el-icon>
+              复制
+            </button>
+          </article>
+
+          <article class="settings-mcp-connect-card">
+            <div class="settings-mcp-connect-head">
+              <span><el-icon><Link /></el-icon></span>
+              <div>
+                <strong>curl 快速测试（tools/list）</strong>
+                <em>验证 MCP 服务是否正常响应，替换密钥后执行。</em>
+              </div>
+            </div>
+            <pre>{{ mcpCurlExample }}</pre>
+            <button class="settings-button settings-button--ghost" type="button" @click="copyText(mcpCurlExample)">
+              <el-icon><CopyDocument /></el-icon>
+              复制
+            </button>
+          </article>
+        </div>
+
+        <div class="settings-mcp-headers">
+          <strong>请求头说明</strong>
+          <pre>Authorization: Bearer &lt;mcp_secret&gt;    ← 密钥（上方生成）
+X-MCP-Username: &lt;username&gt;           ← 使用哪个账号的数据空间（如 {{ mcpUsername }}）</pre>
+        </div>
+
+        <h4 class="settings-subtitle">已开放 MCP 工具</h4>
+        <div class="settings-mcp-tools">
+          <template v-if="mcpEnabled">
+            <strong>共 {{ mcpConfig?.skill_count || 0 }} 个 MCP 工具（Skill），分布在以下模块：</strong>
+            <div class="settings-mcp-chip-list">
+              <span v-for="module in mcpModules" :key="module">{{ module }} Skill</span>
+            </div>
+            <p>
+              每个工具对应一个平台 Skill，工具名即 Skill 名。
+              <button v-if="user?.is_superadmin" type="button" @click="selectTab('skills')">查看完整 Skill 列表</button>
+            </p>
+          </template>
+          <div v-else class="settings-empty">MCP 服务未启用，启用后此处显示已开放工具列表。</div>
+        </div>
+
+        <h4 class="settings-subtitle">安装到龙虾</h4>
+        <div class="settings-mcp-lobsters">
+          <div class="settings-mcp-lobsters-head">
+            <span>将本平台 MCP 服务安装到您名下的龙虾智能体，安装后龙虾可直接调用平台 Skill 工具。</span>
+            <button class="settings-button settings-button--ghost" type="button" :disabled="loading.lobsters" @click="loadLobsters">
+              <el-icon><Refresh /></el-icon>
+              刷新龙虾
+            </button>
+          </div>
+          <div v-if="loading.lobsters" class="settings-empty">正在加载龙虾列表...</div>
+          <div v-else-if="!lobsters.length" class="settings-empty">暂无龙虾，请先在龙虾基地创建一个龙虾智能体。</div>
+          <div v-else class="settings-mcp-lobster-list">
+            <article v-for="agent in lobsters" :key="agent.agent_id" class="settings-mcp-lobster-row">
+              <div>
+                <strong>{{ agent.agent_name }}</strong>
+                <span>{{ agent.provider || '-' }} / {{ agent.model || '-' }} · {{ agent.status || '-' }}</span>
+              </div>
+              <em :class="{ installed: isMcpInstalled(agent) }">{{ isMcpInstalled(agent) ? '已安装' : '未安装' }}</em>
+              <button
+                class="settings-button settings-button--ghost"
+                type="button"
+                :disabled="!mcpEnabled || loading.mcpInstall"
+                @click="handleInstallMcpToLobster(agent)"
+              >
+                {{ installingLobsterId === agent.agent_id ? '安装中...' : isMcpInstalled(agent) ? '重新安装' : '安装' }}
+              </button>
+            </article>
+          </div>
+          <div v-if="lobsterStatus" class="settings-mcp-lobster-status">{{ lobsterStatus }}</div>
+        </div>
+      </section>
     </div>
+
+    <el-dialog v-model="addUserDialog" title="新增用户" width="560px" class="settings-dialog" @closed="resetNewUser">
+      <div class="settings-dialog-form">
+        <label>
+          <span>用户名</span>
+          <el-input v-model="newUser.username" placeholder="zhangsan" />
+        </label>
+        <label>
+          <span>显示名称</span>
+          <el-input v-model="newUser.name" placeholder="张三" />
+        </label>
+        <label>
+          <span>角色权限</span>
+          <el-select v-model="newUser.role" class="settings-select">
+            <el-option label="普通成员" value="member" />
+            <el-option label="管理员" value="admin" />
+            <el-option label="超级管理员" value="superadmin" />
+          </el-select>
+        </label>
+        <label>
+          <span>初始密码</span>
+          <el-input v-model="newUser.password" type="password" show-password placeholder="至少 4 位" @keyup.enter="handleAddUser" />
+        </label>
+      </div>
+      <template #footer>
+        <button class="settings-button settings-button--ghost" type="button" @click="addUserDialog = false">取消</button>
+        <button class="settings-button settings-button--primary" type="button" :disabled="loading.addUser" @click="handleAddUser">
+          确认
+        </button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="agentConfigDialog" title="编辑犇犇配置" width="840px" class="settings-dialog">
       <div class="settings-dialog-tabs">
