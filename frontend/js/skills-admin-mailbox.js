@@ -1068,6 +1068,9 @@
       if (!state.user?.is_superadmin && !state.user?.is_admin) return;
       el('mcpStatus').textContent = '';
       el('mcpStatus').className = 'status';
+      // 生成/清除密钥按钮仅超级管理员可操作
+      const canManageSecret = !!state.user?.is_superadmin;
+      if (el('mcpGenerateButton')) el('mcpGenerateButton').style.display = canManageSecret ? '' : 'none';
       try {
         const data = await api('/api/mcp-config');
         renderMcpPanel(data);
@@ -1124,6 +1127,7 @@
     }
 
     if (el('mcpRefreshButton')) el('mcpRefreshButton').addEventListener('click', loadMcpConfig);
+    if (el('mcpLobsterRefreshButton')) el('mcpLobsterRefreshButton').addEventListener('click', loadMcpLobsters);
     if (el('mcpGenerateButton')) el('mcpGenerateButton').addEventListener('click', mcpGenerateSecret);
     if (el('mcpClearButton')) el('mcpClearButton').addEventListener('click', mcpClearSecret);
     if (el('mcpCopyEndpoint')) el('mcpCopyEndpoint').addEventListener('click', () => _copyText(mcpEndpointUrl(), el('mcpCopyEndpoint')));

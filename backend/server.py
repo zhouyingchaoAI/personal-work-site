@@ -653,7 +653,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 result = save_mcp_config(payload)
             elif parsed.path == "/api/install-mcp-to-lobster":
-                if not self.require_superadmin():
+                if not self.require_admin():
                     return
                 agent_id = int(payload.get("agent_id", 0))
                 if not agent_id:

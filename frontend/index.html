@@ -584,7 +584,7 @@
         <div class="skill-hero">
           <div>
             <div class="mail-section-title">MCP 服务管理</div>
-            <div class="mail-section-meta">通过 Model Context Protocol（MCP）将平台全部 Skill 开放给外部 AI 客户端（Claude Desktop、Claude Code、OpenClaw 等）。此页面仅超级管理员可见。</div>
+            <div class="mail-section-meta">通过 Model Context Protocol（MCP）将平台全部 Skill 开放给外部 AI 客户端（Claude Desktop、Claude Code、OpenClaw 等）。管理员可见。</div>
           </div>
           <div class="toolbar" style="margin-top:0">
             <button class="secondary" id="mcpRefreshButton" type="button"><span class="icon" data-icon="refresh-cw"></span> 刷新状态</button>
@@ -655,6 +655,7 @@ X-MCP-Username: &lt;username&gt;           ← 用哪个账号的数据空间（
 
         <h2 style="margin:20px 0 8px">安装到龙虾</h2>
         <div class="mail-section-meta" style="margin-bottom:10px;">将本平台 MCP 服务一键安装到您名下的龙虾智能体，安装后龙虾可直接调用平台全部 Skill 工具。需先启用 MCP 密钥。</div>
+        <div style="margin-bottom:8px;"><button class="secondary mini" type="button" id="mcpLobsterRefreshButton"><span class="icon" data-icon="refresh-cw"></span> 刷新龙虾列表</button></div>
         <div id="mcpLobsterList" class="mcp-lobster-list"><span class="hint">正在加载龙虾列表...</span></div>
         <div id="mcpLobsterStatus" class="status" style="margin-top:6px;min-height:18px;"></div>
       </div>
