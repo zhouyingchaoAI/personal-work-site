@@ -582,18 +582,30 @@
             <div class="mailbox-meta">收件人：${escapeHtml(msg.to || '')}</div>
             <div class="mailbox-meta">时间：${escapeHtml(msg.date || '')}</div>
             <div class="mail-attachment-list">
-              ${attachments.length ? attachments.map(file => `
+              ${attachments.length ? attachments.map(file => {
+                const href = file.download_url ? resourceUrl(file.download_url) : '';
+                const label = escapeHtml(file.name || '附件');
+                return `
                 <span class="mail-attachment">
                   <span class="icon" data-icon="paperclip"></span>
-                  ${escapeHtml(file.name || '附件')}
-                  ${file.size ? ` · ${formatFileSize(file.size)}` : ''}
+                  <span class="mail-attachment-name">${label}</span>
+                  ${file.size ? `<span class="mailbox-meta">${formatFileSize(file.size)}</span>` : ''}
+                  ${href ? `<button class="mail-attachment-download" type="button" data-download-url="${escapeHtml(href)}">下载附件</button>` : ''}
                 </span>
-              `).join('') : '<span class="mailbox-meta">无附件</span>'}
+              `}).join('') : '<span class="mailbox-meta">无附件</span>'}
             </div>
           </div>
           ${bodyHtml}
         `;
         renderIcons(el('mailDetail'));
+        el('mailDetail').querySelectorAll('[data-download-url]').forEach(btn => {
+          btn.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            const url = btn.dataset.downloadUrl;
+            if (url) window.open(url, '_blank', 'noopener');
+          });
+        });
       } catch (err) {
         el('mailDetail').textContent = err.message;
       }
@@ -911,3 +923,210 @@
         el('agentConfigStatus').textContent = err.message;
       }
     }
+
+    // ── MCP service management ──────────────────────────────────────────
+
+    function mcpEndpointUrl() {
+      const base = (window.PERSONAL_OFFICE_ASSISTANT_CONFIG || {}).appBasePath || '';
+      return window.location.origin + base.replace(/\/$/, '') + '/mcp';
+    }
+
+    function _copyText(text, btn) {
+      const orig = btn.innerHTML;
+      const done = () => {
+        btn.innerHTML = '已复制 ✓';
+        btn.classList.add('ok');
+        setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('ok'); renderIcons(btn.parentElement); }, 2200);
+      };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done).catch(() => _copyFallback(text, btn, done));
+      } else {
+        _copyFallback(text, btn, done);
+      }
+    }
+
+    function _copyFallback(text, btn, done) {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      try { document.execCommand('copy'); } catch (_) {}
+      document.body.removeChild(ta); done();
+    }
+
+    function _updateMcpConnectExamples(endpointUrl) {
+      const username = state.user?.username || '<username>';
+      const claudeConfig = {
+        mcpServers: {
+          'personal-office-assistant': {
+            type: 'http',
+            url: endpointUrl,
+            headers: {
+              'Authorization': 'Bearer <mcp_secret>',
+              'X-MCP-Username': username
+            }
+          }
+        }
+      };
+      el('mcpClaudeConfig').textContent = JSON.stringify(claudeConfig, null, 2);
+
+      el('mcpCurlExample').textContent =
+        `curl -X POST ${endpointUrl} \\\n` +
+        `  -H "Content-Type: application/json" \\\n` +
+        `  -H "Authorization: Bearer <mcp_secret>" \\\n` +
+        `  -H "X-MCP-Username: ${username}" \\\n` +
+        `  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'`;
+    }
+
+    function _renderMcpToolsSummary(skillCount) {
+      const box = el('mcpToolsSummary');
+      if (!skillCount) {
+        box.innerHTML = '<div class="upload-item">MCP 服务未启用，启用后此处显示已开放工具列表。</div>';
+        return;
+      }
+      const modules = ['周报','出差报告','工作日记','邮件','金点子论坛','资讯','报告','通用','记忆','工作流'];
+      box.innerHTML =
+        `<div class="mcp-tools-count">共 ${skillCount} 个 MCP 工具（Skill），分布在以下模块：</div>` +
+        `<div class="mcp-module-chips">` +
+        modules.map(m => `<span class="mcp-chip">${escapeHtml(m)} Skill</span>`).join('') +
+        `</div>` +
+        `<div class="hint" style="margin-top:10px;">` +
+        `每个工具对应一个平台 Skill，工具名即 Skill 名（如 <code style="font-size:11px">weekly.compose</code>）。` +
+        `<a href="javascript:void(0)" style="margin-left:8px;" onclick="document.querySelector('.task-card[data-task=skills]').click()">查看完整 Skill 列表 →</a>` +
+        `</div>`;
+    }
+
+    function renderMcpPanel(data) {
+      if (!data) return;
+      const enabled = !!data.enabled;
+      const badge = el('mcpStatusBadge');
+      badge.textContent = enabled ? '● 已启用' : '○ 未启用';
+      badge.className = 'mcp-status-badge ' + (enabled ? 'enabled' : 'disabled');
+
+      el('mcpSkillCount').textContent = data.skill_count || 0;
+      el('mcpProtocolVersion').textContent = data.protocol_version || '-';
+
+      const endpointUrl = mcpEndpointUrl();
+      el('mcpEndpointDisplay').textContent = endpointUrl;
+
+      el('mcpSecretHint').textContent = enabled
+        ? '密钥已配置，MCP 端点正在响应请求。生成新密钥后旧密钥立即失效。'
+        : '未配置密钥，MCP 端点处于禁用状态。点击"生成新密钥"激活服务。';
+
+      el('mcpClearButton').style.display = enabled ? '' : 'none';
+
+      _updateMcpConnectExamples(endpointUrl);
+      _renderMcpToolsSummary(data.skill_count || 0);
+    }
+
+    async function loadMcpLobsters() {
+      if (!state.user?.is_superadmin) return;
+      const box = el('mcpLobsterList');
+      if (!box) return;
+      box.innerHTML = '<span class="hint">正在加载龙虾列表...</span>';
+      try {
+        const data = await api('/api/my-lobsters');
+        const agents = data.agents || [];
+        if (!agents.length) {
+          box.innerHTML = '<span class="hint">暂无龙虾，请先在龙虾基地创建一个龙虾智能体。</span>';
+          return;
+        }
+        box.innerHTML = agents.map(a => {
+          const installed = (a.mcp_services || []).some(s => s.name === 'personal-office-assistant');
+          return `<div class="mcp-lobster-row">
+            <span class="mcp-lobster-name">${escapeHtml(a.agent_name)}</span>
+            <span class="mcp-lobster-meta">${escapeHtml(a.provider || '')}/${escapeHtml(a.model || '')} · ${escapeHtml(a.status || '')}</span>
+            <span class="mcp-lobster-badge${installed ? '' : ' not-installed'}">${installed ? '已安装' : '未安装'}</span>
+            <button class="mini secondary" data-agent-id="${a.agent_id}" data-agent-name="${escapeHtml(a.agent_name)}" onclick="window._installMcpToLobster(this)">安装</button>
+          </div>`;
+        }).join('');
+      } catch (err) {
+        box.innerHTML = `<span class="hint err">${escapeHtml(err.message)}</span>`;
+      }
+    }
+
+    window._installMcpToLobster = async function(btn) {
+      const agentId = parseInt(btn.dataset.agentId, 10);
+      const agentName = btn.dataset.agentName;
+      const statusEl = el('mcpLobsterStatus');
+      btn.disabled = true;
+      statusEl.textContent = `正在安装到「${agentName}」...`;
+      statusEl.className = 'status';
+      try {
+        const result = await apiPost('/api/install-mcp-to-lobster', { agent_id: agentId });
+        if (result && !result.ok && result.error) throw new Error(result.error);
+        statusEl.textContent = `已成功安装到「${agentName}」，重启龙虾后生效。`;
+        statusEl.className = 'status ok';
+        await loadMcpLobsters();
+      } catch (err) {
+        statusEl.textContent = err.message;
+        statusEl.className = 'status err';
+        btn.disabled = false;
+      }
+    };
+
+    async function loadMcpConfig() {
+      if (!state.user?.is_superadmin) return;
+      el('mcpStatus').textContent = '';
+      el('mcpStatus').className = 'status';
+      try {
+        const data = await api('/api/mcp-config');
+        renderMcpPanel(data);
+        renderIcons(el('mcpPanel'));
+      } catch (err) {
+        el('mcpStatus').textContent = err.message;
+        el('mcpStatus').className = 'status err';
+      }
+      loadMcpLobsters();
+    }
+
+    async function mcpGenerateSecret() {
+      if (!confirm('生成新密钥后，旧密钥立即失效，已接入的客户端需更新配置。确定继续？')) return;
+      const btn = el('mcpGenerateButton');
+      btn.disabled = true;
+      el('mcpStatus').textContent = '正在生成...';
+      el('mcpStatus').className = 'status';
+      try {
+        const data = await apiPost('/api/mcp-config', { generate: true });
+        if (!data.ok) throw new Error(data.message || '生成失败');
+        el('mcpNewSecretValue').textContent = data.mcp_secret || '';
+        el('mcpNewSecretBox').classList.remove('hidden');
+        renderIcons(el('mcpNewSecretBox'));
+        el('mcpStatus').textContent = data.message || '密钥已生成';
+        el('mcpStatus').className = 'status ok';
+        const config = await api('/api/mcp-config');
+        renderMcpPanel(config);
+        el('mcpNewSecretBox').classList.remove('hidden');
+        el('mcpNewSecretValue').textContent = data.mcp_secret || '';
+        renderIcons(el('mcpPanel'));
+      } catch (err) {
+        el('mcpStatus').textContent = err.message;
+        el('mcpStatus').className = 'status err';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function mcpClearSecret() {
+      if (!confirm('清除密钥后 MCP 服务立即停止响应，所有客户端连接将断开。确定清除？')) return;
+      el('mcpStatus').textContent = '正在清除...';
+      try {
+        const data = await apiPost('/api/mcp-config', { clear: true });
+        el('mcpStatus').textContent = data.message || '密钥已清除';
+        el('mcpStatus').className = 'status ok';
+        el('mcpNewSecretBox').classList.add('hidden');
+        el('mcpNewSecretValue').textContent = '';
+        renderMcpPanel(data);
+        renderIcons(el('mcpPanel'));
+      } catch (err) {
+        el('mcpStatus').textContent = err.message;
+        el('mcpStatus').className = 'status err';
+      }
+    }
+
+    if (el('mcpRefreshButton')) el('mcpRefreshButton').addEventListener('click', loadMcpConfig);
+    if (el('mcpGenerateButton')) el('mcpGenerateButton').addEventListener('click', mcpGenerateSecret);
+    if (el('mcpClearButton')) el('mcpClearButton').addEventListener('click', mcpClearSecret);
+    if (el('mcpCopyEndpoint')) el('mcpCopyEndpoint').addEventListener('click', () => _copyText(mcpEndpointUrl(), el('mcpCopyEndpoint')));
+    if (el('mcpCopyNewSecret')) el('mcpCopyNewSecret').addEventListener('click', () => _copyText(el('mcpNewSecretValue').textContent || '', el('mcpCopyNewSecret')));
+    if (el('mcpCopyClaudeConfig')) el('mcpCopyClaudeConfig').addEventListener('click', () => _copyText(el('mcpClaudeConfig').textContent || '', el('mcpCopyClaudeConfig')));
+    if (el('mcpCopyCurl')) el('mcpCopyCurl').addEventListener('click', () => _copyText(el('mcpCurlExample').textContent || '', el('mcpCopyCurl')));

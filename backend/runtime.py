@@ -26,6 +26,7 @@ MODULES = [
     "agent_runtime.py",
     "memory.py",
     "workflows.py",
+    "mcp.py",
     "server.py",
 ]
 

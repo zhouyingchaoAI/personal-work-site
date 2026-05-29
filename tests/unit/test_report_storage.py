@@ -187,6 +187,23 @@ class ReportStorageTests(unittest.TestCase):
             rt.read_config = old_read_config
             rt.newest = old_newest
 
+    def test_weekly_prefill_new_user_ignores_global_template(self):
+        raw = b"template bytes"
+        payload = {
+            "kind": "weekly",
+            "file": {
+                "name": "edited.xlsx",
+                "data": base64.b64encode(raw).decode("ascii"),
+            },
+        }
+        rt.save_report_template(payload, "zhouyingchao")
+
+        prefill = rt.weekly_prefill("newuser")
+
+        self.assertEqual(prefill["weekly_summary"], "")
+        self.assertEqual(prefill["summary_rows"], [])
+        self.assertEqual(prefill["source"], "")
+
     def test_report_template_upload_and_delete_are_global(self):
         raw = b"template bytes"
         payload = {

@@ -100,6 +100,10 @@
             <span class="nav-icon" data-icon="users"></span>
             <span class="task-name">用户管理</span>
           </button>
+          <button class="task-card superadmin-only hidden" type="button" data-task="mcp">
+            <span class="nav-icon" data-icon="network"></span>
+            <span class="task-name">MCP 服务</span>
+          </button>
         </div>
       </div>
     </aside>
@@ -575,6 +579,86 @@
         <div class="user-list" id="userList"><div class="upload-item">正在加载用户列表...</div></div>
       </div>
       </div>
+      <div class="task-panel hidden" id="mcpPanel">
+      <div class="guide">
+        <div class="skill-hero">
+          <div>
+            <div class="mail-section-title">MCP 服务管理</div>
+            <div class="mail-section-meta">通过 Model Context Protocol（MCP）将平台全部 Skill 开放给外部 AI 客户端（Claude Desktop、Claude Code、OpenClaw 等）。此页面仅超级管理员可见。</div>
+          </div>
+          <div class="toolbar" style="margin-top:0">
+            <button class="secondary" id="mcpRefreshButton" type="button"><span class="icon" data-icon="refresh-cw"></span> 刷新状态</button>
+          </div>
+        </div>
+
+        <div class="mcp-overview-card">
+          <div class="mcp-overview-left">
+            <div class="mcp-status-badge" id="mcpStatusBadge">检测中...</div>
+            <div class="mcp-overview-meta">
+              <span id="mcpSkillCount">-</span> 个工具可用
+              <span style="color:var(--line);margin:0 8px">|</span>
+              协议 <span id="mcpProtocolVersion">-</span>
+            </div>
+          </div>
+          <div class="mcp-endpoint-row">
+            <code class="mcp-endpoint-code" id="mcpEndpointDisplay">POST /mcp</code>
+            <button class="mini secondary" type="button" id="mcpCopyEndpoint"><span class="icon" data-icon="copy"></span> 复制</button>
+          </div>
+        </div>
+
+        <h2 style="margin:20px 0 8px">密钥管理</h2>
+        <div class="mcp-secret-card">
+          <div class="mcp-secret-row">
+            <div>
+              <div style="font-weight:700;font-size:13px;margin-bottom:4px;">MCP 访问密钥</div>
+              <div class="mail-section-meta" id="mcpSecretHint">正在加载...</div>
+            </div>
+            <div class="toolbar" style="margin:0">
+              <button class="warn" id="mcpGenerateButton" type="button"><span class="icon" data-icon="wand-sparkles"></span> 生成新密钥</button>
+              <button class="secondary" id="mcpClearButton" type="button" style="display:none;border-color:rgba(239,68,68,.4);color:var(--danger);">清除密钥</button>
+            </div>
+          </div>
+          <div class="mcp-new-secret-box hidden" id="mcpNewSecretBox">
+            <div class="mcp-new-secret-label"><span class="icon" data-icon="sparkles"></span> 新密钥已生成，请立即复制保存，页面刷新后不再显示明文。</div>
+            <div class="mcp-new-secret-row">
+              <code class="mcp-new-secret-value" id="mcpNewSecretValue">-</code>
+              <button class="mini secondary" type="button" id="mcpCopyNewSecret"><span class="icon" data-icon="copy"></span> 复制</button>
+            </div>
+          </div>
+        </div>
+        <div id="mcpStatus" class="status" style="margin-top:6px;min-height:18px;"></div>
+
+        <h2 style="margin:20px 0 8px">连接方式</h2>
+        <div class="mcp-connect-grid">
+          <div class="mcp-connect-card">
+            <div class="mcp-connect-title">Claude Desktop / Claude Code MCP 配置</div>
+            <div class="mail-section-meta" style="margin-bottom:8px;">添加到 <code style="font-size:11px;">~/.claude/settings.json</code> 的 mcpServers 字段，或 claude_desktop_config.json</div>
+            <pre class="mcp-code-block" id="mcpClaudeConfig">正在生成...</pre>
+            <button class="mini secondary" type="button" id="mcpCopyClaudeConfig" style="margin-top:6px;"><span class="icon" data-icon="copy"></span> 复制</button>
+          </div>
+          <div class="mcp-connect-card">
+            <div class="mcp-connect-title">curl 快速测试（tools/list）</div>
+            <div class="mail-section-meta" style="margin-bottom:8px;">验证 MCP 服务是否正常响应，替换密钥和用户名后执行</div>
+            <pre class="mcp-code-block" id="mcpCurlExample">正在生成...</pre>
+            <button class="mini secondary" type="button" id="mcpCopyCurl" style="margin-top:6px;"><span class="icon" data-icon="copy"></span> 复制</button>
+          </div>
+        </div>
+
+        <div class="skill-protocol" style="margin-top:12px;">
+          <div class="mail-section-title" style="margin-bottom:6px;">请求头说明</div>
+          <pre style="margin:0">Authorization: Bearer &lt;mcp_secret&gt;    ← 密钥（上方生成）
+X-MCP-Username: &lt;username&gt;           ← 用哪个账号的数据空间（如 zhouyingchao）</pre>
+        </div>
+
+        <h2 style="margin:20px 0 8px">已开放 MCP 工具</h2>
+        <div id="mcpToolsSummary" class="mcp-tools-summary">正在加载...</div>
+
+        <h2 style="margin:20px 0 8px">安装到龙虾</h2>
+        <div class="mail-section-meta" style="margin-bottom:10px;">将本平台 MCP 服务一键安装到您名下的龙虾智能体，安装后龙虾可直接调用平台全部 Skill 工具。需先启用 MCP 密钥。</div>
+        <div id="mcpLobsterList" class="mcp-lobster-list"><span class="hint">正在加载龙虾列表...</span></div>
+        <div id="mcpLobsterStatus" class="status" style="margin-top:6px;min-height:18px;"></div>
+      </div>
+      </div>
       <div class="task-panel hidden" id="mailConfigPanel">
       <div class="guide">
         <h2>我的邮箱账户</h2>
@@ -1044,12 +1128,12 @@
     </div>
   </div>
   <script src="/personal-office-assistant/frontend/config.js" defer></script>
-  <script src="/personal-office-assistant/frontend/js/core.js" defer></script>
-  <script src="/personal-office-assistant/frontend/js/navigation-reports.js?v=20260527b" defer></script>
+  <script src="/personal-office-assistant/frontend/js/core.js?v=20260528a" defer></script>
+  <script src="/personal-office-assistant/frontend/js/navigation-reports.js?v=20260528a" defer></script>
   <script src="/personal-office-assistant/frontend/js/weekly-trip-forms.js" defer></script>
-  <script src="/personal-office-assistant/frontend/js/skills-admin-mailbox.js" defer></script>
+  <script src="/personal-office-assistant/frontend/js/skills-admin-mailbox.js?v=20260528c" defer></script>
   <script src="/personal-office-assistant/frontend/js/openclaw-base.js?v=20260527b" defer></script>
-  <script src="/personal-office-assistant/frontend/js/events.js?v=20260527b" defer></script>
+  <script src="/personal-office-assistant/frontend/js/events.js?v=20260528a" defer></script>
   <script src="/personal-office-assistant/frontend/js/diary-forum-news.js" defer></script>
   <script src="/personal-office-assistant/frontend/js/mail-agent.js" defer></script>
   <script src="/personal-office-assistant/frontend/js/boot.js" defer></script>

@@ -1,4 +1,85 @@
-/* Configuration, users, mailbox, uploads, and assistant mail panels. */
+/* Configuration, users, mailbox, uploads, assistant mail, and MCP panels. */
+
+    /* ── MCP service management panel ─────────────────────────────────── */
+    .mcp-overview-card {
+      background: var(--elevated);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+    .mcp-overview-left { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .mcp-overview-meta { font-size: 13px; color: var(--muted); }
+    .mcp-status-badge {
+      font-size: 12px; font-weight: 700;
+      padding: 4px 12px; border-radius: 20px; white-space: nowrap;
+    }
+    .mcp-status-badge.enabled { background: rgba(16,185,129,.15); color: var(--success); border: 1px solid rgba(16,185,129,.3); }
+    .mcp-status-badge.disabled { background: rgba(148,163,184,.1); color: var(--muted); border: 1px solid var(--line); }
+    .mcp-endpoint-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .mcp-endpoint-code {
+      font-family: 'JetBrains Mono','Fira Code',Consolas,monospace;
+      font-size: 12px; background: var(--surface); padding: 5px 10px;
+      border-radius: 6px; border: 1px solid var(--line); color: var(--accent);
+      word-break: break-all; max-width: 460px;
+    }
+    .mcp-secret-card {
+      background: var(--elevated); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 16px 20px;
+    }
+    .mcp-secret-row {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px;
+    }
+    .mcp-new-secret-box {
+      margin-top: 14px; padding: 12px 16px;
+      background: rgba(245,158,11,.07); border: 1px solid rgba(245,158,11,.3);
+      border-radius: var(--radius-sm);
+    }
+    .mcp-new-secret-label {
+      font-size: 13px; color: var(--warning); margin-bottom: 10px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .mcp-new-secret-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .mcp-new-secret-value {
+      font-family: 'JetBrains Mono','Fira Code',Consolas,monospace;
+      font-size: 13px; flex: 1; min-width: 200px; background: var(--surface);
+      padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line);
+      color: var(--warning); word-break: break-all; user-select: all;
+    }
+    .mcp-connect-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .mcp-connect-card {
+      background: var(--elevated); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 16px;
+    }
+    .mcp-connect-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+    .mcp-code-block {
+      background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+      padding: 10px 12px; font-family: 'JetBrains Mono','Fira Code',Consolas,monospace;
+      font-size: 11px; line-height: 1.65; color: #94a3b8; margin: 0;
+      white-space: pre-wrap; word-break: break-word; overflow-x: auto;
+    }
+    .mcp-tools-summary {
+      background: var(--elevated); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 16px 20px;
+    }
+    .mcp-tools-count { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+    .mcp-module-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .mcp-chip {
+      padding: 4px 12px; border-radius: 16px; font-size: 12px;
+      background: rgba(59,130,246,.1); border: 1px solid rgba(59,130,246,.2); color: var(--accent);
+    }
+    @media (max-width: 860px) {
+      .mcp-connect-grid { grid-template-columns: 1fr; }
+      .mcp-overview-card { flex-direction: column; align-items: flex-start; }
+      .mcp-endpoint-code { max-width: 100%; }
+    }
+    /* ───────────────────────────────────────────────────────────────────── */
 
     .field-assist details {
       flex: 1;
@@ -318,4 +399,19 @@
       border: 1px solid var(--line);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
+    }
+    .mcp-lobster-list { display: flex; flex-direction: column; gap: 8px; }
+    .mcp-lobster-row {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 10px 14px; border-radius: var(--radius-sm);
+      background: var(--elevated); border: 1px solid var(--line);
+    }
+    .mcp-lobster-name { font-weight: 700; font-size: 13px; flex: 1; min-width: 100px; }
+    .mcp-lobster-meta { font-size: 12px; color: var(--muted); }
+    .mcp-lobster-badge {
+      font-size: 11px; padding: 2px 8px; border-radius: 99px;
+      background: rgba(16,185,129,.12); color: var(--success); border: 1px solid rgba(16,185,129,.25);
+    }
+    .mcp-lobster-badge.not-installed {
+      background: rgba(148,163,184,.1); color: var(--muted); border-color: var(--line);
     }

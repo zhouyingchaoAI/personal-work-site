@@ -333,10 +333,38 @@ def build_weekly_prefill(max_row, read_cell, source_name):
     }
 
 
+def empty_weekly_prefill():
+    return {
+        "weekly_summary": "",
+        "weekly_follow": "",
+        "weekly_next": "",
+        "summary_rows": [],
+        "follow_rows": [],
+        "next_rows": [],
+        "source": "",
+    }
+
+
+def user_weekly_prefill_source(username=None):
+    if not username:
+        return None
+    items = [
+        item
+        for item in generated_files(username) + report_files(username)
+        if item.get("kind") == "weekly"
+    ]
+    if not items:
+        return None
+    return sorted(items, key=lambda item: (item["sort_key"], item["mtime"]), reverse=True)[0]
+
+
 def weekly_prefill(username=None):
-    template = Path(template_for_report("weekly", username, include_generated=True) or "")
+    item = user_weekly_prefill_source(username)
+    if not item:
+        return empty_weekly_prefill()
+    template = Path(item.get("path", ""))
     if not template.exists():
-        return {"weekly_summary": "", "weekly_follow": "", "weekly_next": ""}
+        return empty_weekly_prefill()
 
     try:
         from openpyxl import load_workbook

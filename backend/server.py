@@ -9,6 +9,54 @@ def app_html():
     return (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
 
 
+def _openclaw_sso_token(user_info: dict) -> str:
+    """Obtain an openclaw token for the given user via the office-SSO exchange."""
+    target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
+    secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "openclaw-office-sso-dev")
+    sso_payload = {
+        "username": user_info.get("username", ""),
+        "display_name": user_info.get("name") or user_info.get("username", ""),
+        "role": user_info.get("role", "member"),
+        "name": user_info.get("name", ""),
+        "avatar_url": user_info.get("avatar_url", ""),
+        "bio": user_info.get("bio", ""),
+        "hobbies": user_info.get("hobbies", ""),
+        "is_admin": bool(user_info.get("is_admin")),
+        "is_superadmin": bool(user_info.get("is_superadmin")),
+    }
+    parsed_target = urllib.parse.urlparse(target)
+    urls = [target + "/api/auth/office-sso"]
+    if parsed_target.path.rstrip("/").endswith("/openclaw"):
+        origin = urllib.parse.urlunparse((parsed_target.scheme, parsed_target.netloc, "", "", "", ""))
+        urls.append(origin.rstrip("/") + "/api/auth/office-sso")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    last_err = None
+    for url in urls:
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(sso_payload, ensure_ascii=False).encode("utf-8"),
+                headers={"Content-Type": "application/json", "X-OpenClaw-Office-SSO-Secret": secret},
+                method="POST",
+            )
+            with opener.open(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            return data.get("token", "")
+        except urllib.error.HTTPError as exc:
+            last_err = exc
+            if exc.code != 404:
+                raise
+    raise last_err or RuntimeError("龙虾平台未返回登录凭据")
+
+
+def _self_mcp_endpoint(headers) -> str:
+    """Derive this server's public MCP endpoint URL from incoming request headers."""
+    forwarded_proto = headers.get("X-Forwarded-Proto", "")
+    forwarded_host = headers.get("X-Forwarded-Host", "") or headers.get("Host", "127.0.0.1:8765")
+    scheme = forwarded_proto if forwarded_proto in ("http", "https") else "http"
+    return f"{scheme}://{forwarded_host}{APP_RELATIVE_PATH}/mcp"
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         sys.stderr.write("[%s] %s\n" % (self.log_date_time_string(), fmt % args))
@@ -191,10 +239,33 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": f"龙虾平台单点登录失败：{exc}"}, status=502)
             return
+        if parsed.path == "/api/my-lobsters":
+            user = self.require_user()
+            if not user:
+                return
+            try:
+                token = _openclaw_sso_token(public_user(user))
+                target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                req = urllib.request.Request(
+                    target + "/api/agents",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                with opener.open(req, timeout=15) as resp:
+                    agents_data = json.loads(resp.read().decode("utf-8"))
+                self.send_json({"ok": True, "agents": agents_data if isinstance(agents_data, list) else []})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=502)
+            return
         if parsed.path == "/api/admin-config":
             if not self.require_admin():
                 return
             self.send_json(admin_config_payload())
+            return
+        if parsed.path == "/api/mcp-config":
+            if not self.require_admin():
+                return
+            self.send_json(mcp_config_api())
             return
         if parsed.path == "/api/admin-users-list":
             if not self.require_admin():
@@ -227,6 +298,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Disposition", "attachment; filename*=UTF-8''ai-office-skills.md")
             self.end_headers()
             self.wfile.write(raw)
+            return
+        if parsed.path == "/mcp":
+            self.send_json(mcp_info())
             return
         if parsed.path.startswith("/api/") and not self.require_user():
             return
@@ -281,6 +355,28 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(get_inbox_message(self.current_user().get("username", ""), uid, refresh))
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if parsed.path == "/api/mailbox-part":
+            qs = urllib.parse.parse_qs(parsed.query)
+            uid = qs.get("uid", [""])[0]
+            part_key = qs.get("part", [""])[0]
+            download = qs.get("download", ["0"])[0] == "1"
+            try:
+                path = get_mail_part(self.current_user().get("username", ""), uid, part_key)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=404)
+                return
+            raw = path.read_bytes()
+            display_name = path.name.split("__", 1)[1] if "__" in path.name else path.name
+            self.send_response(200)
+            self.send_header("Content-Type", mail_part_content_type_from_name(display_name, raw))
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "private, max-age=1800")
+            if download:
+                encoded_name = urllib.parse.quote(display_name)
+                self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{encoded_name}")
+            self.end_headers()
+            self.wfile.write(raw)
             return
         if parsed.path == "/api/reports":
             username = self.current_user().get("username", "")
@@ -402,6 +498,26 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path.startswith(APP_RELATIVE_PATH + "/"):
             parsed = parsed._replace(path=parsed.path[len(APP_RELATIVE_PATH):] or "/")
+        if parsed.path == "/mcp":
+            auth = self.headers.get("Authorization", "")
+            mcp_user = self.headers.get("X-MCP-Username", "")
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body_raw = self.rfile.read(length)
+            except Exception:
+                body_raw = b"{}"
+            status, resp = mcp_handle_post(auth, mcp_user, body_raw)
+            if resp is None:
+                self.send_response(204)
+                self.end_headers()
+            else:
+                raw = json.dumps(resp, ensure_ascii=False).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+            return
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
@@ -532,6 +648,41 @@ class Handler(BaseHTTPRequestHandler):
                 if not self.require_superadmin():
                     return
                 result = generate_news_issue(payload, username)
+            elif parsed.path == "/api/mcp-config":
+                if not self.require_admin():
+                    return
+                result = save_mcp_config(payload)
+            elif parsed.path == "/api/install-mcp-to-lobster":
+                if not self.require_superadmin():
+                    return
+                agent_id = int(payload.get("agent_id", 0))
+                if not agent_id:
+                    raise ValueError("agent_id is required")
+                mcp_cfg = mcp_config_api()
+                if not mcp_cfg.get("enabled"):
+                    raise ValueError("MCP 服务未启用，请先在 MCP 管理页生成密钥后再安装")
+                mcp_secret = str(read_config().get("mcp_secret", "") or "")
+                mcp_endpoint = _self_mcp_endpoint(self.headers)
+                token = _openclaw_sso_token(public_user(self.current_user()))
+                target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                install_payload = json.dumps({
+                    "name": "personal-office-assistant",
+                    "endpoint": mcp_endpoint,
+                    "auth_token": mcp_secret,
+                    "permission_level": "read",
+                    "username": self.current_user().get("username", ""),
+                }, ensure_ascii=False).encode("utf-8")
+                req = urllib.request.Request(
+                    f"{target}/api/agents/{agent_id}/mcp-install",
+                    data=install_payload,
+                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+                    method="POST",
+                )
+                with opener.open(req, timeout=15) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+                if not result.get("ok"):
+                    raise ValueError(result.get("detail") or "安装失败")
             else:
                 self.send_json({"error": "Not found"}, status=404)
                 return

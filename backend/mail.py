@@ -100,6 +100,110 @@ def mail_cache_path(username, name):
     return user_mail_cache_dir(username) / f"{safe}.json"
 
 
+def safe_mail_uid(uid):
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(uid or "")) or "message"
+
+
+def safe_mail_part_key(value):
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value or "")) or "part"
+
+
+def mail_part_dir(username, uid):
+    path = user_mail_cache_dir(username) / "parts" / safe_mail_uid(uid)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def clear_mail_part_dir(username, uid):
+    path = mail_part_dir(username, uid)
+    for item in path.glob("*"):
+        try:
+            if item.is_file():
+                item.unlink()
+        except Exception:
+            pass
+
+
+def mail_part_path(username, uid, part_key):
+    key = safe_mail_part_key(part_key)
+    matches = sorted(mail_part_dir(username, uid).glob(key + "__*"))
+    return matches[0] if matches else None
+
+
+def mailbox_part_url(uid, part_key, download=False):
+    query = APP_RELATIVE_PATH + "/api/mailbox-part?uid=" + urllib.parse.quote(str(uid or "")) + "&part=" + urllib.parse.quote(str(part_key or ""))
+    if download:
+        query += "&download=1"
+    return query
+
+
+def mail_part_content_type_from_name(name, raw=None):
+    ctype, _ = mimetypes.guess_type(str(name or ""))
+    if ctype:
+        return ctype
+    lower = str(name or "").lower()
+    for marker, value in ((".png", "image/png"), (".jpg", "image/jpeg"), (".jpeg", "image/jpeg"), (".gif", "image/gif"), (".webp", "image/webp"), (".pdf", "application/pdf")):
+        if marker in lower:
+            return value
+    head = bytes(raw or b"")[:16]
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if head.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if head.startswith(b"%PDF"):
+        return "application/pdf"
+    return "application/octet-stream"
+
+
+def normalize_content_id(value):
+    return str(value or "").strip().strip("<>")
+
+
+def replace_cid_sources(html, cid_urls):
+    if not html or not cid_urls:
+        return html
+    pattern = r"src\s*=\s*(['\"]?)cid:([^'\"\s>]+)\1"
+    def repl(match):
+        quote = match.group(1) or ''
+        cid = urllib.parse.unquote(match.group(2) or "")
+        url = cid_urls.get(normalize_content_id(cid))
+        return "src=" + quote + url + quote if url else match.group(0)
+    return re.sub(pattern, repl, html, flags=re.I)
+
+
+def save_mail_part(username, uid, part_key, filename, payload):
+    safe_name = Path(decode_mime_value(filename or "attachment")).name or "attachment"
+    safe_name = re.sub(r"[\\/]+", "_", safe_name)
+    path = mail_part_dir(username, uid) / (safe_mail_part_key(part_key) + "__" + safe_name)
+    path.write_bytes(payload or b"")
+    return path
+
+
+def get_mail_part(username, uid, part_key):
+    path = mail_part_path(username, uid, part_key)
+    if path is None or not path.exists():
+        get_inbox_message(username, uid, refresh=True)
+        path = mail_part_path(username, uid, part_key)
+    if path is None or not path.exists() or not path.is_file():
+        raise ValueError("邮件附件不存在或已过期，请刷新邮件后重试")
+    return path
+
+
+def mail_detail_cache_is_stale(data):
+    msg = (data or {}).get("message") or {}
+    body_html = str(msg.get("body_html", ""))
+    if "cid:" in body_html.lower():
+        return True
+    if 'src="/api/mailbox-part' in body_html or "src='/api/mailbox-part" in body_html:
+        return True
+    for item in msg.get("attachments", []) or []:
+        if item.get("name") and not item.get("download_url"):
+            return True
+    return False
+
+
 def read_mail_cache(username, name, max_age_seconds=600):
     path = mail_cache_path(username, name)
     if not path.exists():
@@ -201,18 +305,37 @@ def extract_mail_html(msg, max_chars=120000):
     return html[:max_chars]
 
 
-def mail_summary_from_message(uid, msg):
+def mail_summary_from_message(uid, msg, username=None):
     attachments = []
-    for part in msg.walk() if msg.is_multipart() else []:
+    cid_urls = {}
+    if username:
+        clear_mail_part_dir(username, uid)
+    for idx, part in enumerate(msg.walk() if msg.is_multipart() else [msg]):
+        if part.is_multipart():
+            continue
         name = part.get_filename()
-        if name:
-            payload = part.get_payload(decode=True) or b""
-            attachments.append({
+        cid = normalize_content_id(part.get("Content-ID", ""))
+        disposition = (part.get_content_disposition() or "").lower()
+        if not name and not cid:
+            continue
+        payload = part.get_payload(decode=True) or b""
+        filename = decode_mime_value(name) if name else ((cid or f"part-{idx}") + (mimetypes.guess_extension(part.get_content_type()) or ""))
+        part_key = f"part{idx}"
+        if username and payload:
+            save_mail_part(username, uid, part_key, filename, payload)
+        if cid:
+            cid_urls[cid] = mailbox_part_url(uid, part_key)
+        if name and (disposition == "attachment" or not cid):
+            item = {
                 "name": decode_mime_value(name),
                 "size": len(payload),
                 "type": part.get_content_type(),
-            })
-    body_html = extract_mail_html(msg)
+                "part": part_key,
+            }
+            if username and payload:
+                item["download_url"] = mailbox_part_url(uid, part_key, True)
+            attachments.append(item)
+    body_html = replace_cid_sources(extract_mail_html(msg), cid_urls)
     return {
         "uid": str(uid),
         "subject": decode_mime_value(msg.get("Subject", "")) or "无主题",
@@ -289,7 +412,7 @@ def get_inbox_message(username, uid, refresh=False):
     cache_name = f"detail_{uid}"
     if not refresh:
         cached = read_mail_cache(username, cache_name, 7200)
-        if cached:
+        if cached and not mail_detail_cache_is_stale(cached):
             cached["ok"] = True
             cached["cached"] = True
             return cached
@@ -302,7 +425,7 @@ def get_inbox_message(username, uid, refresh=False):
         raw = next((item[1] for item in fetched if isinstance(item, tuple)), None)
         if not raw:
             raise ValueError("邮件内容为空")
-        result = write_mail_cache(username, cache_name, {"ok": True, "message": mail_summary_from_message(uid, email.message_from_bytes(raw)), "cached": False})
+        result = write_mail_cache(username, cache_name, {"ok": True, "message": mail_summary_from_message(uid, email.message_from_bytes(raw), username), "cached": False})
         result["ok"] = True
         return result
     finally:

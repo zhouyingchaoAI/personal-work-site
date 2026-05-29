@@ -15,7 +15,8 @@ services:
       OPENCLAW_PLATFORM_PUBLIC_URL: https://yfdemo.chencytech.com/openclaw
       OPENCLAW_OFFICE_SSO_SECRET: openclaw-office-sso-dev
     volumes:
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+      - ./app.py:/app/app.py
       - ./config.json:/app/config.json
       - ./user_data:/app/user_data
-      - ./backend/generated:/app/backend/generated
-      - ./backend/drafts:/app/backend/drafts

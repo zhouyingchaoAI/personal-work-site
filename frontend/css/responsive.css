@@ -345,3 +345,24 @@
       .skill-filter-row { grid-template-columns: 1fr; }
     }
 
+
+.mail-attachment-name {
+  font-weight: 650;
+  color: #1f2937;
+}
+.mail-attachment-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 1px solid rgba(37, 99, 235, .28);
+  border-radius: 6px;
+  background: rgba(37, 99, 235, .1);
+  color: #1d4ed8;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mail-attachment-download:hover {
+  background: rgba(37, 99, 235, .18);
+}

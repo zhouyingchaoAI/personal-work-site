@@ -140,6 +140,8 @@
           await loadSkills();
         } else if (task === 'usermanage') {
           await loadUserManage();
+        } else if (task === 'mcp') {
+          await loadMcpConfig();
         }
       });
     });

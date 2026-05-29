@@ -176,11 +176,12 @@
       el('mailConfigPanel').classList.toggle('hidden', task !== 'mailconfig');
       el('skillsPanel').classList.toggle('hidden', task !== 'skills');
       el('userManagePanel').classList.toggle('hidden', task !== 'usermanage');
+      el('mcpPanel').classList.toggle('hidden', task !== 'mcp');
       if (!isAssistant) {
         state.subTab = 'edit';
         document.querySelectorAll('.sub-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.sub === 'edit'));
       }
-      const titles = { dashboard: '工作台', weekly: '周报助手', trip: '出差报告助手', diary: '工作日记', forum: '金点子论坛', news: '每日资讯', mailassistant: '邮件助手', lobsterbase: '龙虾基地', config: '系统配置', mailconfig: '邮件配置', skills: '系统 Skill', usermanage: '用户管理' };
+      const titles = { dashboard: '工作台', weekly: '周报助手', trip: '出差报告助手', diary: '工作日记', forum: '金点子论坛', news: '每日资讯', mailassistant: '邮件助手', lobsterbase: '龙虾基地', config: '系统配置', mailconfig: '邮件配置', skills: '系统 Skill', usermanage: '用户管理', mcp: 'MCP 服务' };
       const descs = {
         dashboard: '智能办公一站式工作台',
         weekly: '填写周报、发送邮件、管理历史周报',
@@ -193,7 +194,8 @@
         config: '管理员配置 AI 接口和系统参数',
         mailconfig: '配置发件邮箱、收件人和抄送地址',
         skills: '查看已安装 Skill、能力说明、调用参数和示例',
-        usermanage: '管理系统用户、角色权限和密码'
+        usermanage: '管理系统用户、角色权限和密码',
+        mcp: '管理 MCP 密钥，配置 Claude Desktop / OpenClaw 连接'
       };
       el('taskTitle').textContent = titles[task] || '';
       el('taskDesc').textContent = descs[task] || '';
@@ -234,5 +236,8 @@
       }
       if (task === 'news') {
         loadNews();
+      }
+      if (task === 'mcp') {
+        loadMcpConfig();
       }
     }
