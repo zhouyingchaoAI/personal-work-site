@@ -1,19 +1,22 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { CollectionTag, Delete, Message, Paperclip, Promotion, Refresh, View } from '@element-plus/icons-vue'
+import { ElMessage, type UploadUserFile } from 'element-plus'
+import { CollectionTag, Paperclip, Promotion, Refresh, View } from '@element-plus/icons-vue'
 import {
   getMailConfig,
   getMailboxDetail,
   listMailbox,
+  mailboxAttachmentDownloadUrl,
+  resourceUrl,
   sendAssistantMail,
+  type MailAttachment,
   type MailMessage,
 } from '../../services/personalWorkApi'
 import './index.scss'
 
 interface ComposeForm {
-  to: string
-  cc: string
+  to: string[]
+  cc: string[]
   subject: string
   body: string
 }
@@ -22,11 +25,12 @@ const mailboxLimit = ref('20')
 const selectedUid = ref('')
 const messages = ref<MailMessage[]>([])
 const detail = ref<MailMessage | null>(null)
-const attachments = ref<File[]>([])
+const attachments = ref<UploadUserFile[]>([])
 const mailSignature = ref('')
 const statusText = ref('')
 const errorText = ref('')
-const compose = reactive<ComposeForm>({ to: '', cc: '', subject: '', body: '' })
+const composeDrawerOpen = ref(false)
+const compose = reactive<ComposeForm>({ to: [], cc: [], subject: '', body: '' })
 const loading = reactive({
   mailbox: false,
   detail: false,
@@ -34,6 +38,7 @@ const loading = reactive({
 })
 
 const selectedMessage = computed(() => messages.value.find((message) => message.uid === selectedUid.value) || null)
+const mailDetailHtml = computed(() => (detail.value?.body_html ? normalizeMailBodyHtml(detail.value.body_html) : ''))
 // 预览展示签名，实际发送仍交由后端统一拼接。
 const previewBody = computed(() => {
   const body = compose.body.trimEnd()
@@ -53,6 +58,28 @@ function formatFileSize(bytes?: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
+function shouldRewriteMailResource(value: string) {
+  return Boolean(value.trim()) && !/^(https?:|\/\/|data:|blob:|cid:|mailto:|tel:|#)/i.test(value.trim())
+}
+
+function normalizeMailResourcePath(value: string) {
+  const trimmed = value.trim()
+  if (trimmed.startsWith('/personal-office-assistant/')) return trimmed.slice('/personal-office-assistant'.length)
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed.replace(/^\.?\//, '')}`
+}
+
+// 将邮件正文中的相对资源地址改为办公后端可访问地址。
+function normalizeMailBodyHtml(html: string) {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  doc.body.querySelectorAll<HTMLElement>('[src], [href]').forEach((node) => {
+    ;(['src', 'href'] as const).forEach((attr) => {
+      const value = node.getAttribute(attr)
+      if (value && shouldRewriteMailResource(value)) node.setAttribute(attr, resourceUrl(normalizeMailResourcePath(value)))
+    })
+  })
+  return doc.body.innerHTML
+}
+
 function readFileAsBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
@@ -62,12 +89,12 @@ function readFileAsBase64(file: File) {
   })
 }
 
-function updateFiles(event: Event) {
-  attachments.value = Array.from((event.target as HTMLInputElement).files || [])
-}
-
-function removeFile(index: number) {
-  attachments.value.splice(index, 1)
+function downloadMailAttachment(file: MailAttachment) {
+  if (!file.download_url) {
+    ElMessage.warning('该附件暂无下载地址')
+    return
+  }
+  window.open(mailboxAttachmentDownloadUrl(file.download_url), '_blank')
 }
 
 async function loadSignature() {
@@ -112,15 +139,15 @@ async function openMail(uid: string) {
 }
 
 function clearCompose() {
-  compose.to = ''
-  compose.cc = ''
+  compose.to = []
+  compose.cc = []
   compose.subject = ''
   compose.body = ''
   attachments.value = []
 }
 
 async function sendMail() {
-  if (!compose.to.trim()) {
+  if (!compose.to.length) {
     ElMessage.warning('请填写收件人')
     return
   }
@@ -129,20 +156,22 @@ async function sendMail() {
   try {
     const files = []
     for (const file of attachments.value) {
+      if (!file.raw) continue
       files.push({
-        name: file.name,
-        type: file.type || 'application/octet-stream',
-        content: await readFileAsBase64(file),
+        name: file.raw.name,
+        type: file.raw.type || 'application/octet-stream',
+        content: await readFileAsBase64(file.raw),
       })
     }
     const result = await sendAssistantMail({
-      to: compose.to,
-      cc: compose.cc,
+      to: compose.to.join(';'),
+      cc: compose.cc.join(';'),
       subject: compose.subject,
       body: compose.body,
       attachments: files,
     })
     ElMessage.success(result.message || '邮件已发送')
+    composeDrawerOpen.value = false
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
@@ -160,22 +189,22 @@ onMounted(async () => {
   <section class="workspace-main mail-main">
     <header class="mail-page-head">
       <div>
-        <span class="mail-kicker">
-          <el-icon><Message /></el-icon>
-          邮件助手
-        </span>
-        <h2>邮件助手</h2>
+        <h1>邮件助手</h1>
         <p>查看收件箱、阅读邮件、发送普通邮件</p>
       </div>
       <div class="mail-page-actions">
-        <select v-model="mailboxLimit" @change="loadMailbox(false)">
-          <option value="10">最近 10 封</option>
-          <option value="20">最近 20 封</option>
-          <option value="50">最近 50 封</option>
-        </select>
+        <el-select v-model="mailboxLimit" class="mail-limit-select" @change="loadMailbox(false)">
+          <el-option label="最近 10 封" value="10" />
+          <el-option label="最近 20 封" value="20" />
+          <el-option label="最近 50 封" value="50" />
+        </el-select>
         <button class="mail-button mail-button--ghost" type="button" :disabled="loading.mailbox" @click="loadMailbox(true)">
           <el-icon><Refresh /></el-icon>
           {{ loading.mailbox ? '刷新中' : '刷新' }}
+        </button>
+        <button class="mail-button mail-button--primary" type="button" @click="composeDrawerOpen = true">
+          <el-icon><Promotion /></el-icon>
+          发送邮件
         </button>
       </div>
     </header>
@@ -228,79 +257,91 @@ onMounted(async () => {
             <p>收件人：{{ detail.to || '-' }}</p>
             <p>时间：{{ detail.date || '-' }}</p>
             <div class="mail-attachments">
-              <span v-for="file in detail.attachments || []" :key="file.name">
+              <button
+                v-for="file in detail.attachments || []"
+                :key="file.name"
+                class="mail-attachment"
+                type="button"
+                @click="downloadMailAttachment(file)"
+              >
                 <el-icon><Paperclip /></el-icon>
                 {{ file.name }}{{ file.size ? ` · ${formatFileSize(file.size)}` : '' }}
-              </span>
+              </button>
               <em v-if="!detail.attachments?.length">无附件</em>
             </div>
           </header>
-          <div v-if="detail.body_html" class="mail-detail-body" v-html="detail.body_html"></div>
+          <div v-if="mailDetailHtml" class="mail-detail-body" v-html="mailDetailHtml"></div>
           <div v-else class="mail-detail-body mail-detail-body--plain">{{ detail.body || detail.preview || '暂无可读取的文本正文' }}</div>
         </article>
         <div v-else class="mail-empty">暂无选中邮件。</div>
       </section>
-
-      <section class="mail-card mail-compose-card">
-        <div class="mail-section-head">
-          <div>
-            <h3>发送邮件</h3>
-            <span>使用当前账号 SMTP 发送普通邮件</span>
-          </div>
-          <el-icon><Promotion /></el-icon>
-        </div>
-
-        <div class="mail-compose-grid">
-          <div class="mail-compose-form">
-            <label>
-              <span>收件人</span>
-              <input v-model="compose.to" type="text" placeholder="recipient@example.com" />
-            </label>
-            <label>
-              <span>抄送</span>
-              <input v-model="compose.cc" type="text" placeholder="可选，多个邮箱用分号分隔" />
-            </label>
-            <label class="mail-compose-full">
-              <span>主题</span>
-              <input v-model="compose.subject" type="text" placeholder="请输入邮件主题" />
-            </label>
-            <label class="mail-compose-full">
-              <span>正文</span>
-              <textarea v-model="compose.body" placeholder="请输入邮件正文"></textarea>
-            </label>
-            <label class="mail-compose-full mail-file-input">
-              <span>附件</span>
-              <input type="file" multiple @change="updateFiles" />
-            </label>
-            <div class="mail-file-list mail-compose-full">
-              <div v-if="attachments.length">
-                <span v-for="(file, index) in attachments" :key="`${file.name}-${index}`">
-                  <el-icon><Paperclip /></el-icon>
-                  {{ file.name }} · {{ formatFileSize(file.size) }}
-                  <button type="button" :aria-label="`移除 ${file.name}`" @click="removeFile(index)">
-                    <el-icon><Delete /></el-icon>
-                  </button>
-                </span>
-              </div>
-              <em v-else>未添加附件</em>
-            </div>
-            <div class="mail-compose-actions mail-compose-full">
-              <button class="mail-button mail-button--ghost" type="button" @click="clearCompose">清空</button>
-              <button class="mail-button mail-button--primary" type="button" :disabled="loading.send" @click="sendMail">
-                <el-icon><Promotion /></el-icon>
-                {{ loading.send ? '发送中' : '发送邮件' }}
-              </button>
-            </div>
-          </div>
-          <div class="mail-compose-preview">
-            <span>
-              <el-icon><CollectionTag /></el-icon>
-              正文预览
-            </span>
-            <pre>{{ previewBody }}</pre>
-          </div>
-        </div>
-      </section>
     </div>
+
+    <el-drawer v-model="composeDrawerOpen" class="mail-compose-drawer" title="发送邮件" size="720px">
+      <div class="mail-compose-grid mail-compose-grid--drawer">
+        <div class="mail-compose-form">
+          <div class="mail-compose-field">
+            <span>收件人</span>
+            <el-select
+              v-model="compose.to"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              reserve-keyword
+              placeholder="输入邮箱后回车添加"
+            />
+          </div>
+          <div class="mail-compose-field">
+            <span>抄送</span>
+            <el-select
+              v-model="compose.cc"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              reserve-keyword
+              placeholder="可选，输入邮箱后回车添加"
+            />
+          </div>
+          <label class="mail-compose-full">
+            <span>主题</span>
+            <input v-model="compose.subject" type="text" placeholder="请输入邮件主题" />
+          </label>
+          <label class="mail-compose-full">
+            <span>正文</span>
+            <textarea v-model="compose.body" placeholder="请输入邮件正文"></textarea>
+          </label>
+          <div class="mail-compose-field mail-compose-full">
+            <span>附件</span>
+            <el-upload v-model:file-list="attachments" class="mail-upload" multiple :auto-upload="false">
+              <el-button type="primary" plain>
+                <el-icon><Paperclip /></el-icon>
+                选择附件
+              </el-button>
+              <template #tip>
+                <div class="mail-upload-tip">{{ attachments.length ? `已选择 ${attachments.length} 个附件` : '未添加附件' }}</div>
+              </template>
+            </el-upload>
+          </div>
+        </div>
+        <div class="mail-compose-preview">
+          <span>
+            <el-icon><CollectionTag /></el-icon>
+            正文预览
+          </span>
+          <pre>{{ previewBody }}</pre>
+        </div>
+      </div>
+      <template #footer>
+        <div class="mail-compose-actions">
+          <button class="mail-button mail-button--ghost" type="button" @click="clearCompose">清空</button>
+          <button class="mail-button mail-button--primary" type="button" :disabled="loading.send" @click="sendMail">
+            <el-icon><Promotion /></el-icon>
+            {{ loading.send ? '发送中' : '发送邮件' }}
+          </button>
+        </div>
+      </template>
+    </el-drawer>
   </section>
 </template>

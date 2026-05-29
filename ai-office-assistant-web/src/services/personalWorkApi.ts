@@ -48,6 +48,46 @@ export interface ReportsResponse {
   latest_trip: string
 }
 
+export interface UploadedReportFile {
+  name: string
+  path: string
+  size: number
+}
+
+export interface UploadHistoryResponse {
+  ok: boolean
+  uploaded: UploadedReportFile[]
+}
+
+export interface ReportTemplateItem {
+  kind: 'weekly' | 'trip'
+  configured: boolean
+  name: string
+  mtime: number | null
+  download_url: string
+}
+
+export interface ReportTemplatesResponse {
+  ok: boolean
+  templates: Record<'weekly' | 'trip', ReportTemplateItem>
+}
+
+export interface SaveReportTemplateResponse {
+  ok: boolean
+  template: {
+    kind: 'weekly' | 'trip'
+    name: string
+    path: string
+    mtime: number
+  }
+}
+
+export interface DeleteReportTemplateResponse {
+  ok: boolean
+  deleted: string[]
+  templates: Record<'weekly' | 'trip', ReportTemplateItem>
+}
+
 export interface WeeklyRowPayload {
   category?: string
   content?: string
@@ -297,9 +337,11 @@ export interface SendMailResponse {
 }
 
 export interface MailAttachment {
+  index?: number
   name: string
   size?: number
   type?: string
+  download_url?: string
 }
 
 export interface MailAttachmentPayload {
@@ -466,10 +508,26 @@ export interface AgentMessage {
   content: string
 }
 
+export interface AgentSkillCall {
+  name: string
+  arguments?: Record<string, unknown>
+  result?: Record<string, unknown>
+}
+
+export interface AgentUiPatch {
+  op: string
+  selector?: string
+  value?: unknown
+  data?: unknown
+  [key: string]: unknown
+}
+
 export interface AgentChatResponse {
   ok: boolean
   reply?: string
   error?: string
+  skill_calls?: AgentSkillCall[]
+  ui_patches?: AgentUiPatch[]
 }
 
 export interface OpenClawSsoResponse {
@@ -484,6 +542,17 @@ export type AgentKind = 'weekly' | 'trip' | 'diary' | 'mailassistant' | 'news' |
 
 const backendUrl = import.meta.env.VITE_PERSONAL_WORK_BACKEND_URL?.replace(/\/$/, '') || ''
 const backendOrigin = backendUrl ? new URL(backendUrl).origin : ''
+const backendBasePath = backendUrl ? new URL(backendUrl).pathname.replace(/\/$/, '') : ''
+const passthroughResourcePattern = /^(https?:|\/\/|data:|blob:|mailto:|tel:|cid:|#)/i
+const sessionFreePaths = new Set(['/login', '/logout', '/session'])
+let loginRedirecting = false
+
+function normalizeResourcePath(path: string) {
+  const value = String(path || '').trim()
+  if (!value || passthroughResourcePattern.test(value)) return value
+  const withoutBase = backendBasePath && value.startsWith(`${backendBasePath}/`) ? value.slice(backendBasePath.length) : value
+  return withoutBase.startsWith('/') ? withoutBase : `/${withoutBase}`
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(backendUrl ? `${backendUrl}/api${path}` : `/personal-work-api${path}`, {
@@ -497,9 +566,17 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
   if (!response.ok) {
     const message = typeof data === 'object' && data && 'error' in data ? String(data.error) : `请求失败（${response.status}）`
+    if (response.status === 401) redirectToLoginOnUnauthorized(path)
     throw new Error(message)
   }
   return data as T
+}
+
+export function redirectToLoginOnUnauthorized(apiPath: string) {
+  if (typeof window === 'undefined' || loginRedirecting || sessionFreePaths.has(apiPath) || window.location.pathname === '/login') return
+  loginRedirecting = true
+  const redirect = `${window.location.pathname}${window.location.search}${window.location.hash}`
+  window.location.assign(`/login?redirect=${encodeURIComponent(redirect)}`)
 }
 
 function post<T>(path: string, body: unknown): Promise<T> {
@@ -616,9 +693,10 @@ export function fetchLatestNews() {
   return request<NewsLatestResponse>('/news/latest')
 }
 
-export function fetchNewsHistory(date?: string) {
+export function fetchNewsHistory(date?: string, limit = 200) {
   const query = new URLSearchParams()
   if (date) query.set('date', date)
+  if (limit) query.set('limit', String(limit))
   const suffix = query.toString()
   return request<NewsHistoryResponse>(`/news/history${suffix ? `?${suffix}` : ''}`)
 }
@@ -645,6 +723,13 @@ export function getMailboxDetail(uid: string, refresh = false) {
   const query = new URLSearchParams({ uid })
   if (refresh) query.set('refresh', '1')
   return request<MailDetailResponse>(`/mailbox-detail?${query.toString()}`)
+}
+
+export function mailboxAttachmentDownloadUrl(path: string) {
+  const value = normalizeResourcePath(path)
+  if (!value || passthroughResourcePattern.test(value)) return value
+  if (value.startsWith('/api/')) return backendUrl ? `${backendUrl}${value}` : value.replace(/^\/api/, '/personal-work-api')
+  return resourceUrl(value)
 }
 
 export function sendAssistantMail(payload: SendMailPayload) {
@@ -735,12 +820,34 @@ export function deleteHistory(name: string) {
   return post<{ ok: boolean; deleted: string }>('/delete-history', { name })
 }
 
+export function uploadHistoryReports(kind: 'weekly' | 'trip', files: Array<{ name: string; data: string }>) {
+  return post<UploadHistoryResponse>('/upload-history', { kind, files })
+}
+
+export function getReportTemplates() {
+  return post<ReportTemplatesResponse>('/report-templates', {})
+}
+
+export function saveReportTemplate(kind: 'weekly' | 'trip', file: { name: string; data: string }) {
+  return post<SaveReportTemplateResponse>('/report-template', { kind, file })
+}
+
+export function deleteReportTemplate(kind: 'weekly' | 'trip') {
+  return post<DeleteReportTemplateResponse>('/report-template-delete', { kind })
+}
+
 export function downloadUrl(path: string) {
   return backendUrl ? path.replace(/^\/download/, `${backendUrl}/download`) : path.replace(/^\/download/, '/personal-work-download')
 }
 
+export function templateDownloadUrl(kind: 'weekly' | 'trip') {
+  return backendUrl ? `${backendUrl}/download-template?kind=${kind}` : `/personal-work-resource/download-template?kind=${kind}`
+}
+
 export function resourceUrl(path: string) {
-  return backendUrl ? `${backendUrl}/${path.replace(/^\//, '')}` : path.replace(/^\//, '/personal-work-resource/')
+  const value = normalizeResourcePath(path)
+  if (!value || passthroughResourcePattern.test(value)) return value
+  return backendUrl ? `${backendUrl}${value}` : `/personal-work-resource${value}`
 }
 
 export function openclawPlatformUrl(path: string) {

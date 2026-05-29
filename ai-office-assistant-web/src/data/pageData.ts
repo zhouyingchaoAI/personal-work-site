@@ -9,6 +9,7 @@ import type { MenuId } from '../layout/menu'
 
 export type HomeFeatureTone = 'blue' | 'purple' | 'green' | 'orange' | 'navy' | 'mail'
 export type HomeRecordTone = 'word' | 'excel' | 'diary' | 'idea' | 'mail'
+export type HomeCapabilityIcon = 'report' | 'forum' | 'news' | 'mail'
 
 export interface HomeFeatureItem {
   id: string
@@ -19,27 +20,17 @@ export interface HomeFeatureItem {
   menuId: MenuId
 }
 
-export interface HomeTodoItem {
-  id: string
-  title: string
-  time: string
-  checked?: boolean
-}
-
-export interface HomeRecordItem {
-  id: string
-  title: string
-  tag: string
-  time: string
-  iconText: string
-  tone: HomeRecordTone
-  menuId: MenuId
-}
-
 export interface HomeAssistantAction {
   id: string
   label: string
   menuId?: MenuId
+}
+
+export interface HomeCapabilityItem {
+  id: string
+  title: string
+  description: string
+  icon: HomeCapabilityIcon
 }
 
 export const homeFeatures: HomeFeatureItem[] = [
@@ -93,20 +84,31 @@ export const homeFeatures: HomeFeatureItem[] = [
   },
 ]
 
-export const homeTodos: HomeTodoItem[] = [
-  { id: 'weekly', title: '完成周报撰写', time: '09:30' },
-  { id: 'trip', title: '出差行程确认', time: '10:00' },
-  { id: 'project', title: '项目周例会', time: '14:00' },
-  { id: 'schedule', title: '日程提交审核', time: '16:00' },
-  { id: 'news', title: '查看每日资讯', time: '17:00' },
-]
-
-export const homeRecords: HomeRecordItem[] = [
-  { id: 'weekly-19', title: '第 19 周工作周报', tag: '周报助手', time: '今天 09:28', iconText: 'W', tone: 'word', menuId: 'weekly' },
-  { id: 'trip-shanghai', title: '上海出差报告_2024.05.16-05.18', tag: '出差报告助手', time: '昨天 18:42', iconText: 'X', tone: 'excel', menuId: 'trip' },
-  { id: 'diary-0516', title: '5月16日 工作日记', tag: '工作日记', time: '昨天 17:15', iconText: 'W', tone: 'word', menuId: 'diary' },
-  { id: 'forum-ai', title: '关于推进智能化项目的金点子', tag: '金点子论坛', time: '昨天 15:33', iconText: 'Ai', tone: 'idea', menuId: 'forum' },
-  { id: 'mail-meeting', title: '会议纪要确认与跟进事项', tag: '邮件助手', time: '5月15日 16:07', iconText: '', tone: 'mail', menuId: 'mailassistant' },
+export const homeCapabilities: HomeCapabilityItem[] = [
+  {
+    id: 'report',
+    title: '报告只在专属模块生成',
+    description: '“按标准模板生成文件”仅在周报助手和出差报告助手中出现。',
+    icon: 'report',
+  },
+  {
+    id: 'forum',
+    title: '论坛以浏览评论为主',
+    description: '发起话题默认收起，历史话题展示热度、点赞、评论和浏览。',
+    icon: 'forum',
+  },
+  {
+    id: 'news',
+    title: '资讯配置受权限保护',
+    description: '普通用户只看每日资讯，只有超级管理员能配置来源和立即生成。',
+    icon: 'news',
+  },
+  {
+    id: 'mail',
+    title: '邮件读取已缓存',
+    description: '收件箱列表优先读缓存，点击刷新才强制重新拉取最新邮件。',
+    icon: 'mail',
+  },
 ]
 
 export const homeAssistantActions: HomeAssistantAction[] = [

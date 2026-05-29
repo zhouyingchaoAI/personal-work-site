@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CircleCheck, Delete, Document, EditPen } from '@element-plus/icons-vue'
-import AssistantChat from '../../components/AssistantChat/index.vue'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import { Calendar, Delete, Document, Download, EditPen, Setting, Upload, View } from '@element-plus/icons-vue'
 import IconTextButton from '../../components/IconTextButton/index.vue'
+import weeklyEmptyPlaceholder from '../../assets/weekly-empty-placeholder.png'
 import { authState } from '../../services/authSession'
 import {
-  agentChat,
   deleteHistory,
   deleteReport,
   downloadUrl,
@@ -15,10 +15,10 @@ import {
   getReports,
   getWeeklyPrefill,
   optimizeText,
+  redirectToLoginOnUnauthorized,
   resourceUrl,
   sendMail,
   summarizeDiaries,
-  type AgentMessage,
   type DraftResponse,
   type ReportFile,
   type SendMailPayload,
@@ -27,6 +27,7 @@ import {
 import './index.scss'
 
 type SectionId = 'summary' | 'follow' | 'next'
+type WeeklyTabId = 'edit' | 'mail' | 'history'
 type Tone = 'blue' | 'green' | 'orange' | 'violet'
 type RowField = keyof WeeklyRowPayload
 type WeeklyRowsBySection = Record<SectionId, WeeklyRowPayload[]>
@@ -61,10 +62,43 @@ interface FieldOptimizePreview {
   suggestion: string
 }
 
+interface ReportUploadFile {
+  name: string
+  data: string
+}
+
+interface ReportTemplateInfo {
+  kind: 'weekly' | 'trip'
+  configured: boolean
+  name: string
+  mtime: number | null
+  download_url: string
+}
+
+interface UploadHistoryResponse {
+  ok: boolean
+  uploaded: { name: string; path: string; size: number }[]
+}
+
+interface ReportTemplatesResponse {
+  ok: boolean
+  templates: Record<'weekly' | 'trip', ReportTemplateInfo>
+}
+
+interface SaveReportTemplateResponse {
+  ok: boolean
+  template: { kind: 'weekly' | 'trip'; name: string; path: string; mtime: number }
+}
+
 const workflowSteps = [
-  { id: 1, title: '填写内容', description: '整理本周工作要点' },
-  { id: 2, title: '生成预览', description: '生成文件与邮件预览' },
-  { id: 3, title: '确认发送', description: '确认无误后发送邮件' },
+  { id: 1, title: '编辑周报', description: '填写与校对内容' },
+  { id: 2, title: '邮件发送', description: '确认并发送邮件' },
+]
+
+const weeklyTabs: Array<{ id: WeeklyTabId; label: string }> = [
+  { id: 'edit', label: '编辑周报' },
+  { id: 'mail', label: '邮件发送' },
+  { id: 'history', label: '历史管理' },
 ]
 
 const sectionFields: Record<SectionId, EditField[]> = {
@@ -77,7 +111,7 @@ const sectionFields: Record<SectionId, EditField[]> = {
   follow: [
     { key: 'category', label: '工作分类' },
     { key: 'content', label: '工作内容', multiline: true },
-    { key: 'progress', label: '当前进展' },
+    { key: 'progress', label: '当前进展', multiline: true },
     { key: 'difficulty', label: '困难与求助', multiline: true },
   ],
   next: [
@@ -96,13 +130,8 @@ const fieldPrompts: Record<RowField, string> = {
   difficulty: '请优化为问题和所需支持描述，表达客观、具体。',
 }
 
-const assistantAvatar = resourceUrl('/assets/ai-assistant-avatar.png')
-const assistantQuickActions = [
-  '帮我检查这份周报还缺什么。',
-  '把当前内容整理得更适合汇报。',
-  '告诉我下一步应该做什么。',
-]
-const assistantSideActions = assistantQuickActions
+const backendUrl = import.meta.env.VITE_PERSONAL_WORK_BACKEND_URL?.replace(/\/$/, '') || ''
+const elementLocale = zhCn
 
 const activeStep = ref(1)
 const activeSectionId = ref<SectionId>('summary')
@@ -110,9 +139,6 @@ const nextRowId = ref(1)
 const editing = ref<EditTarget | null>(null)
 const flowTop = ref<HTMLElement | null>(null)
 const weeklyRowsRef = ref<HTMLElement | null>(null)
-const sourceMessage = ref('')
-const statusMessage = ref('')
-const statusTone = ref<'normal' | 'ok' | 'error'>('normal')
 const selectedReport = ref('')
 const reports = ref<ReportFile[]>([])
 const sendBlockers = ref<string[]>([])
@@ -120,13 +146,6 @@ const isReportDirty = ref(true)
 const previewSource = ref<'instant' | 'generated'>('instant')
 const initialized = ref(false)
 const fieldOptimizing = ref<RowField | ''>('')
-const assistantOpen = ref(false)
-const assistantInput = ref('')
-const assistantLoading = ref(false)
-const historyExpanded = ref(false)
-const assistantMessages = ref<AgentMessage[]>([
-  { role: 'assistant', content: '你好，我是犇犇。你可以把零散想法发给我，我会结合当前周报内容帮你整理。' },
-])
 
 const loading = reactive({
   init: false,
@@ -136,6 +155,9 @@ const loading = reactive({
   summarize: false,
   generate: false,
   send: false,
+  templates: false,
+  uploadHistory: false,
+  template: false,
 })
 
 const weeklyPeriod = reactive({
@@ -164,6 +186,12 @@ const fieldOptimizePreview = reactive<Record<RowField, FieldOptimizePreview | nu
 })
 const promptEditor = ref<RowField | ''>('')
 const promptDraft = ref('')
+const historyPanelOpen = ref(false)
+const attachmentPreviewOpen = ref(false)
+const reportPanelCollapsed = ref(false)
+const historyUploadInput = ref<HTMLInputElement | null>(null)
+const templateUploadInput = ref<HTMLInputElement | null>(null)
+const weeklyTemplate = ref<ReportTemplateInfo | null>(null)
 
 const mailDraft = reactive({
   to: '',
@@ -183,67 +211,57 @@ const sections = ref<WeeklySection[]>([
   { id: 'next', title: '三、下周工作计划', subtitle: '安排后续计划', emptyAction: '新增一条计划', rows: [] },
 ])
 
-const activeSection = computed(() => findSection(activeSectionId.value))
-const activeSectionIndex = computed(() => Math.max(0, sections.value.findIndex((section) => section.id === activeSectionId.value)))
-const totalRows = computed(() => sections.value.reduce((sum, section) => sum + cleanRows(section.id).length, 0))
-const filledSectionCount = computed(() => sections.value.filter((section) => cleanRows(section.id).length).length)
-const completionPercent = computed(() => Math.round((filledSectionCount.value / sections.value.length) * 100))
-const weeklyReports = computed(() => reports.value.filter((report) => report.kind === 'weekly'))
-// 折叠历史列表时保留当前选中的报告，避免当前附件入口消失。
-const visibleWeeklyReports = computed(() => {
-  if (historyExpanded.value) return weeklyReports.value
-  const recentReports = weeklyReports.value.slice(0, 5)
-  if (!selectedReport.value || recentReports.some((report) => report.name === selectedReport.value)) return recentReports
-  const currentReport = weeklyReports.value.find((report) => report.name === selectedReport.value)
-  return currentReport ? [currentReport, ...recentReports.slice(0, 4)] : recentReports
+const activeWeeklyTab = computed<WeeklyTabId>(() => {
+  return activeStep.value === 2 ? 'mail' : 'edit'
 })
-const hiddenWeeklyReportCount = computed(() => Math.max(weeklyReports.value.length - visibleWeeklyReports.value.length, 0))
+const activeSection = computed(() => findSection(activeSectionId.value))
+const totalRows = computed(() => sections.value.reduce((sum, section) => sum + cleanRows(section.id).length, 0))
+const weeklyReports = computed(() => reports.value.filter((report) => report.kind === 'weekly'))
+const weeklyHistoryReports = computed(() => weeklyReports.value.filter((report) => !report.generated))
 const currentFileName = computed(() => mailDraft.attachment || selectedReport.value)
 const previewStateText = computed(() => {
-  if (previewSource.value === 'instant' && !mailDraft.attachment) return '待生成预览'
+  if (previewSource.value === 'instant' && !mailDraft.attachment) return '待生成附件'
   if (mailDraft.attachment && !isReportDirty.value) return '已生成'
-  return mailDraft.attachment ? '待重新生成' : '待生成预览'
+  return mailDraft.attachment ? '待重新生成' : '待生成附件'
 })
 const currentDownloadUrl = computed(() => {
   if (mailDraft.download_url) return downloadUrl(mailDraft.download_url)
   return mailDraft.attachment ? `/personal-work-download?file=${encodeURIComponent(mailDraft.attachment)}` : ''
 })
+const hasAttachmentPreview = computed(() => Boolean(mailDraft.attachment && mailDraft.preview_html))
+const mailBodyPreviewHtml = computed(() => mailDraft.body_html || `<div>${textToHtml(mailDraft.body || '暂无正文内容')}</div>`)
 const periodValue = computed(() => {
   const start = formatPeriodDate(weeklyPeriod.start)
   const end = formatPeriodDate(weeklyPeriod.end)
   return start && end ? `${start}-${end}` : start || end
 })
-const periodDisplay = computed(() => periodValue.value.replace('-', ' - ') || '未选择时段')
 const draftStorageKey = computed(() =>
   authState.user?.username ? `personalWorkSite.formDraft.v2:${authState.user.username}` : '',
 )
-const mailStatusText = computed(() => statusMessage.value || (isReportDirty.value ? '待生成预览' : '待确认'))
 const nextActionText = computed(() => {
-  if (activeStep.value === 1) return loading.generate ? '正在生成预览' : '下一步：生成预览'
-  if (activeStep.value === 2) return '下一步：填写邮件'
-  return loading.send ? '正在发送' : '确认发送'
+  if (activeStep.value === 1) return loading.generate ? '正在生成附件' : '生成附件并进入邮件发送'
+  return loading.send ? '发送中' : '发送'
 })
 const stepHint = computed(() => {
   if (activeStep.value === 1) return `已填写 ${totalRows.value} 条周报内容`
-  if (activeStep.value === 2) return mailDraft.attachment ? `当前附件：${mailDraft.attachment}` : '当前为待生成预览'
   return sendBlockers.value.length ? '请补齐发送信息后再确认' : '确认收件人、主题、正文和附件'
 })
 const stepActionDisabled = computed(() => loading.generate || loading.send)
-const contentStateText = computed(() => {
-  if (!totalRows.value) return '还没有周报内容'
-  if (editing.value) return '有内容正在编辑'
-  return isReportDirty.value ? '内容已变更，预览待更新' : '内容已同步到预览'
-})
-const sendPayload = computed(() => buildSendPayload())
-const sendReadinessBlockers = computed(() => findSendBlockers(sendPayload.value))
-const sendReadyText = computed(() => (sendReadinessBlockers.value.length ? '还有信息待确认' : '一切就绪，可发送'))
 const editingFields = computed(() => (editing.value ? sectionFields[editing.value.sectionId] : []))
-const visibleEditingFields = computed(() => editingFields.value.filter((field) => field.key !== 'status' && field.key !== 'progress'))
-const editingStateField = computed(() => editingFields.value.find((field) => field.key === 'status' || field.key === 'progress'))
+const categoryEditingField = computed(() => editingFields.value.find((field) => field.key === 'category'))
+const primaryTextEditingField = computed(() => editingFields.value.find((field) => field.key === 'content') || editingFields.value.find((field) => field.key === 'progress'))
+const extraEditingFields = computed(() => editingFields.value.filter((field) => field.key !== 'category' && field.key !== 'status' && field.key !== primaryTextEditingField.value?.key))
+const editingStateField = computed(() => editingFields.value.find((field) => field.key === 'status'))
 const editingStateOptions = computed(() => {
   const stateField = editingStateField.value
   if (!stateField) return []
-  return stateField.key === 'status' ? ['已完成', '推进中', '需协调'] : ['推进中', '待验证', '需协调']
+  const options = ['已完成', '推进中', '需协调']
+  const current = editForm[stateField.key].trim()
+  return current && !options.includes(current) ? [current, ...options] : options
+})
+const primaryOptimizePreview = computed(() => {
+  const field = primaryTextEditingField.value
+  return field ? fieldOptimizePreview[field.key] : null
 })
 const currentPromptField = computed(() => editingFields.value.find((field) => field.key === promptEditor.value))
 const promptDialogTitle = computed(() => (currentPromptField.value ? `${currentPromptField.value.label}提示词` : '修改提示词'))
@@ -253,6 +271,30 @@ const promptDialogVisible = computed({
     if (!visible) promptEditor.value = ''
   },
 })
+const selectedEditingRow = computed(() => {
+  if (!editing.value) return null
+  return findSection(editing.value.sectionId).rows.find((row) => row.id === editing.value?.rowId) || null
+})
+const periodRange = computed<string[]>({
+  get: () => (weeklyPeriod.start && weeklyPeriod.end ? [weeklyPeriod.start, weeklyPeriod.end] : []),
+  set: (value: string[]) => {
+    weeklyPeriod.start = value?.[0] || ''
+    weeklyPeriod.end = value?.[1] || ''
+  },
+})
+const toRecipients = computed({
+  get: () => splitRecipients(mailDraft.to),
+  set: (value: string[]) => {
+    mailDraft.to = value.join(';')
+  },
+})
+const ccRecipients = computed({
+  get: () => splitRecipients(mailDraft.cc),
+  set: (value: string[]) => {
+    mailDraft.cc = value.join(';')
+  },
+})
+const weeklyTemplateDownloadUrl = computed(() => resourceUrl(weeklyTemplate.value?.download_url || '/download-template?kind=weekly'))
 
 watch(
   () => [weeklyPeriod.start, weeklyPeriod.end],
@@ -268,47 +310,10 @@ watch(
 )
 
 function setStatus(message: string, tone: 'normal' | 'ok' | 'error' = 'normal') {
-  statusMessage.value = message
-  statusTone.value = tone
-}
-
-function assistantContext() {
-  return {
-    step: workflowSteps[activeStep.value - 1].title,
-    period: periodDisplay.value,
-    weekly_summary: cleanRows('summary'),
-    weekly_follow: cleanRows('follow'),
-    weekly_next: cleanRows('next'),
-    subject: mailDraft.subject,
-    attachment: mailDraft.attachment,
-    preview_state: previewStateText.value,
-  }
-}
-
-async function sendAssistantMessage(text = assistantInput.value) {
-  const content = text.trim()
-  if (!content) {
-    ElMessage.warning('请输入要问犇犇的内容')
-    return
-  }
-  assistantOpen.value = true
-  assistantMessages.value.push({ role: 'user', content })
-  assistantInput.value = ''
-  assistantLoading.value = true
-  try {
-    const messages = assistantMessages.value.slice(-8)
-    messages.push({
-      role: 'user',
-      content: `[当前周报页面上下文]\n${JSON.stringify(assistantContext(), null, 2)}\n\n${content}`,
-    })
-    const result = await agentChat('weekly', messages)
-    if (!result.ok) throw new Error(result.error || 'AI 助手暂时不可用')
-    assistantMessages.value.push({ role: 'assistant', content: result.reply || '我看到了，当前没有新的补充。' })
-  } catch (error) {
-    assistantMessages.value.push({ role: 'assistant', content: error instanceof Error ? error.message : 'AI 助手暂时不可用' })
-  } finally {
-    assistantLoading.value = false
-  }
+  if (!message) return
+  if (tone === 'error') ElMessage.error(message)
+  else if (tone === 'ok') ElMessage.success(message)
+  else ElMessage.info(message)
 }
 
 function escapeHtml(value: string) {
@@ -317,6 +322,64 @@ function escapeHtml(value: string) {
 
 function textToHtml(value: string) {
   return escapeHtml(value).replace(/\n/g, '<br>')
+}
+
+function splitRecipients(value: string) {
+  return value.split(/[;,，；\s]+/).map((item) => item.trim()).filter(Boolean)
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('读取文件失败'))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function readUploadFiles(fileList: FileList | null): Promise<ReportUploadFile[]> {
+  const files = Array.from(fileList || [])
+  return Promise.all(files.map(async (file) => ({ name: file.name, data: await readFileAsDataUrl(file) })))
+}
+
+async function weeklyPost<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(backendUrl ? `${backendUrl}/api${path}` : `/personal-work-api${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  })
+  const rawText = await response.text()
+  let data: unknown = {}
+  if (rawText) {
+    try {
+      data = JSON.parse(rawText)
+    } catch {
+      data = {}
+    }
+  }
+  if (!response.ok || (data && typeof data === 'object' && 'error' in data)) {
+    const message = data && typeof data === 'object' && 'error' in data ? String(data.error) : `请求失败：${response.status}`
+    if (response.status === 401) redirectToLoginOnUnauthorized(path)
+    throw new Error(message)
+  }
+  return data as T
+}
+
+function uploadHistoryReports(kind: 'weekly' | 'trip', files: ReportUploadFile[]) {
+  return weeklyPost<UploadHistoryResponse>('/upload-history', { kind, files })
+}
+
+function getReportTemplates() {
+  return weeklyPost<ReportTemplatesResponse>('/report-templates', {})
+}
+
+function saveReportTemplate(kind: 'weekly' | 'trip', file: ReportUploadFile) {
+  return weeklyPost<SaveReportTemplateResponse>('/report-template', { kind, file })
+}
+
+function deleteReportTemplate(kind: 'weekly' | 'trip') {
+  return weeklyPost<ReportTemplatesResponse>('/report-template-delete', { kind })
 }
 
 function todayText() {
@@ -354,7 +417,7 @@ function findSection(sectionId: SectionId) {
 }
 
 function toneForRow(sectionId: SectionId, row: WeeklyRowPayload): Tone {
-  if (sectionId === 'follow') return 'orange'
+  if (sectionId === 'follow') return 'blue'
   if (String(row.category || '').includes('研')) return 'green'
   if (String(row.category || '').includes('产品')) return 'violet'
   return 'blue'
@@ -378,11 +441,7 @@ function canOptimizeField(field: EditField) {
 }
 
 function isRequiredField(field: EditField) {
-  return field.key === 'category' || field.key === 'content'
-}
-
-function fieldInputAutosize(field: EditField) {
-  return field.multiline ? { minRows: 5, maxRows: 9 } : { minRows: 3, maxRows: 5 }
+  return field.key === 'category' || field.key === 'content' || field.key === 'progress'
 }
 
 function applyRows(sectionId: SectionId, rows: WeeklyRowPayload[]) {
@@ -410,15 +469,19 @@ function firstFilledSectionId() {
 
 function syncActiveSectionToFirstFilled() {
   activeSectionId.value = firstFilledSectionId()
+  selectFirstRowInSection(activeSectionId.value)
+}
+
+function selectFirstRowInSection(sectionId: SectionId) {
+  const firstRow = findSection(sectionId).rows[0]
+  if (firstRow) beginEdit(sectionId, firstRow)
+  else editing.value = null
 }
 
 function selectSection(sectionId: SectionId) {
-  if (sectionId === activeSectionId.value) return
-  if (editing.value) {
-    ElMessage.warning('请先保存当前编辑内容')
-    return
-  }
+  commitEditSilently()
   activeSectionId.value = sectionId
+  selectFirstRowInSection(sectionId)
 }
 
 // 历史草稿正文保留三段结构，用它还原可编辑行。
@@ -488,24 +551,29 @@ function cleanRows(sectionId: SectionId) {
   return findSection(sectionId).rows.map((row) => rowPayload(sectionId, row)).filter((row) => Object.keys(row).length)
 }
 
-function rowDetail(sectionId: SectionId, row: WeeklyRow) {
-  if (sectionId === 'summary' && row.plan) return `后续计划：${row.plan}`
-  if (sectionId === 'follow' && row.difficulty) return `困难与求助：${row.difficulty}`
-  if (sectionId === 'next' && row.difficulty) return `困难与求助：${row.difficulty}`
-  return ''
-}
-
 function rowState(sectionId: SectionId, row: WeeklyRow) {
   if (sectionId === 'summary') return row.status
   if (sectionId === 'follow') return row.progress
   return ''
 }
 
+function rowStateLabel(sectionId: SectionId, row: WeeklyRow) {
+  const state = rowState(sectionId, row)
+  return sectionId === 'follow' ? (state || '').slice(0, 3) : state || ''
+}
+
+function rowTitle(sectionId: SectionId, row: WeeklyRow) {
+  if (sectionId === 'follow') return row.category || row.progress || '待填写工作分类'
+  return row.category || '待分类'
+}
+
+function rowSubtitle(sectionId: SectionId, row: WeeklyRow) {
+  if (sectionId === 'follow') return row.content || row.progress || row.difficulty || '待填写工作内容'
+  return row.content || '待填写工作内容'
+}
+
 function beginAdd(section: WeeklySection) {
-  if (editing.value) {
-    ElMessage.warning('请先保存当前编辑内容')
-    return
-  }
+  commitEditSilently()
   activeSectionId.value = section.id
   const row = createRow(section.id)
   section.rows.unshift(row)
@@ -514,11 +582,13 @@ function beginAdd(section: WeeklySection) {
 }
 
 function beginEdit(sectionId: SectionId, row: WeeklyRow, isNew = false) {
+  if (editing.value && (editing.value.sectionId !== sectionId || editing.value.rowId !== row.id || isNew)) commitEditSilently()
   activeSectionId.value = sectionId
   editing.value = { sectionId, rowId: row.id, isNew }
   Object.keys(editForm).forEach((key) => {
     const fieldKey = key as RowField
-    editForm[fieldKey] = String(row[fieldKey] || '')
+    // 历史重点跟进行可能把当前进展写在 content 字段，编辑时迁移到 progress。
+    editForm[fieldKey] = sectionId === 'follow' && fieldKey === 'progress' ? String(row.progress || row.content || '') : String(row[fieldKey] || '')
     promptForm[fieldKey] = fieldPrompts[fieldKey]
     fieldOptimizePreview[fieldKey] = null
   })
@@ -558,22 +628,66 @@ function validateEditForm(section: WeeklySection) {
   return false
 }
 
+function applyEditFormToRow(section: WeeklySection, row: WeeklyRow) {
+  Object.keys(editForm).forEach((key) => {
+    row[key as RowField] = ''
+  })
+  sectionFields[section.id].forEach((field) => {
+    row[field.key] = editForm[field.key].trim()
+  })
+  row.tone = toneForRow(section.id, row)
+}
+
+function clearEditState() {
+  editing.value = null
+  fieldOptimizing.value = ''
+  promptEditor.value = ''
+}
+
+function commitEditSilently(keepEditing = false) {
+  if (!editing.value) return
+  const target = editing.value
+  const section = findSection(target.sectionId)
+  const row = section.rows.find((item) => item.id === target.rowId)
+  if (!row) {
+    clearEditState()
+    return
+  }
+  const hasContent = sectionFields[section.id].some((field) => editForm[field.key].trim())
+  if (!hasContent && target.isNew) {
+    if (keepEditing) return
+    section.rows = section.rows.filter((item) => item.id !== target.rowId)
+    clearEditState()
+    saveWeeklyDraft()
+    return
+  }
+  applyEditFormToRow(section, row)
+  if (!keepEditing) clearEditState()
+  activeStep.value = 1
+  markReportDirty()
+  saveWeeklyDraft()
+}
+
 function saveEdit() {
   if (!editing.value) return
   const section = findSection(editing.value.sectionId)
   const row = section.rows.find((item) => item.id === editing.value?.rowId)
   if (!row) return
   if (!validateEditForm(section)) return
-  sectionFields[section.id].forEach((field) => {
-    row[field.key] = editForm[field.key].trim()
-  })
-  row.tone = toneForRow(section.id, row)
-  editing.value = null
-  fieldOptimizing.value = ''
-  promptEditor.value = ''
+  applyEditFormToRow(section, row)
+  clearEditState()
   activeStep.value = 1
   markReportDirty()
   saveWeeklyDraft()
+}
+
+function saveCurrentChanges() {
+  if (editing.value) {
+    saveEdit()
+    return
+  }
+  saveWeeklyDraft()
+  ElMessage.success('已保存当前修改')
 }
 
 function cancelEdit() {
@@ -581,9 +695,14 @@ function cancelEdit() {
     const section = findSection(editing.value.sectionId)
     section.rows = section.rows.filter((row) => row.id !== editing.value?.rowId)
   }
-  editing.value = null
-  fieldOptimizing.value = ''
-  promptEditor.value = ''
+  clearEditState()
+}
+
+function handleEditorOutsidePointer(event: PointerEvent) {
+  if (!editing.value) return
+  const target = event.target as HTMLElement | null
+  if (target?.closest('.detail-panel, .weekly-prompt-dialog, .el-overlay, .el-popper')) return
+  commitEditSilently(true)
 }
 
 function handleEditFieldInput(fieldKey: RowField) {
@@ -721,6 +840,92 @@ async function loadReports() {
   }
 }
 
+async function loadWeeklyTemplate() {
+  loading.templates = true
+  try {
+    const data = await getReportTemplates()
+    weeklyTemplate.value = data.templates.weekly
+  } finally {
+    loading.templates = false
+  }
+}
+
+async function openHistoryDrawer() {
+  historyPanelOpen.value = true
+  await Promise.all([loadReports(), loadWeeklyTemplate()])
+}
+
+function reportDownloadUrl(name: string) {
+  return `/personal-work-download?file=${encodeURIComponent(name)}`
+}
+
+function reportTime(report: ReportFile) {
+  return new Date(report.mtime * 1000).toLocaleDateString()
+}
+
+function reportDateTime(report: ReportFile) {
+  return new Date(report.mtime * 1000).toLocaleString()
+}
+
+function reportTypeText(report: ReportFile) {
+  return report.generated ? '新生成' : '周报模板'
+}
+
+function triggerHistoryUpload() {
+  historyUploadInput.value?.click()
+}
+
+async function uploadWeeklyHistory(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = await readUploadFiles(input.files)
+  if (!files.length) return
+  loading.uploadHistory = true
+  try {
+    const result = await uploadHistoryReports('weekly', files)
+    ElMessage.success(`已上传 ${result.uploaded.length} 个历史周报`)
+    input.value = ''
+    await loadReports()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '历史周报上传失败')
+  } finally {
+    loading.uploadHistory = false
+  }
+}
+
+function triggerTemplateUpload() {
+  templateUploadInput.value?.click()
+}
+
+async function uploadWeeklyTemplate(event: Event) {
+  const input = event.target as HTMLInputElement
+  const [file] = await readUploadFiles(input.files)
+  if (!file) return
+  loading.template = true
+  try {
+    await saveReportTemplate('weekly', file)
+    ElMessage.success('周报模板已保存')
+    input.value = ''
+    await loadWeeklyTemplate()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '周报模板保存失败')
+  } finally {
+    loading.template = false
+  }
+}
+
+async function removeWeeklyTemplate() {
+  loading.template = true
+  try {
+    const result = await deleteReportTemplate('weekly')
+    weeklyTemplate.value = result.templates.weekly
+    ElMessage.success('周报模板已删除')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '周报模板删除失败')
+  } finally {
+    loading.template = false
+  }
+}
+
 function applyDraft(draft: DraftResponse) {
   mailDraft.to = draft.to || ''
   mailDraft.cc = draft.cc || ''
@@ -751,7 +956,7 @@ async function loadDraft(name: string) {
   }
 }
 
-async function loadLatestHistory() {
+async function loadLatestHistory(showSuccess = true) {
   if (!weeklyReports.value.length) {
     setStatus('暂无历史周报，可先手动新增内容。', 'normal')
     return
@@ -772,8 +977,7 @@ async function loadLatestHistory() {
     const draft = await getDraft('weekly', latestReport.name)
     const draftRows = parseDraftRows(draft.body || '')
     applyRowsBySection(hasWeeklyRows(draftRows) ? draftRows : prefillRows)
-    sourceMessage.value = `已获取最新历史周报：${prefill.source || latestReport.name}`
-    setStatus(sourceMessage.value, 'ok')
+    if (showSuccess) setStatus(`已获取最新历史周报：${prefill.source || latestReport.name}`, 'ok')
     activeStep.value = 1
     markReportDirty()
     saveWeeklyDraft()
@@ -829,7 +1033,7 @@ async function summarizeFromDiaries() {
     const parsed = parseDiarySummary(data.summary || '')
     applyRowsBySection({
       summary: parsed.summary.map((content) => ({ category: '', content, status: '已完成' })),
-      follow: parsed.follow.map((content) => ({ category: '', content, progress: '推进中' })),
+      follow: parsed.follow.map((content) => ({ progress: content })),
       next: parsed.next.map((content) => ({ category: '', content, difficulty: '正常' })),
     })
     setStatus('工作日记总结已应用到周报，请检查后再生成正文', 'ok')
@@ -849,7 +1053,6 @@ async function generateReport() {
     return
   }
   refreshInstantPreview()
-  activeStep.value = 2
   loading.generate = true
   try {
     const result = await generateWeekly({
@@ -898,10 +1101,6 @@ async function optimizeEditField(field: EditField) {
   }
 }
 
-function addCcSeparator() {
-  if (mailDraft.cc && !mailDraft.cc.endsWith(';')) mailDraft.cc += ';'
-}
-
 function clearSendReview() {
   sendBlockers.value = []
 }
@@ -933,28 +1132,32 @@ async function scrollStepTop() {
   flowTop.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
+function stepForWeeklyTab(tab: WeeklyTabId) {
+  if (tab === 'mail') return 2
+  return 1
+}
+
+async function switchWeeklyTab(tab: WeeklyTabId) {
+  if (tab === 'history') {
+    await openHistoryDrawer()
+    return
+  }
+  if (activeWeeklyTab.value === tab) return
+  commitEditSilently(tab === 'edit')
+  if (tab === 'mail' && (isReportDirty.value || !mailDraft.body)) refreshInstantPreview()
+  activeStep.value = stepForWeeklyTab(tab)
+  if (tab !== 'mail') clearSendReview()
+  await scrollStepTop()
+}
+
 async function nextStep() {
   if (activeStep.value === 1) {
-    if (editing.value) {
-      ElMessage.warning('请先保存当前编辑内容')
-      return false
-    }
+    commitEditSilently()
     if (!totalRows.value) {
       ElMessage.warning('请先填写周报内容')
       return false
     }
     await generateReport()
-    await scrollStepTop()
-    return true
-  }
-  if (activeStep.value === 2) {
-    if (isReportDirty.value || !mailDraft.attachment) await generateReport()
-    if (!mailDraft.attachment) {
-      ElMessage.warning('请先生成附件后再填写邮件')
-      return false
-    }
-    activeStep.value = 3
-    clearSendReview()
     await scrollStepTop()
     return true
   }
@@ -970,21 +1173,6 @@ async function previousStep() {
   await scrollStepTop()
 }
 
-async function goStep(stepId: number) {
-  if (stepId === activeStep.value) return
-  if (stepId < activeStep.value) {
-    activeStep.value = stepId
-    if (stepId < 3) clearSendReview()
-    await scrollStepTop()
-    return
-  }
-  if (stepId > activeStep.value + 1) {
-    ElMessage.warning('请先完成当前步骤')
-    return
-  }
-  await nextStep()
-}
-
 async function confirmSend() {
   const payload = buildSendPayload()
   const blockers = findSendBlockers(payload)
@@ -995,7 +1183,7 @@ async function confirmSend() {
   loading.send = true
   try {
     const result = await sendMail(payload)
-    setStatus(result.message, 'ok')
+    ElMessage.success(result.mode === 'sent' ? '邮件已发送' : result.message)
   } catch (error) {
     setStatus(error instanceof Error ? error.message : '邮件发送失败', 'error')
   } finally {
@@ -1018,6 +1206,15 @@ function downloadAttachment() {
     return
   }
   window.open(currentDownloadUrl.value, '_blank')
+}
+
+function openAttachmentPreview() {
+  // 附件预览只对应已生成文件，未生成时不打开模板内容。
+  if (!hasAttachmentPreview.value) {
+    ElMessage.warning('暂无可预览附件')
+    return
+  }
+  attachmentPreviewOpen.value = true
 }
 
 async function deleteReportItem(report: ReportFile) {
@@ -1043,14 +1240,12 @@ async function initializeWeekly() {
     const latestWeekly = await loadReports()
     const generated = reports.value.find((report) => report.generated)
     const latest = generated?.name || latestWeekly
-    if (!restored && weeklyReports.value.length) await loadLatestHistory()
+    if (!restored && weeklyReports.value.length) await loadLatestHistory(false)
     if (!restored && !weeklyReports.value.length) {
       refreshInstantPreview()
-      setStatus('暂无历史周报，可先手动新增内容。', 'normal')
     }
     if (restored) {
       markReportDirty()
-      setStatus('已恢复上次未生成的周报草稿', 'ok')
     }
     if (!restored && latest && selectedReport.value) await loadDraft(latest)
   } catch (error) {
@@ -1065,507 +1260,393 @@ onMounted(initializeWeekly)
 </script>
 
 <template>
-  <section class="weekly-main weekly-main--wide">
-    <section ref="flowTop" class="weekly-flow" aria-label="周报生成步骤">
-      <button
-        v-for="step in workflowSteps"
-        :key="step.id"
-        :class="['flow-step', { active: activeStep === step.id, completed: activeStep > step.id }]"
-        type="button"
-        :disabled="step.id > activeStep + 1"
-        @click="goStep(step.id)"
-      >
-        <span class="flow-index">
-          <el-icon v-if="activeStep > step.id"><CircleCheck /></el-icon>
-          <span v-else>{{ step.id }}</span>
-        </span>
-        <span>
-          <strong>{{ step.title }}</strong>
-          <small>{{ step.description }}</small>
-        </span>
-      </button>
-    </section>
-
-    <template v-if="activeStep === 1">
-      <section class="wizard-step edit-workspace">
-        <div class="edit-column">
-          <section class="period-card">
-            <div class="period-title">
-              <h2>周报时段</h2>
-            </div>
-            <div class="date-fields">
-              <label>
-                <span>开始日期</span>
-                <el-date-picker v-model="weeklyPeriod.start" value-format="YYYY-MM-DD" type="date" />
-              </label>
-              <label>
-                <span>结束日期</span>
-                <el-date-picker v-model="weeklyPeriod.end" value-format="YYYY-MM-DD" type="date" />
-              </label>
-            </div>
-            <div class="period-summary">
-              <span class="period-summary-label">当前周报时段</span>
-              <span class="period-summary-date">{{ periodDisplay }}</span>
-              <em>本周</em>
-            </div>
-            <div class="period-actions">
-              <IconTextButton icon="history" size="md" :disabled="loading.prefill" @click="loadLatestHistory">
-                获取最新历史报告
-              </IconTextButton>
-              <IconTextButton icon="sparkle" size="md" variant="primary" :disabled="loading.summarize" @click="summarizeFromDiaries">
-                从工作日记智能总结
-              </IconTextButton>
-            </div>
-            <p v-if="statusMessage" :class="['weekly-status', statusTone]">{{ statusMessage }}</p>
-          </section>
-
-          <section class="weekly-section-tabs" aria-label="周报内容分区">
-            <button
-              v-for="(section, sectionIndex) in sections"
-              :key="section.id"
-              type="button"
-              :class="['weekly-section-tab', { active: activeSectionId === section.id }]"
-              @click="selectSection(section.id)"
-            >
-              <span class="weekly-section-tab__index">0{{ sectionIndex + 1 }}</span>
-              <span>
-                <strong>{{ sectionDisplayTitle(section.title) }}</strong>
-                <small>{{ section.subtitle }}</small>
-              </span>
-              <em>{{ cleanRows(section.id).length }}</em>
-            </button>
-          </section>
-
-          <section :key="activeSection.id" :class="['weekly-section-card', `weekly-section-card--${activeSection.id}`]">
-            <header class="section-head">
-              <div class="section-title-wrap">
-                <span class="section-index">0{{ activeSectionIndex + 1 }}</span>
-                <div>
-                  <h3>{{ activeSection.title }} <span>({{ cleanRows(activeSection.id).length }})</span></h3>
-                  <p>{{ activeSection.subtitle }}</p>
-                </div>
-              </div>
-              <div class="section-actions">
-                <IconTextButton icon="plus" @click="beginAdd(activeSection)">新增</IconTextButton>
-              </div>
-            </header>
-
-            <div ref="weeklyRowsRef" class="weekly-rows">
-              <div v-if="!activeSection.rows.length" class="empty-section">
-                <span>还没有内容，先写一条也可以。</span>
-              </div>
-
-              <div v-for="(row, index) in activeSection.rows" :key="row.id" class="row-shell">
-                <article v-if="isEditingRow(activeSection.id, row.id)" class="weekly-inline-editor">
-                  <header class="weekly-inline-editor__head">
-                    <div>
-                      <strong>
-                        <el-icon><EditPen /></el-icon>
-                        {{ editing?.isNew ? '新增条目' : '编辑条目' }}
-                      </strong>
-                      <small>{{ sectionDisplayTitle(activeSection.title) }}</small>
-                    </div>
-                    <div v-if="editingStateField" class="weekly-state-segment" :aria-label="editingStateField.label">
-                      <button
-                        v-for="option in editingStateOptions"
-                        :key="option"
-                        type="button"
-                        :class="{ active: isEditStateActive(option) }"
-                        @click="setEditState(option)"
-                      >
-                        {{ option }}
-                      </button>
-                    </div>
-                  </header>
-
-                  <div class="weekly-edit-fields">
-                    <div
-                      v-for="field in visibleEditingFields"
-                      :key="field.key"
-                      :class="['weekly-edit-field', { wide: field.multiline || canOptimizeField(field), 'is-ai': canOptimizeField(field) }]"
-                    >
-                      <div class="weekly-edit-field-head">
-                        <label :class="{ required: isRequiredField(field) }">{{ field.label }}</label>
-                        <div v-if="canOptimizeField(field)" class="weekly-edit-field-tools">
-                          <button class="field-prompt-button" type="button" @click="openPromptEditor(field)">
-                            <span aria-hidden="true">
-                              <svg viewBox="0 0 16 16" focusable="false">
-                                <path d="M3 2.5h10a1 1 0 0 1 1 1v7.4a1 1 0 0 1-1 1H7.2L4 14.2v-2.3H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1Zm2.4 3h5.2v1.2H5.4V5.5Zm0 2.5h4.2v1.2H5.4V8Z" />
-                              </svg>
-                            </span>
-                            提示词
-                          </button>
-                          <button class="field-ai-text-button" type="button" :disabled="fieldOptimizing !== ''" @click="optimizeEditField(field)">
-                            <span aria-hidden="true">
-                              <svg viewBox="0 0 16 16" focusable="false">
-                                <path d="M7.1 2.1 8.4 5.6l3.5 1.3-3.5 1.3-1.3 3.5-1.3-3.5-3.5-1.3 3.5-1.3Z" />
-                                <path d="M12.1 10.2 12.7 11.5l1.3.6-1.3.6-.6 1.3-.6-1.3-1.3-.6 1.3-.6Z" />
-                              </svg>
-                            </span>
-                            {{ fieldOptimizing === field.key ? '优化中...' : '智能优化' }}
-                          </button>
-                        </div>
-                      </div>
-                      <div class="edit-input-wrap">
-                        <el-input
-                          v-if="canOptimizeField(field)"
-                          v-model="editForm[field.key]"
-                          type="textarea"
-                          :autosize="fieldInputAutosize(field)"
-                          @input="handleEditFieldInput(field.key)"
-                        />
-                        <el-input v-else v-model="editForm[field.key]" type="text" @input="handleEditFieldInput(field.key)" />
-                      </div>
-                      <div v-if="canOptimizeField(field) && fieldOptimizePreview[field.key]" class="ai-compare-card">
-                        <div class="ai-compare-grid">
-                          <section>
-                            <span>原内容</span>
-                            <p>{{ fieldOptimizePreview[field.key]?.original }}</p>
-                          </section>
-                          <section>
-                            <span>优化结果</span>
-                            <p>{{ fieldOptimizePreview[field.key]?.suggestion }}</p>
-                          </section>
-                        </div>
-                        <div class="ai-compare-actions">
-                          <button type="button" @click="undoOptimizePreview(field)">忽略</button>
-                          <button type="button" class="primary" @click="acceptOptimizePreview(field)">采纳建议</button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <footer class="weekly-inline-editor__actions">
-                    <button type="button" @click="cancelEdit">取消</button>
-                    <button type="button" class="primary" @click="saveEdit">保存内容</button>
-                  </footer>
-                </article>
-
-                <article v-else class="weekly-row">
-                  <span class="row-index">{{ index + 1 }}</span>
-                  <div class="row-copy">
-                    <div class="row-meta">
-                      <span :class="['row-tag', row.tone]">{{ row.category || '待分类' }}</span>
-                      <span v-if="rowState(activeSection.id, row)" :class="['row-state', activeSection.id === 'summary' ? 'done' : 'progress']">
-                        {{ rowState(activeSection.id, row) }}
-                      </span>
-                    </div>
-                    <strong>{{ row.content || '待填写工作内容' }}</strong>
-                    <small v-if="rowDetail(activeSection.id, row)">{{ rowDetail(activeSection.id, row) }}</small>
-                  </div>
-                  <div class="row-actions">
-                    <button class="icon-button" type="button" aria-label="编辑" @click="beginEdit(activeSection.id, row)">
-                      <el-icon><EditPen /></el-icon>
-                    </button>
-                    <button class="icon-button danger-icon-button" type="button" aria-label="删除" @click="removeRow(activeSection, row.id)">
-                      <el-icon><Delete /></el-icon>
-                    </button>
-                  </div>
-                </article>
-
-              </div>
-
-            </div>
-          </section>
-        </div>
-
-        <aside class="step-side-panel">
-          <section class="step-side-card progress-card">
-            <div class="side-card-head">
-              <h3>工作上下文</h3>
-              <span>{{ completionPercent }}%</span>
-            </div>
-            <div class="progress-track">
-              <i :style="{ width: completionPercent + '%' }"></i>
-            </div>
-            <div class="side-check">
-              <span>本周总结</span>
-              <strong>{{ cleanRows('summary').length }}</strong>
-            </div>
-            <div class="side-check">
-              <span>重点跟进</span>
-              <strong>{{ cleanRows('follow').length }}</strong>
-            </div>
-            <div class="side-check">
-              <span>下周计划</span>
-              <strong>{{ cleanRows('next').length }}</strong>
-            </div>
-            <p>{{ contentStateText }}</p>
-          </section>
-
-          <section class="step-side-card assistant-side-card">
-            <div class="assistant-side-title">
-              <img :src="assistantAvatar" alt="犇犇" />
-              <div>
-                <h3>犇犇助手</h3>
-                <p>围绕当前周报内容提供建议。</p>
-              </div>
-            </div>
-            <div class="assistant-quick-list">
-              <button v-for="item in assistantSideActions" :key="item" type="button" @click="sendAssistantMessage(item)">
-                {{ item }}
-              </button>
-            </div>
-            <button class="assistant-open-chat" type="button" @click="assistantOpen = true">打开助手聊天</button>
-          </section>
-        </aside>
-      </section>
-
-    </template>
-
-    <section v-else-if="activeStep === 2" class="wizard-step preview-workspace">
-      <div class="preview-column">
-        <section class="preview-card preview-card--wide">
-          <div class="card-head">
-            <h3>预览与附件</h3>
-            <span>{{ weeklyReports.length }} 份报告</span>
-          </div>
-
-          <div class="preview-file-row">
-            <div v-if="currentFileName" class="file-chip">
-              <span class="excel-icon">X</span>
-              <div>
-                <strong>{{ currentFileName }}</strong>
-                <small>{{ selectedReport ? '当前附件' : '待生成附件' }}</small>
-              </div>
-              <em>{{ previewStateText }}</em>
-            </div>
-            <div v-else class="empty-file">当前内容已同步为邮件预览，生成后会显示附件。</div>
-            <div class="preview-actions">
-              <IconTextButton icon="refresh" size="md" :disabled="loading.generate" @click="generateReport">
-                重新生成预览
-              </IconTextButton>
-              <IconTextButton icon="download" size="md" :disabled="!currentDownloadUrl" @click="downloadAttachment">
-                下载查看当前附件
-              </IconTextButton>
-            </div>
-          </div>
-
-          <div class="sheet-preview">
-            <div v-if="mailDraft.preview_html" class="sheet-html" v-html="mailDraft.preview_html"></div>
-            <div v-else class="sheet-empty">填写内容后，这里会显示预览。</div>
-          </div>
-
-          <div class="history-list">
-            <div class="history-head">
-              <strong>历史报告列表</strong>
-              <div class="history-head-actions">
-                <small>{{ loading.reports ? '刷新中' : `${weeklyReports.length} 份` }}</small>
-                <button v-if="weeklyReports.length > 5" class="history-toggle" type="button" @click="historyExpanded = !historyExpanded">
-                  {{ historyExpanded ? '收起' : `展开其余 ${hiddenWeeklyReportCount} 份` }}
-                </button>
-              </div>
-            </div>
-            <div class="history-scroll">
-              <div v-for="report in visibleWeeklyReports" :key="report.name" class="history-item">
-                <button class="history-load" type="button" @click="loadDraft(report.name)">
-                  <span>
-                    <strong>{{ report.name }}</strong>
-                    <small>{{ report.generated ? '新生成' : '周报模板' }} · {{ new Date(report.mtime * 1000).toLocaleString() }}</small>
-                  </span>
-                  <em>{{ selectedReport === report.name ? '当前' : '加载' }}</em>
-                </button>
-                <button
-                  v-if="report.deletable"
-                  class="history-delete"
-                  type="button"
-                  aria-label="删除历史报告"
-                  @click="deleteReportItem(report)"
-                >
-                  <el-icon><Delete /></el-icon>
-                </button>
-              </div>
-              <div v-if="!weeklyReports.length" class="history-empty">暂无历史周报。</div>
-            </div>
-          </div>
-        </section>
+  <section class="weekly-main weekly-main--wide" @pointerdown.capture="handleEditorOutsidePointer">
+    <header ref="flowTop" class="weekly-page-head">
+      <div class="weekly-title-block">
+        <h1>周报助手</h1>
+        <p>填写周报、发送邮件、管理历史周报</p>
       </div>
 
-      <aside class="step-side-panel preview-side-panel">
-        <section class="step-side-card status-check-card">
-          <h3>生成状态</h3>
-          <div class="status-check-list">
-            <div :class="['status-check-item', { done: mailDraft.attachment && !isReportDirty }]">
-              <span></span>
-              <div>
-                <strong>文件已生成</strong>
-                <small>{{ mailDraft.attachment ? 'Excel 附件已生成并可下载' : '等待生成标准附件' }}</small>
-              </div>
-            </div>
-            <div :class="['status-check-item', { done: !!mailDraft.body }]">
-              <span></span>
-              <div>
-                <strong>邮件正文已同步</strong>
-                <small>{{ mailDraft.body ? '正文内容已根据周报生成' : '生成后同步邮件正文' }}</small>
-              </div>
-            </div>
-            <div :class="['status-check-item', { done: !!currentDownloadUrl }]">
-              <span></span>
-              <div>
-                <strong>附件可下载</strong>
-                <small>{{ currentDownloadUrl ? '可下载附件用于本地查看' : '暂无可下载附件' }}</small>
-              </div>
-            </div>
-          </div>
-        </section>
+      <nav class="weekly-tabs" aria-label="周报助手功能页签">
+        <button
+          v-for="tab in weeklyTabs"
+          :key="tab.id"
+          :class="{ active: activeWeeklyTab === tab.id }"
+          type="button"
+          @click="switchWeeklyTab(tab.id)"
+        >
+          {{ tab.label }}
+        </button>
+      </nav>
+    </header>
 
-        <section class="step-side-card progress-card">
-          <div class="side-card-head">
-            <h3>工作上下文</h3>
-            <span>{{ completionPercent }}%</span>
-          </div>
-          <div class="progress-track">
-            <i :style="{ width: completionPercent + '%' }"></i>
-          </div>
-          <div class="side-check">
-            <span>本周总结</span>
-            <strong>{{ cleanRows('summary').length }}</strong>
-          </div>
-          <div class="side-check">
-            <span>重点跟进</span>
-            <strong>{{ cleanRows('follow').length }}</strong>
-          </div>
-          <div class="side-check">
-            <span>下周计划</span>
-            <strong>{{ cleanRows('next').length }}</strong>
-          </div>
-        </section>
-
-        <section class="step-side-card assistant-side-card">
-          <div class="assistant-side-title">
-            <img :src="assistantAvatar" alt="犇犇" />
-            <div>
-              <h3>犇犇助手</h3>
-              <p>预览阶段帮你检查附件和正文。</p>
-            </div>
-          </div>
-          <div class="assistant-quick-list">
-            <button type="button" @click="sendAssistantMessage('预览的附件内容是否符合预期？')">预览的附件内容是否符合预期？</button>
-            <button type="button" @click="sendAssistantMessage('邮件正文结构是否清晰完整？')">邮件正文结构是否清晰完整？</button>
-          </div>
-        </section>
-      </aside>
-    </section>
-
-    <section v-else class="wizard-step send-workspace">
-      <section class="mail-card">
-        <h3>邮件内容</h3>
-        <label>
-          <span>收件人</span>
-          <el-input v-model="mailDraft.to" />
-        </label>
-        <label>
-          <span>抄送</span>
-          <el-input v-model="mailDraft.cc" />
-          <button class="link-button" type="button" @click="addCcSeparator">添加抄送</button>
-        </label>
-        <label>
-          <span>主题</span>
-          <el-input v-model="mailDraft.subject" />
-        </label>
-        <div v-if="currentFileName" class="mail-attachment-card">
-          <span class="excel-icon">X</span>
-          <div>
-            <strong>{{ currentFileName }}</strong>
-            <small>{{ previewStateText }}</small>
-          </div>
-          <button class="link-button" type="button" @click="downloadAttachment">下载</button>
+    <section v-if="activeStep === 1" class="wizard-step weekly-editor-step">
+      <section class="weekly-toolbar">
+        <div class="period-control">
+          <span class="toolbar-glyph" aria-hidden="true"><el-icon><Calendar /></el-icon></span>
+          <strong>周报周期</strong>
+          <el-config-provider :locale="elementLocale">
+            <el-date-picker
+              v-model="periodRange"
+              value-format="YYYY-MM-DD"
+              format="YYYY.MM.DD"
+              type="daterange"
+              range-separator="-"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+            />
+          </el-config-provider>
         </div>
 
-        <div class="body-preview">
-          <span>正文预览</span>
-          <div class="body-preview-content">
-            <div v-if="mailDraft.body_html" class="body-html sheet-html" v-html="mailDraft.body_html"></div>
-            <div v-else-if="mailDraft.body" class="body-text">{{ mailDraft.body }}</div>
-            <p v-else>生成正文后，这里会显示邮件内容。</p>
-          </div>
-        </div>
-
-        <div class="mail-actions">
-          <IconTextButton icon="refresh" size="md" block :disabled="loading.generate" @click="generateReport">
-            重新生成正文
+        <div class="toolbar-actions">
+          <IconTextButton icon="sparkle" size="md" :disabled="loading.summarize" @click="summarizeFromDiaries">
+            从工作日记智能总结
           </IconTextButton>
-          <IconTextButton icon="copy" size="md" block @click="copyBody">
-            复制正文
+          <IconTextButton icon="history" size="md" :disabled="loading.prefill" @click="loadLatestHistory">
+            获取最新历史报告
           </IconTextButton>
-        </div>
-
-        <div class="mail-status">
-          <el-icon><Document /></el-icon>
-          {{ mailStatusText }} · 共 {{ totalRows }} 条周报内容
         </div>
       </section>
 
-      <aside class="send-confirm-column send-side-panel">
-        <section class="send-review-card">
-          <div :class="['send-ready-mark', { warning: sendReadinessBlockers.length }]">
-            <span>{{ sendReadinessBlockers.length ? '!' : '✓' }}</span>
-            <strong>{{ sendReadyText }}</strong>
-          </div>
-          <div class="send-review-list">
-            <span>收件人</span><strong>{{ sendPayload.to || '未填写' }}</strong>
-            <span>抄送</span><strong>{{ sendPayload.cc || '无' }}</strong>
-            <span>主题</span><strong>{{ sendPayload.subject || '未填写' }}</strong>
-            <span>附件</span><strong>{{ sendPayload.attachment || '未选择' }}</strong>
-            <span>正文状态</span><strong>{{ mailDraft.body ? '已同步' : '未生成' }}</strong>
-          </div>
-          <div class="send-check-panel">
-            <span>发送检查</span>
-            <div class="status-check-list send-review-checks">
-              <div :class="['status-check-item', { done: !!sendPayload.to }]">
-                <span></span>
-                <strong>收件人已填写</strong>
-              </div>
-              <div :class="['status-check-item', { done: !!sendPayload.subject }]">
-                <span></span>
-                <strong>主题已生成</strong>
-              </div>
-              <div :class="['status-check-item', { done: !!sendPayload.attachment }]">
-                <span></span>
-                <strong>附件已选择</strong>
-              </div>
-              <div :class="['status-check-item', { done: !!mailDraft.body }]">
-                <span></span>
-                <strong>正文已同步</strong>
-              </div>
-            </div>
-          </div>
-          <p v-if="sendReadinessBlockers.length" class="send-warning">{{ sendReadinessBlockers.join('；') }}</p>
-          <p v-else class="send-info-note">邮件将通过企业邮箱服务发送，请确认收件人、主题和附件无误。</p>
-        </section>
+      <section class="weekly-editor-grid">
+        <aside class="section-rail" aria-label="周报内容分区">
+          <button
+            v-for="section in sections"
+            :key="section.id"
+            type="button"
+            :class="['section-rail-item', { active: activeSectionId === section.id }]"
+            @click="selectSection(section.id)"
+          >
+            <span>{{ sectionDisplayTitle(section.title) }}</span>
+            <strong>{{ cleanRows(section.id).length }}</strong>
+            <em>+</em>
+          </button>
+        </aside>
 
-        <section class="step-side-card progress-card">
-          <h3>工作上下文</h3>
-          <div class="side-check">
-            <span>本周总结</span>
-            <strong>{{ cleanRows('summary').length }}</strong>
-          </div>
-          <div class="side-check">
-            <span>重点跟进</span>
-            <strong>{{ cleanRows('follow').length }}</strong>
-          </div>
-          <div class="side-check">
-            <span>下周计划</span>
-            <strong>{{ cleanRows('next').length }}</strong>
-          </div>
-          <button class="side-outline-button" type="button" @click="activeStep = 2">查看预览内容</button>
-        </section>
-
-        <section class="step-side-card assistant-side-card">
-          <div class="assistant-side-title">
-            <img :src="assistantAvatar" alt="犇犇" />
+        <section class="entry-panel">
+          <header>
             <div>
-              <h3>犇犇助手</h3>
-              <p>发送前帮你再检查一遍。</p>
+              <h2>{{ sectionDisplayTitle(activeSection.title) }}</h2>
+              <span>{{ cleanRows(activeSection.id).length }} 条</span>
+            </div>
+            <IconTextButton icon="plus" @click="beginAdd(activeSection)">新增</IconTextButton>
+          </header>
+
+          <div ref="weeklyRowsRef" class="entry-list">
+            <button
+              v-for="(row, index) in activeSection.rows"
+              :key="row.id"
+              type="button"
+              :class="['entry-item', { selected: isEditingRow(activeSection.id, row.id) }]"
+              @click="beginEdit(activeSection.id, row)"
+            >
+              <span :class="['entry-icon', row.tone]">{{ index + 1 }}</span>
+              <span class="entry-copy">
+                <strong>{{ rowTitle(activeSection.id, row) }}</strong>
+                <small>{{ rowSubtitle(activeSection.id, row) }}</small>
+              </span>
+              <em v-if="rowState(activeSection.id, row)" :class="['entry-state', activeSection.id === 'summary' ? 'done' : 'progress']">
+                {{ rowStateLabel(activeSection.id, row) }}
+              </em>
+              <span class="entry-buttons">
+                <span aria-hidden="true"><el-icon><EditPen /></el-icon></span>
+                <span aria-hidden="true" class="danger" @click.stop="removeRow(activeSection, row.id)"><el-icon><Delete /></el-icon></span>
+              </span>
+            </button>
+
+            <div v-if="!activeSection.rows.length" class="empty-section">
+              <span>当前分区还没有内容。</span>
+              <button type="button" @click="beginAdd(activeSection)">新增内容</button>
             </div>
           </div>
-          <div class="assistant-quick-list">
-            <button type="button" @click="sendAssistantMessage('发送前帮我再次检查收件人和附件。')">发送前帮我再次检查收件人和附件。</button>
-            <button type="button" @click="sendAssistantMessage('如果不确定时发送，应该先保存草稿吗？')">如果不确定时发送，应该先保存草稿吗？</button>
-          </div>
+
+          <button v-if="activeSection.rows.length > 6" class="entry-more" type="button">
+            还有 {{ activeSection.rows.length - 6 }} 条内容
+          </button>
         </section>
-      </aside>
+
+        <aside class="detail-panel">
+          <template v-if="editing && selectedEditingRow">
+            <header>
+              <div>
+                <h2>编辑条目</h2>
+                <span>{{ sectionDisplayTitle(activeSection.title) }}</span>
+              </div>
+              <button type="button" @click="cancelEdit">×</button>
+            </header>
+
+            <div class="detail-panel-body">
+              <label v-if="categoryEditingField" class="detail-field detail-field--category">
+                <span>工作分类</span>
+                <el-input v-model="editForm.category" placeholder="输入工作分类" @input="handleEditFieldInput('category')" />
+              </label>
+
+              <div v-if="editingStateField" class="detail-field">
+                <span>{{ editingStateField.label }}</span>
+                <div class="weekly-state-segment">
+                  <button
+                    v-for="option in editingStateOptions"
+                    :key="option"
+                    type="button"
+                    :class="{ active: isEditStateActive(option) }"
+                    @click="setEditState(option)"
+                  >
+                    {{ option }}
+                  </button>
+                </div>
+              </div>
+
+              <label v-if="primaryTextEditingField" class="detail-field detail-field--content">
+                <span>{{ primaryTextEditingField.label }}</span>
+                <div class="detail-field-tools ai-field-actions">
+                  <button class="ai-prompt-button" type="button" @click="openPromptEditor(primaryTextEditingField)">提示词</button>
+                  <button class="ai-polish-button" type="button" :disabled="fieldOptimizing !== ''" @click="optimizeEditField(primaryTextEditingField)">
+                    <span aria-hidden="true">✦</span>
+                    {{ fieldOptimizing === primaryTextEditingField.key ? '润色中' : 'AI 润色' }}
+                  </button>
+                </div>
+                <el-input
+                  v-model="editForm[primaryTextEditingField.key]"
+                  type="textarea"
+                  maxlength="2000"
+                  show-word-limit
+                  :autosize="{ minRows: 7, maxRows: 12 }"
+                  @input="handleEditFieldInput(primaryTextEditingField.key)"
+                />
+              </label>
+
+              <div v-if="primaryTextEditingField && primaryOptimizePreview" class="ai-compare-card">
+                <div class="ai-compare-grid">
+                  <section>
+                    <span>原内容</span>
+                    <p>{{ primaryOptimizePreview.original }}</p>
+                  </section>
+                  <section>
+                    <span>优化结果</span>
+                    <p>{{ primaryOptimizePreview.suggestion }}</p>
+                  </section>
+                </div>
+                <div class="ai-compare-actions">
+                  <button type="button" @click="undoOptimizePreview(primaryTextEditingField)">忽略</button>
+                  <button type="button" class="primary" @click="acceptOptimizePreview(primaryTextEditingField)">采纳建议</button>
+                </div>
+              </div>
+
+              <details class="detail-extra">
+                <summary>补充信息（后续计划、当前进展说明、困难与求助）</summary>
+                <label v-for="field in extraEditingFields" :key="field.key" class="detail-field">
+                  <span>{{ field.label }}</span>
+                  <el-input
+                    v-model="editForm[field.key]"
+                    type="textarea"
+                    :autosize="{ minRows: 3, maxRows: 6 }"
+                    @input="handleEditFieldInput(field.key)"
+                  />
+                </label>
+              </details>
+            </div>
+
+            <footer>
+              <button type="button" @click="cancelEdit">取消</button>
+              <button type="button" class="primary" @click="saveEdit">保存内容</button>
+            </footer>
+          </template>
+
+          <div v-else class="detail-empty">
+            <img class="detail-empty-icon" :src="weeklyEmptyPlaceholder" alt="" aria-hidden="true" />
+            <strong>选择一条周报内容查看详情和编辑</strong>
+            <p>点击左侧的周报内容，查看详细内容并继续完善；<br />或者新增一条内容，开始整理本周周报。</p>
+          </div>
+        </aside>
+      </section>
     </section>
+
+    <section v-else :class="['wizard-step', 'send-step', { 'send-step--report-collapsed': reportPanelCollapsed }]">
+      <aside class="mail-report-panel" aria-label="报告文件">
+        <header class="mail-report-panel__header">
+          <div v-if="!reportPanelCollapsed">
+            <strong>报告文件</strong>
+            <span>{{ weeklyReports.length ? `共 ${weeklyReports.length} 份` : '暂无报告文件' }}</span>
+          </div>
+          <button
+            class="mail-report-toggle"
+            type="button"
+            :aria-label="reportPanelCollapsed ? '展开报告文件栏' : '收起报告文件栏'"
+            @click="reportPanelCollapsed = !reportPanelCollapsed"
+          >
+            <el-icon><Document /></el-icon>
+            <span>{{ reportPanelCollapsed ? '展开' : '收起' }}</span>
+          </button>
+        </header>
+
+        <div v-if="reportPanelCollapsed" class="mail-report-collapsed">
+          <strong>{{ weeklyReports.length }}</strong>
+          <span>报告</span>
+        </div>
+
+        <div v-else class="mail-report-list">
+          <article
+            v-for="report in weeklyReports"
+            :key="report.name"
+            :class="['mail-report-item', { active: selectedReport === report.name }]"
+          >
+            <button class="mail-report-main" type="button" :disabled="loading.draft" @click="loadDraft(report.name)">
+              <strong>{{ report.name }}</strong>
+              <span>{{ reportTypeText(report) }} · {{ reportDateTime(report) }}</span>
+            </button>
+            <button
+              v-if="report.deletable"
+              class="mail-report-delete"
+              type="button"
+              aria-label="删除报告文件"
+              @click.stop="deleteReportItem(report)"
+            >
+              删除
+            </button>
+          </article>
+          <div v-if="loading.reports" class="mail-report-empty">正在加载报告文件...</div>
+          <div v-else-if="!weeklyReports.length" class="mail-report-empty">暂无报告文件</div>
+        </div>
+      </aside>
+
+      <section class="mail-compose-card">
+        <div class="mail-row">
+          <span>收件人</span>
+          <el-select v-model="toRecipients" multiple filterable allow-create default-first-option placeholder="添加收件人">
+            <el-option v-for="item in toRecipients" :key="item" :label="item" :value="item" />
+          </el-select>
+        </div>
+        <div class="mail-row">
+          <span>抄送</span>
+          <el-select v-model="ccRecipients" multiple filterable allow-create default-first-option placeholder="添加抄送">
+            <el-option v-for="item in ccRecipients" :key="item" :label="item" :value="item" />
+          </el-select>
+        </div>
+        <div class="mail-row">
+          <span>主题</span>
+          <el-input v-model="mailDraft.subject" />
+        </div>
+        <div class="mail-body-preview-row">
+          <span>邮件正文</span>
+          <div class="mail-body-preview" v-html="mailBodyPreviewHtml"></div>
+        </div>
+        <div class="mail-attachment-status">
+          <span>附件状态</span>
+          <button type="button" :disabled="!hasAttachmentPreview" @click="openAttachmentPreview">
+            <span class="excel-icon">X</span>
+            <span>
+              <strong>{{ currentFileName || '等待生成附件' }}</strong>
+              <small>{{ hasAttachmentPreview ? '点击预览附件内容' : '生成后可预览' }}</small>
+            </span>
+            <em>{{ previewStateText }}</em>
+            <el-icon><View /></el-icon>
+          </button>
+        </div>
+        <div v-if="sendBlockers.length" class="mail-send-warnings">
+          <strong>发送前需处理</strong>
+          <span v-for="item in sendBlockers" :key="item">{{ item }}</span>
+        </div>
+      </section>
+
+    </section>
+
+    <el-drawer
+      v-model="historyPanelOpen"
+      class="weekly-history-drawer"
+      direction="rtl"
+      size="420px"
+      append-to-body
+      title="历史报告管理"
+    >
+      <section class="history-drawer-section history-drawer-section--upload">
+        <header>
+          <span class="history-drawer-icon"><el-icon><Upload /></el-icon></span>
+          <div>
+            <strong>上传历史周报</strong>
+            <small>支持 .xlsx / .xls，文件会保存到当前账号历史报告库。</small>
+          </div>
+        </header>
+        <button class="history-drawer-primary" type="button" :disabled="loading.uploadHistory" @click="triggerHistoryUpload">
+          <el-icon><Upload /></el-icon>
+          {{ loading.uploadHistory ? '上传中' : '选择并上传文件' }}
+        </button>
+        <input ref="historyUploadInput" class="hidden-file-input" type="file" multiple accept=".xlsx,.xls" @change="uploadWeeklyHistory" />
+      </section>
+
+      <section class="history-drawer-section">
+        <header>
+          <span class="history-drawer-icon"><el-icon><Document /></el-icon></span>
+          <div>
+            <strong>历史报告列表</strong>
+            <small>{{ weeklyHistoryReports.length ? `共 ${weeklyHistoryReports.length} 份历史周报` : '暂无历史周报' }}</small>
+          </div>
+        </header>
+        <div class="history-drawer-list">
+          <article v-for="report in weeklyHistoryReports" :key="report.name" class="history-drawer-item">
+            <div>
+              <strong>{{ report.name }}</strong>
+              <span>{{ reportTime(report) }}</span>
+            </div>
+            <a :href="reportDownloadUrl(report.name)" target="_blank" rel="noopener" aria-label="下载历史周报">
+              <el-icon><Download /></el-icon>
+            </a>
+            <button v-if="report.deletable" type="button" aria-label="删除历史周报" @click="deleteReportItem(report)">
+              <el-icon><Delete /></el-icon>
+            </button>
+          </article>
+          <div v-if="!weeklyHistoryReports.length" class="history-empty">暂无历史周报。</div>
+        </div>
+      </section>
+
+      <section v-if="authState.user?.is_admin" class="history-drawer-section history-template-card">
+        <header>
+          <span class="history-drawer-icon"><el-icon><Setting /></el-icon></span>
+          <div>
+            <strong>平台模板配置</strong>
+            <small>{{ weeklyTemplate?.configured ? `当前模板：${weeklyTemplate.name}` : '周报未保存平台模板，生成时会先找历史报告。' }}</small>
+          </div>
+        </header>
+        <div class="history-template-type">
+          <span>模板类型</span>
+          <strong>周报模板（.xlsx / .xls）</strong>
+        </div>
+        <div class="history-template-actions">
+          <button type="button" :disabled="loading.template" @click="triggerTemplateUpload">
+            <el-icon><Upload /></el-icon>
+            {{ weeklyTemplate?.configured ? '替换平台模板' : '保存为平台模板' }}
+          </button>
+          <a v-if="weeklyTemplate?.configured" :href="weeklyTemplateDownloadUrl" target="_blank" rel="noopener">
+            <el-icon><Download /></el-icon>
+            下载当前模板编辑
+          </a>
+          <button v-if="weeklyTemplate?.configured" type="button" :disabled="loading.template" class="danger" @click="removeWeeklyTemplate">
+            <el-icon><Delete /></el-icon>
+            删除平台模板
+          </button>
+        </div>
+        <p>平台模板会优先用于周报文件生成；删除后回退到历史报告或系统内置基础模板。</p>
+        <input ref="templateUploadInput" class="hidden-file-input" type="file" accept=".xlsx,.xls" @change="uploadWeeklyTemplate" />
+      </section>
+    </el-drawer>
+
+    <el-drawer
+      v-model="attachmentPreviewOpen"
+      class="weekly-attachment-drawer"
+      direction="rtl"
+      size="72%"
+      append-to-body
+      title="模板内容预览"
+    >
+      <section class="attachment-drawer-preview">
+        <label class="attachment-preview-label">附件</label>
+        <div class="attachment-preview-file">{{ currentFileName || `工作周报_${periodValue || '待生成'}.xlsx` }}</div>
+        <label class="attachment-preview-label">模板内容预览</label>
+        <div class="weekly-template-preview-card">
+          <div v-if="mailDraft.preview_html" class="weekly-template-preview-html" v-html="mailDraft.preview_html"></div>
+          <div v-else class="sheet-empty">暂无可预览内容。</div>
+        </div>
+      </section>
+    </el-drawer>
 
     <el-dialog
       v-model="promptDialogVisible"
@@ -1587,25 +1668,25 @@ onMounted(initializeWeekly)
 
     <section class="wizard-footer">
       <div>
-        <strong>{{ workflowSteps[activeStep - 1].title }}</strong>
+        <strong v-if="activeStep === 1">已整理 {{ totalRows }} 条内容，系统已自动保存</strong>
+        <strong v-else>{{ workflowSteps[activeStep - 1].title }}</strong>
         <span>{{ stepHint }}</span>
       </div>
-      <div class="wizard-footer-actions">
-        <button v-if="activeStep > 1" class="wizard-nav-button" type="button" @click="previousStep">上一步</button>
+      <div v-if="activeStep === 1" class="wizard-footer-actions">
+        <button class="wizard-nav-button" type="button" @click="saveCurrentChanges">保存当前修改</button>
+        <button class="wizard-nav-button primary" type="button" :disabled="stepActionDisabled" @click="nextStep">
+          {{ nextActionText }}
+        </button>
+      </div>
+      <div v-else class="wizard-footer-actions">
+        <button class="wizard-nav-button" type="button" @click="previousStep">返回修改</button>
+        <button class="wizard-nav-button" type="button" @click="copyBody">复制正文</button>
+        <button class="wizard-nav-button" type="button" :disabled="!currentDownloadUrl" @click="downloadAttachment">下载附件</button>
         <button class="wizard-nav-button primary" type="button" :disabled="stepActionDisabled" @click="nextStep">
           {{ nextActionText }}
         </button>
       </div>
     </section>
 
-    <AssistantChat
-      v-model:open="assistantOpen"
-      v-model:input="assistantInput"
-      :avatar="assistantAvatar"
-      :messages="assistantMessages"
-      :quick-actions="assistantQuickActions"
-      :loading="assistantLoading"
-      @send="sendAssistantMessage"
-    />
   </section>
 </template>

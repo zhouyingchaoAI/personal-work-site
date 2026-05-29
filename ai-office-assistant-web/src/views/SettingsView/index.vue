@@ -746,9 +746,9 @@ onMounted(() => {
           </label>
           <label>
             <span>模型名称</span>
-            <select v-model="adminForm.assistant_model">
-              <option v-for="model in modelOptions" :key="model" :value="model">{{ model }}</option>
-            </select>
+            <el-select v-model="adminForm.assistant_model" class="settings-select" placeholder="请选择模型">
+              <el-option v-for="model in modelOptions" :key="model" :label="model" :value="model" />
+            </el-select>
           </label>
           <label>
             <span>手动模型名称</span>
@@ -842,9 +842,14 @@ onMounted(() => {
             <el-icon><Search /></el-icon>
             <input v-model="skillSearch" placeholder="搜索 Skill 名称、模块或说明..." />
           </label>
-          <select v-model="skillModule">
-            <option v-for="module in skillModules" :key="module" :value="module">{{ module === 'all' ? '全部模块' : module }}</option>
-          </select>
+          <el-select v-model="skillModule" class="settings-select" placeholder="全部模块">
+            <el-option
+              v-for="module in skillModules"
+              :key="module"
+              :label="module === 'all' ? '全部模块' : module"
+              :value="module"
+            />
+          </el-select>
           <button class="settings-button settings-button--ghost" type="button" :disabled="loading.skills" @click="loadSkills">
             <el-icon><Refresh /></el-icon>
             刷新
@@ -908,11 +913,11 @@ onMounted(() => {
           </label>
           <label>
             <span>角色权限</span>
-            <select v-model="newUser.role">
-              <option value="member">普通成员</option>
-              <option value="admin">管理员</option>
-              <option value="superadmin">超级管理员</option>
-            </select>
+            <el-select v-model="newUser.role" class="settings-select">
+              <el-option label="普通成员" value="member" />
+              <el-option label="管理员" value="admin" />
+              <el-option label="超级管理员" value="superadmin" />
+            </el-select>
           </label>
           <label>
             <span>初始密码</span>
@@ -948,11 +953,11 @@ onMounted(() => {
             </label>
             <label>
               <span>角色</span>
-              <select v-model="userDrafts[item.username].role">
-                <option value="member">普通成员</option>
-                <option value="admin">管理员</option>
-                <option value="superadmin">超级管理员</option>
-              </select>
+              <el-select v-model="userDrafts[item.username].role" class="settings-select">
+                <el-option label="普通成员" value="member" />
+                <el-option label="管理员" value="admin" />
+                <el-option label="超级管理员" value="superadmin" />
+              </el-select>
             </label>
             <div class="user-card-actions">
               <button class="settings-button settings-button--ghost" type="button" @click="handleUpdateUser(item)">

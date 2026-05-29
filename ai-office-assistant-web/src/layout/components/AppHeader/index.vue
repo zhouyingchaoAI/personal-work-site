@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { ArrowDown, Bell, Lock, MessageBox, Search, User as UserIcon } from '@element-plus/icons-vue'
+import { ArrowDown, Lock, Search, User as UserIcon } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import mascotImage from '../../../assets/mascot.png'
 import { authState } from '../../../services/authSession'
@@ -160,7 +160,7 @@ function handleUserCommand(command: 'profile' | 'password' | 'logout') {
       </template>
     </el-input>
     <div class="header-actions">
-      <el-tooltip content="通知" placement="bottom">
+      <!-- <el-tooltip content="通知" placement="bottom">
         <el-badge :value="3" type="danger">
           <el-button class="header-tool-button" circle size="large" :icon="Bell" aria-label="通知" />
         </el-badge>
@@ -169,7 +169,7 @@ function handleUserCommand(command: 'profile' | 'password' | 'logout') {
         <el-badge :value="6" type="danger">
           <el-button class="header-tool-button" circle size="large" :icon="MessageBox" aria-label="邮件" />
         </el-badge>
-      </el-tooltip>
+      </el-tooltip> -->
       <el-tooltip content="账户菜单" placement="bottom">
         <el-dropdown trigger="click" @command="handleUserCommand">
           <button class="header-user-button" type="button" aria-haspopup="menu">

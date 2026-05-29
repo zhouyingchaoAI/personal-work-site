@@ -4,17 +4,14 @@ import { ElMessage } from 'element-plus'
 import {
   ArrowRight,
   Calendar,
-  Clock,
   CollectionTag,
   Delete,
   Document,
-  Link,
   MagicStick,
   Plus,
   Reading,
   Refresh,
   Setting,
-  UserFilled,
   WarningFilled,
 } from '@element-plus/icons-vue'
 import { authState } from '../../services/authSession'
@@ -197,16 +194,12 @@ onMounted(loadLatestNews)
 <template>
   <section class="workspace-main news-main">
     <header class="news-page-head">
-      <div class="news-page-title">
-        <span class="news-page-kicker">
-          <el-icon><Reading /></el-icon>
-          每日资讯
-        </span>
-        <h2>每日资讯</h2>
-        <p>收集轨道交通关键资讯，调用平台大模型生成每日简报</p>
+      <div class="news-title-block">
+        <h1>每日资讯助手</h1>
+        <p>查看轨道交通关键资讯，支持 AI 生成、配置来源与历史简报回看。</p>
       </div>
       <div class="news-page-actions">
-        <div class="news-page-tabs" role="tablist" aria-label="每日资讯页面">
+        <div v-if="isSuperadmin" class="news-page-tabs" role="tablist" aria-label="每日资讯页面">
           <button :class="{ active: activePanel === 'reader' }" type="button" @click="switchPanel('reader')">资讯简报</button>
           <button :class="{ active: activePanel === 'config' }" type="button" @click="switchPanel('config')">资讯配置</button>
         </div>
@@ -215,7 +208,7 @@ onMounted(loadLatestNews)
           {{ loading.latest ? '刷新中' : '刷新' }}
         </button>
         <button
-          v-if="isSuperadmin && activePanel === 'reader'"
+          v-if="isSuperadmin"
           class="news-button news-button--primary"
           type="button"
           :disabled="loading.generate"
@@ -228,21 +221,62 @@ onMounted(loadLatestNews)
     </header>
 
     <div class="news-workspace">
+      <aside class="news-history-column">
+        <section class="news-card news-history-card">
+          <div class="news-card-head">
+            <span class="news-card-icon"><el-icon><Reading /></el-icon></span>
+            <div>
+              <h2>历史资讯</h2>
+              <p>{{ historyMeta }}</p>
+            </div>
+          </div>
+
+          <div v-if="history.length" class="news-history-list">
+            <button
+              v-for="item in history"
+              :key="item.date"
+              :class="['news-history-item', { active: item.date === activeDate }]"
+              type="button"
+              :disabled="loading.history"
+              @click="loadNewsByDate(item.date)"
+            >
+              <time>{{ item.date }}</time>
+              <span>
+                <strong>{{ item.title || item.date || '每日资讯' }}</strong>
+                <em>{{ item.summary || '暂无摘要。' }}</em>
+              </span>
+              <small>{{ item.item_count || 0 }} 条</small>
+            </button>
+          </div>
+          <div v-else class="news-side-empty">
+            <el-icon><Reading /></el-icon>
+            <strong>暂无历史资讯</strong>
+            <span>生成每日资讯后会在这里保留历史记录。</span>
+          </div>
+        </section>
+      </aside>
+
       <main class="news-reader-column">
         <article v-if="activePanel === 'reader'" class="news-card news-issue-card" :class="{ 'is-loading': loading.latest || loading.history }">
           <div class="news-issue-head">
             <div>
-              <span class="news-date-pill">
-                <el-icon><Calendar /></el-icon>
-                {{ issue?.date || '今日简报' }}
+              <span class="news-issue-label">
+                <el-icon><Document /></el-icon>
+                今日简报
               </span>
-              <h3>{{ issueTitle }}</h3>
+              <h2>{{ issueTitle }}</h2>
               <p>{{ issueMeta }}</p>
             </div>
             <strong>{{ issueItems.length }} 条</strong>
           </div>
 
-          <p class="news-summary">{{ issueSummary }}</p>
+          <section class="news-summary-panel">
+            <span class="news-date-pill">
+              <el-icon><Calendar /></el-icon>
+              {{ issue?.date || '今日' }}
+            </span>
+            <p>{{ issueSummary }}</p>
+          </section>
 
           <div v-if="issueKeywords.length" class="news-keywords" aria-label="关键词">
             <span v-for="keyword in issueKeywords" :key="keyword">{{ keyword }}</span>
@@ -260,25 +294,30 @@ onMounted(loadLatestNews)
 
           <div v-if="issueItems.length" class="news-item-list">
             <article v-for="(item, index) in issueItems" :key="`${item.title}-${index}`" class="news-item-card">
-              <div class="news-item-top">
-                <span>
-                  <el-icon><CollectionTag /></el-icon>
-                  {{ item.source || '未注明来源' }}
-                </span>
-                <button v-if="item.url" type="button" @click="openSource(item.url)">
-                  来源链接
-                  <el-icon><ArrowRight /></el-icon>
-                </button>
-              </div>
-              <h4>{{ item.title || '未命名资讯' }}</h4>
-              <div class="news-item-content">
-                <div>
-                  <strong>影响/价值</strong>
-                  <p>{{ item.impact || '暂无' }}</p>
+              <span class="news-item-index">{{ String(index + 1).padStart(2, '0') }}</span>
+              <div class="news-item-main">
+                <div class="news-item-top">
+                  <span>
+                    <el-icon><CollectionTag /></el-icon>
+                    {{ item.source || '未注明来源' }}
+                  </span>
                 </div>
-                <div>
-                  <strong>建议动作</strong>
-                  <p>{{ item.action || '暂无' }}</p>
+                <h3>{{ item.title || '未命名资讯' }}</h3>
+                <p class="news-item-impact">
+                  <strong>影响/价值</strong>
+                  {{ item.impact || '暂无' }}
+                </p>
+                <div class="news-item-action-row">
+                  <p>
+                    <strong>建议动作</strong>
+                    {{ item.action || '暂无' }}
+                  </p>
+                </div>
+                <div v-if="item.url" class="news-item-source-row">
+                  <button type="button" @click="openSource(item.url)">
+                    来源链接
+                    <el-icon><ArrowRight /></el-icon>
+                  </button>
                 </div>
               </div>
             </article>
@@ -371,54 +410,6 @@ onMounted(loadLatestNews)
           </div>
         </article>
       </main>
-
-      <aside class="news-side-column">
-        <section class="news-card news-history-card">
-          <div class="news-card-head">
-            <div>
-              <h3>历史资讯</h3>
-              <span>{{ historyMeta }}</span>
-            </div>
-          </div>
-
-          <div v-if="history.length" class="news-history-list">
-            <button
-              v-for="item in history"
-              :key="item.date"
-              :class="['news-history-item', { active: item.date === activeDate }]"
-              type="button"
-              :disabled="loading.history"
-              @click="loadNewsByDate(item.date)"
-            >
-              <time>{{ item.date }}</time>
-              <span>
-                <strong>{{ item.title || item.date || '每日资讯' }}</strong>
-                <em>{{ item.summary || '暂无摘要。' }}</em>
-              </span>
-              <small>{{ item.item_count || 0 }} 条</small>
-            </button>
-          </div>
-          <div v-else class="news-side-empty">暂无历史资讯</div>
-        </section>
-
-        <section class="news-card news-meta-card">
-          <div>
-            <el-icon><Clock /></el-icon>
-            <span>最近生成</span>
-            <strong>{{ issue ? formatDateTime(issue.generated_at) : '暂无' }}</strong>
-          </div>
-          <div>
-            <el-icon><UserFilled /></el-icon>
-            <span>生成人</span>
-            <strong>{{ issue?.generated_by || '暂无' }}</strong>
-          </div>
-          <div>
-            <el-icon><Link /></el-icon>
-            <span>来源数</span>
-            <strong>{{ isSuperadmin ? configPayload().sources.length : '-' }}</strong>
-          </div>
-        </section>
-      </aside>
     </div>
   </section>
 </template>

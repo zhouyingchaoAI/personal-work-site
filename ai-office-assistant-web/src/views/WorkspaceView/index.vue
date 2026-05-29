@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowRight, Calendar, ChatDotRound, CoffeeCup, Document, Message, Plus, Setting } from '@element-plus/icons-vue'
-import AssistantChat from '../../components/AssistantChat/index.vue'
+import { ArrowRight, Calendar, ChatDotRound, ChatLineSquare, Document, Message, Notebook, Setting } from '@element-plus/icons-vue'
+import DeskPetAssistant from '../../components/DeskPetAssistant/index.vue'
 import AppLayout from '../../layout/AppLayout/index.vue'
 import DiaryView from '../DiaryView/index.vue'
 import ForumView from '../ForumView/index.vue'
@@ -14,40 +14,35 @@ import SettingsView from '../SettingsView/index.vue'
 import TripReportView from '../TripReportView/index.vue'
 import WeeklyReportView from '../WeeklyReportView/index.vue'
 import { authState, logoutSession } from '../../services/authSession'
+import { downloadUrl, getReports, type ReportFile } from '../../services/personalWorkApi'
 import { isMenuId, visibleMenuItems, type MenuId } from '../../layout/menu'
-import { agentChat, type AgentMessage } from '../../services/personalWorkApi'
 import benbenImage from '../../assets/benben.png'
 import homeHeroBanner from '../../assets/home-hero-banner.png'
 import assistantLogo from '../../assets/logo_1.png'
 import {
   focusMomentImage,
   homeAssistantActions,
+  homeCapabilities,
   homeFeatures,
-  homeRecords,
-  homeTodos,
   promptQuestions,
+  type HomeRecordTone,
 } from '../../data/pageData'
 import './index.scss'
 
 const route = useRoute()
 const router = useRouter()
 const focusMinutes = ref(25)
-const assistantOpen = ref(false)
-const assistantInput = ref('')
-const assistantLoading = ref(false)
+const deskPetRef = ref<InstanceType<typeof DeskPetAssistant> | null>(null)
 const currentTime = ref(new Date())
-const todoItems = ref(homeTodos.map((todo) => ({ ...todo })))
-const assistantQuickActions = homeAssistantActions.map((item) => item.label)
-const assistantMessages = ref<AgentMessage[]>([
-  { role: 'assistant', content: '你好，我是犇犇。你可以告诉我想处理的办公事项，我会帮你整理思路或建议下一步。' },
-])
+const recentReports = ref<ReportFile[]>([])
+const recentReportsLoading = ref(false)
+const recentReportsError = ref('')
 const user = computed(() => authState.user)
 const activeMenu = computed<MenuId>(() => {
   const menu = String(route.params.menu || 'weekly')
   return isMenuId(menu) ? menu : 'weekly'
 })
 const menuItems = computed(() => (user.value ? visibleMenuItems(user.value) : []))
-const pendingTodoCount = computed(() => todoItems.value.filter((todo) => !todo.checked).length)
 const homeGreeting = computed(() => greetingByHour(currentTime.value.getHours()))
 let greetingTimer: number | undefined
 
@@ -58,9 +53,32 @@ onMounted(() => {
   }, 60 * 1000)
 })
 
+watch(
+  activeMenu,
+  (menu) => {
+    if (menu === 'dashboard') loadRecentReports()
+  },
+  { immediate: true },
+)
+
 onBeforeUnmount(() => {
   if (greetingTimer) window.clearInterval(greetingTimer)
 })
+
+async function loadRecentReports() {
+  if (recentReportsLoading.value) return
+  recentReportsLoading.value = true
+  recentReportsError.value = ''
+  try {
+    const data = await getReports()
+    // 最近编辑按文件修改时间统一排序，不沿用报告管理列表的分类排序。
+    recentReports.value = data.reports.slice().sort((left, right) => right.mtime - left.mtime).slice(0, 5)
+  } catch (error) {
+    recentReportsError.value = error instanceof Error ? error.message : '最近文档加载失败'
+  } finally {
+    recentReportsLoading.value = false
+  }
+}
 
 function selectMenu(menu: string) {
   if (isMenuId(menu)) router.push(`/workspace/${menu}`)
@@ -87,26 +105,35 @@ function selectAction(label: string) {
   ElMessage.success(`已选择：${label}`)
 }
 
-async function sendAssistantMessage(text = assistantInput.value) {
-  const content = text.trim()
-  if (!content) {
-    ElMessage.warning('请输入要问犇犇的内容')
-    return
-  }
-  if (assistantLoading.value) return
-  assistantOpen.value = true
-  assistantMessages.value.push({ role: 'user', content })
-  assistantInput.value = ''
-  assistantLoading.value = true
-  try {
-    const result = await agentChat('dashboard', assistantMessages.value.slice(-8))
-    if (!result.ok) throw new Error(result.error || 'AI 助手暂时不可用')
-    assistantMessages.value.push({ role: 'assistant', content: result.reply || '我看到了，当前没有新的补充。' })
-  } catch (error) {
-    assistantMessages.value.push({ role: 'assistant', content: error instanceof Error ? error.message : 'AI 助手暂时不可用' })
-  } finally {
-    assistantLoading.value = false
-  }
+function reportDownloadUrl(name: string) {
+  return downloadUrl(`/download?file=${encodeURIComponent(name)}`)
+}
+
+function reportRecordTone(report: ReportFile): HomeRecordTone {
+  return report.kind === 'weekly' ? 'word' : 'excel'
+}
+
+function reportRecordIcon(report: ReportFile) {
+  return report.kind === 'weekly' ? 'W' : 'X'
+}
+
+function reportRecordTag(report: ReportFile) {
+  return report.kind === 'weekly' ? '周报助手' : '出差报告助手'
+}
+
+function formatRecentTime(mtime: number) {
+  const date = new Date(mtime * 1000)
+  const now = currentTime.value
+  const time = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  if (day === today) return `今天 ${time}`
+  if (day === today - 24 * 60 * 60 * 1000) return `昨天 ${time}`
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${time}`
+}
+
+function sendAssistantMessage(text: string) {
+  deskPetRef.value?.sendAction(text)
 }
 
 async function handleLogout() {
@@ -177,21 +204,22 @@ async function handleLogout() {
         <div class="home-panel-title home-panel-title--between">
           <span><el-icon><Document /></el-icon></span>
           <h2>最近编辑</h2>
-          <button type="button" @click="selectAction('全部记录')">全部记录 <el-icon><ArrowRight /></el-icon></button>
         </div>
-        <ul class="home-record-list">
-          <li v-for="item in homeRecords" :key="item.id">
-            <button type="button" @click="selectMenu(item.menuId)">
-              <span :class="['home-record-icon', `home-record-icon--${item.tone}`]">
-                <el-icon v-if="item.tone === 'mail'"><Message /></el-icon>
-                <template v-else>{{ item.iconText }}</template>
+        <ul v-if="recentReports.length" class="home-record-list">
+          <li v-for="item in recentReports" :key="item.name">
+            <a :href="reportDownloadUrl(item.name)" target="_blank" rel="noopener">
+              <span :class="['home-record-icon', `home-record-icon--${reportRecordTone(item)}`]">
+                {{ reportRecordIcon(item) }}
               </span>
-              <strong>{{ item.title }}</strong>
-              <em :class="`home-record-tag--${item.tone}`">{{ item.tag }}</em>
-              <time>{{ item.time }}</time>
-            </button>
+              <strong>{{ item.name }}</strong>
+              <em :class="`home-record-tag--${reportRecordTone(item)}`">{{ reportRecordTag(item) }}</em>
+              <time>{{ formatRecentTime(item.mtime) }}</time>
+            </a>
           </li>
         </ul>
+        <div v-else class="home-record-empty">
+          {{ recentReportsLoading ? '正在加载最近文档...' : recentReportsError || '暂无最近文档' }}
+        </div>
       </section>
     </section>
 
@@ -203,39 +231,27 @@ async function handleLogout() {
     </section>
 
     <aside v-if="activeMenu === 'dashboard'" class="home-side-panel">
-      <section class="home-panel home-todo-panel">
+      <section class="home-panel home-capability-panel">
         <div class="home-side-title">
-          <span><el-icon><Calendar /></el-icon></span>
-          <h2>今日待办</h2>
-          <button type="button" @click="selectAction('更多待办')">更多 <el-icon><ArrowRight /></el-icon></button>
+          <span><el-icon><Setting /></el-icon></span>
+          <h2>当前能力</h2>
         </div>
-        <div class="home-todo-count">
-          <strong>{{ pendingTodoCount }}</strong>
-          <span>项待办</span>
-        </div>
-        <ul v-if="pendingTodoCount" class="home-todo-list">
-          <li v-for="todo in todoItems" :key="todo.id" :class="{ checked: todo.checked }">
-            <label class="home-todo-row">
-              <span class="home-todo-check">
-                <input v-model="todo.checked" type="checkbox" :aria-label="todo.title" />
-                <span aria-hidden="true"></span>
-              </span>
-              <strong>{{ todo.title }}</strong>
-              <time>{{ todo.time }}</time>
-            </label>
+        <ul class="home-capability-list">
+          <li v-for="item in homeCapabilities" :key="item.id" class="home-capability-item">
+            <span class="home-capability-icon">
+              <el-icon>
+                <Calendar v-if="item.icon === 'report'" />
+                <ChatLineSquare v-else-if="item.icon === 'forum'" />
+                <Notebook v-else-if="item.icon === 'news'" />
+                <Message v-else />
+              </el-icon>
+            </span>
+            <div>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.description }}</p>
+            </div>
           </li>
         </ul>
-        <div v-else class="home-todo-empty">
-          <div class="home-todo-empty__icon" aria-hidden="true">
-            <el-icon><CoffeeCup /></el-icon>
-          </div>
-          <strong>暂无待办事项</strong>
-          <p>太棒了！今天的工作都已处理完<br />喝杯咖啡休息一下吧~</p>
-          <button type="button" @click="selectAction('新建待办')">
-            <el-icon><Plus /></el-icon>
-            新建待办
-          </button>
-        </div>
       </section>
 
       <section class="home-panel home-ai-panel">
@@ -251,7 +267,7 @@ async function handleLogout() {
           </div>
           <img class="home-ai-mascot" :src="benbenImage" alt="犇犇 AI助手" />
         </div>
-        <button class="home-ai-primary" type="button" @click="assistantOpen = true">
+        <button class="home-ai-primary" type="button" @click="deskPetRef?.wake()">
           <el-icon><ChatDotRound /></el-icon>
           问问犇犇
         </button>
@@ -301,15 +317,6 @@ async function handleLogout() {
       </section>
     </aside>
 
-    <AssistantChat
-      v-model:open="assistantOpen"
-      v-model:input="assistantInput"
-      :avatar="assistantLogo"
-      title="犇犇"
-      :messages="assistantMessages"
-      :quick-actions="assistantQuickActions"
-      :loading="assistantLoading"
-      @send="sendAssistantMessage"
-    />
+    <DeskPetAssistant ref="deskPetRef" :active-menu="activeMenu" :user-name="user.name || user.username" />
   </AppLayout>
 </template>
