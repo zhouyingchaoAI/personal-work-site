@@ -1019,7 +1019,7 @@
     }
 
     async function loadMcpLobsters() {
-      if (!state.user?.is_superadmin) return;
+      if (!state.user?.is_superadmin && !state.user?.is_admin) return;
       const box = el('mcpLobsterList');
       if (!box) return;
       box.innerHTML = '<span class="hint">正在加载龙虾列表...</span>';
@@ -1065,7 +1065,7 @@
     };
 
     async function loadMcpConfig() {
-      if (!state.user?.is_superadmin) return;
+      if (!state.user?.is_superadmin && !state.user?.is_admin) return;
       el('mcpStatus').textContent = '';
       el('mcpStatus').className = 'status';
       try {
