@@ -874,6 +874,10 @@ export function installMcpToLobster(agentId: number) {
   return post<McpLobsterInstallResponse>('/install-mcp-to-lobster', { agent_id: agentId })
 }
 
+export function restartLobster(agentId: number) {
+  return post<{ ok: boolean; error?: string }>('/restart-lobster', { agent_id: agentId })
+}
+
 export function deleteReport(name: string) {
   return post<{ ok: boolean; deleted: string }>('/delete-report', { name })
 }

@@ -43,6 +43,7 @@ import {
   testMailConfig,
   updateAdminUser,
   installMcpToLobster,
+  restartLobster,
   type AdminConfig,
   type AgentConfig,
   type LobsterAgent,
@@ -147,6 +148,9 @@ const orchestration = ref<{
   skills: SkillDefinition[]
   skill_mode_suffix: string
 } | null>(null)
+const installMcpDialog = ref(false)
+const pendingInstallAgent = ref<LobsterAgent | null>(null)
+const mcpRestartLoading = ref(false)
 const agentConfigDialog = ref(false)
 const agentConfigTab = ref<'prompts' | 'workflows'>('prompts')
 const agentPromptDraft = reactive<Record<string, string>>({})
@@ -755,24 +759,41 @@ async function handleClearMcpSecret() {
   }
 }
 
-async function handleInstallMcpToLobster(agent: LobsterAgent) {
+function handleInstallMcpToLobster(agent: LobsterAgent) {
   if (!mcpEnabled.value) {
     ElMessage.warning('请先生成 MCP 密钥')
     return
   }
+  pendingInstallAgent.value = agent
+  installMcpDialog.value = true
+}
+
+async function confirmInstallMcp(withRestart: boolean) {
+  const agent = pendingInstallAgent.value
+  if (!agent) return
+  installMcpDialog.value = false
   installingLobsterId.value = agent.agent_id
   loading.mcpInstall = true
   lobsterStatus.value = `正在安装到「${agent.agent_name}」...`
   try {
     const result = await installMcpToLobster(agent.agent_id)
     if (!result.ok) throw new Error(result.error || result.detail || '安装失败')
-    lobsterStatus.value = `已成功安装到「${agent.agent_name}」，重启龙虾后生效。`
+    if (withRestart) {
+      lobsterStatus.value = `安装成功，正在重启「${agent.agent_name}」...`
+      mcpRestartLoading.value = true
+      await restartLobster(agent.agent_id)
+      lobsterStatus.value = `已成功安装并重启「${agent.agent_name}」，MCP 服务即时生效。`
+    } else {
+      lobsterStatus.value = `已成功安装到「${agent.agent_name}」，重启龙虾后生效。`
+    }
     await loadLobsters()
   } catch (error) {
     lobsterStatus.value = errorMessage(error)
   } finally {
     installingLobsterId.value = null
     loading.mcpInstall = false
+    mcpRestartLoading.value = false
+    pendingInstallAgent.value = null
   }
 }
 
@@ -1350,6 +1371,20 @@ X-MCP-Username: &lt;username&gt;           ← 使用哪个账号的数据空间
       <template #footer>
         <button class="settings-button settings-button--ghost" type="button" @click="agentConfigDialog = false">取消</button>
         <button class="settings-button settings-button--primary" type="button" :disabled="loading.saveAgentConfig" @click="handleSaveAgentConfig">保存配置</button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="installMcpDialog" title="安装 MCP 服务" width="420px" class="settings-dialog" :close-on-click-modal="false">
+      <p style="margin: 0 0 8px;">
+        确认将 MCP 服务安装到「<strong>{{ pendingInstallAgent?.agent_name }}</strong>」？
+      </p>
+      <p style="margin: 0; color: var(--color-text-secondary, #888); font-size: 13px;">
+        安装后需要重启龙虾才能使 MCP 工具生效。您也可以稍后手动重启。
+      </p>
+      <template #footer>
+        <button class="settings-button settings-button--ghost" type="button" @click="installMcpDialog = false">取消</button>
+        <button class="settings-button settings-button--ghost" type="button" :disabled="loading.mcpInstall" @click="confirmInstallMcp(false)">仅安装</button>
+        <button class="settings-button settings-button--primary" type="button" :disabled="loading.mcpInstall" @click="confirmInstallMcp(true)">安装并重启</button>
       </template>
     </el-dialog>
 

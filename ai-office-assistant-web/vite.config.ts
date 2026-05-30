@@ -9,7 +9,10 @@ export default defineConfig(({ mode }) => {
   const backend = new URL(backendUrl)
   const backendBasePath = backend.pathname === '/' ? '' : backend.pathname
 
+  const appBase = backendBasePath ? backendBasePath + '/' : '/'
+
   return {
+    base: appBase,
     plugins: [vue()],
     server: {
       host: '0.0.0.0',

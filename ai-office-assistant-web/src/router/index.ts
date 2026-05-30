@@ -5,7 +5,7 @@ import { authState, ensureSession } from '../services/authSession'
 import { defaultMenuForUser, isMenuId, isMenuVisible } from '../layout/menu'
 
 export const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/', redirect: '/workspace/weekly' },
     { path: '/login', component: LoginView, meta: { public: true } },

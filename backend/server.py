@@ -142,8 +142,8 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(raw)
             return
         if parsed.path.startswith("/assets/"):
-            asset_name = Path(urllib.parse.unquote(parsed.path)).name
-            path = BASE_DIR / "assets" / asset_name
+            rel = Path(urllib.parse.unquote(parsed.path[len("/assets/"):])).name
+            path = FRONTEND_DIR / "assets" / rel
             if not path.exists() or not path.is_file():
                 self.send_json({"error": "Not found"}, status=404)
                 return
@@ -492,6 +492,27 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(raw)
             return
+        # Serve static root files from FRONTEND_DIR (e.g. /logo.ico, /favicon.svg)
+        static_path = FRONTEND_DIR / Path(urllib.parse.unquote(parsed.path)).name
+        if parsed.path.count("/") == 1 and static_path.exists() and static_path.is_file() and not parsed.path.startswith("/api"):
+            raw = static_path.read_bytes()
+            ctype, _ = mimetypes.guess_type(str(static_path))
+            self.send_response(200)
+            self.send_header("Content-Type", ctype or "application/octet-stream")
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        # SPA fallback: serve index.html for non-API, non-file paths
+        if not parsed.path.startswith("/api") and not parsed.path.startswith("/mcp") and "." not in Path(parsed.path).name:
+            raw = app_html().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
         self.send_json({"error": "Not found"}, status=404)
 
     def do_POST(self):
@@ -683,6 +704,23 @@ class Handler(BaseHTTPRequestHandler):
                     result = json.loads(resp.read().decode("utf-8"))
                 if not result.get("ok"):
                     raise ValueError(result.get("detail") or "安装失败")
+            elif parsed.path == "/api/restart-lobster":
+                if not self.require_admin():
+                    return
+                agent_id = int(payload.get("agent_id", 0))
+                if not agent_id:
+                    raise ValueError("agent_id is required")
+                token = _openclaw_sso_token(public_user(self.current_user()))
+                target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                req = urllib.request.Request(
+                    f"{target}/api/agents/{agent_id}/restart",
+                    data=b"{}",
+                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+                    method="POST",
+                )
+                with opener.open(req, timeout=30) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
             else:
                 self.send_json({"error": "Not found"}, status=404)
                 return

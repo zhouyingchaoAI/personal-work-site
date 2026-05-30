@@ -17,6 +17,7 @@ services:
     volumes:
       - ./backend:/app/backend
       - ./frontend:/app/frontend
+      - ./ai-office-assistant-web/dist:/app/ai-office-assistant-web/dist
       - ./app.py:/app/app.py
       - ./config.json:/app/config.json
       - ./user_data:/app/user_data
