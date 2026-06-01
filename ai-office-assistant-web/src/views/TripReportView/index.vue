@@ -7,6 +7,7 @@ import {
   Delete,
   Document,
   Download,
+  FullScreen,
   Promotion,
   Setting,
   Upload,
@@ -127,6 +128,7 @@ const selectedReport = ref('')
 const reports = ref<ReportFile[]>([])
 const historyPanelOpen = ref(false)
 const attachmentPreviewOpen = ref(false)
+const mailBodyPreviewOpen = ref(false)
 const reportPanelCollapsed = ref(false)
 const historyUploadInput = ref<HTMLInputElement | null>(null)
 const templateUploadInput = ref<HTMLInputElement | null>(null)
@@ -494,9 +496,9 @@ async function loadTripPrefill(force = false) {
     const restored = force ? false : restoreTripDraft()
     setStatus(
       prefill.source
-        ? restored ? '已恢复上次未生成的出差报告草稿' : `已获取最新历史出差报告：${prefill.source}`
-        : '没有找到可用于预填的历史出差报告，已生成空白模板',
-      prefill.source ? 'ok' : 'normal',
+        ? restored ? '已恢复上次未生成的出差报告草稿' : `已获取最新历史出差报告：${prefill.source}，并自动填入当前模板。`
+        : '没有找到可用于预填的历史出差报告。',
+      prefill.source ? 'ok' : 'error',
     )
     return true
   } catch (error) {
@@ -708,10 +710,27 @@ async function sendReport() {
     ElMessage.warning(blockers.join('；'))
     return
   }
+  const toCount = splitRecipients(payload.to).length
+  const ccCount = splitRecipients(payload.cc).length
+  const recipientText = `收件人 ${toCount} 人${ccCount ? `，抄送 ${ccCount} 人` : ''}`
+  try {
+    await ElMessageBox.confirm(`确认发送当前出差报告邮件吗？\n${recipientText}\n主题：${payload.subject}`, '发送确认', {
+      confirmButtonText: '发送',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') setStatus(error instanceof Error ? error.message : '发送确认失败', 'error')
+    return
+  }
   loading.send = true
   try {
     const result = await sendMail(payload)
-    ElMessage.success(result.mode === 'sent' ? '邮件已发送' : result.message)
+    loading.send = false
+    void ElMessageBox.alert(result.mode === 'sent' ? '邮件已发送' : result.message, result.mode === 'sent' ? '发送成功' : '处理完成', {
+      confirmButtonText: '知道了',
+      type: 'success',
+    }).catch(() => undefined)
   } catch (error) {
     setStatus(error instanceof Error ? error.message : '发送失败', 'error')
   } finally {
@@ -1097,15 +1116,35 @@ onMounted(initializeTrip)
 
       <section class="trip-mail-compose">
         <div class="trip-mail-form">
-          <label>
+          <label class="trip-mail-address-row">
             <span>收件人 <em>*</em></span>
-            <el-select v-model="toRecipients" multiple filterable allow-create default-first-option placeholder="添加收件人">
+            <el-select
+              v-model="toRecipients"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              collapse-tags
+              collapse-tags-tooltip
+              :max-collapse-tags="3"
+              placeholder="添加收件人"
+            >
               <el-option v-for="item in toRecipients" :key="item" :label="item" :value="item" />
             </el-select>
           </label>
-          <label>
+          <label class="trip-mail-address-row">
             <span>抄送</span>
-            <el-select v-model="ccRecipients" multiple filterable allow-create default-first-option placeholder="添加抄送">
+            <el-select
+              v-model="ccRecipients"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              collapse-tags
+              collapse-tags-tooltip
+              :max-collapse-tags="3"
+              placeholder="添加抄送"
+            >
               <el-option v-for="item in ccRecipients" :key="item" :label="item" :value="item" />
             </el-select>
           </label>
@@ -1115,7 +1154,12 @@ onMounted(initializeTrip)
           </label>
           <div class="trip-mail-body-preview-row">
             <span>邮件正文 <em>*</em></span>
-            <div class="trip-mail-body-preview trip-html" v-html="mailBodyPreviewHtml"></div>
+            <div class="trip-mail-body-preview-wrap">
+              <button class="trip-mail-body-fullscreen" type="button" aria-label="全屏查看邮件正文" @click="mailBodyPreviewOpen = true">
+                <el-icon><FullScreen /></el-icon>
+              </button>
+              <div class="trip-mail-body-preview trip-html" v-html="mailBodyPreviewHtml"></div>
+            </div>
           </div>
           <div class="trip-mail-attachment-status">
             <span class="trip-mail-field-label">附件状态</span>
@@ -1185,7 +1229,7 @@ onMounted(initializeTrip)
       v-model="historyPanelOpen"
       class="trip-history-drawer"
       direction="rtl"
-      size="420px"
+      size="42rem"
       append-to-body
       title="历史报告管理"
     >
@@ -1265,7 +1309,7 @@ onMounted(initializeTrip)
       v-model="promptDialogVisible"
       class="trip-prompt-dialog"
       :title="promptDialogTitle"
-      width="min(620px, 94vw)"
+      width="min(62rem, 94vw)"
       append-to-body
       destroy-on-close
       :close-on-click-modal="false"
@@ -1277,6 +1321,17 @@ onMounted(initializeTrip)
           <el-button class="prompt-dialog-button prompt-dialog-button--primary" @click="savePromptEditor">保存</el-button>
         </div>
       </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="mailBodyPreviewOpen"
+      class="trip-mail-body-dialog"
+      title="邮件正文"
+      fullscreen
+      append-to-body
+      destroy-on-close
+    >
+      <div class="trip-mail-body-dialog-preview trip-html" v-html="mailBodyPreviewHtml"></div>
     </el-dialog>
 
   </section>

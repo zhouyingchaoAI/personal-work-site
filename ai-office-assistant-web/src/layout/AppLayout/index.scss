@@ -19,7 +19,7 @@ $layout-gap: 24px;
   --layout-bottom-pad: 18px;
 
   display: grid;
-  height: 100vh;
+  height: 100dvh;
   min-height: 0;
   grid-template-columns: $sidebar-width minmax(0, 1fr);
   grid-template-rows: $header-height minmax(0, 1fr);
@@ -46,7 +46,7 @@ $layout-gap: 24px;
   display: flex;
   width: $sidebar-width;
   min-width: 0;
-  height: calc(100vh - 28px);
+  height: calc(100dvh - 2.8rem);
   grid-row: 1 / -1;
   flex-direction: column;
   align-self: start;

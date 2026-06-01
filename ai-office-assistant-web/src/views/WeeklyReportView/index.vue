@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import { Calendar, Delete, Document, Download, EditPen, Setting, Upload, View } from '@element-plus/icons-vue'
+import { Calendar, Delete, Document, Download, EditPen, FullScreen, Setting, Upload, View } from '@element-plus/icons-vue'
 import IconTextButton from '../../components/IconTextButton/index.vue'
 import weeklyEmptyPlaceholder from '../../assets/weekly-empty-placeholder.png'
 import { authState, defaultOptimizePrompt } from '../../services/authSession'
@@ -187,6 +187,7 @@ const promptEditor = ref<RowField | ''>('')
 const promptDraft = ref('')
 const historyPanelOpen = ref(false)
 const attachmentPreviewOpen = ref(false)
+const mailBodyPreviewOpen = ref(false)
 const reportPanelCollapsed = ref(false)
 const historyUploadInput = ref<HTMLInputElement | null>(null)
 const templateUploadInput = ref<HTMLInputElement | null>(null)
@@ -458,10 +459,6 @@ function applyRowsBySection(rows: WeeklyRowsBySection) {
   syncActiveSectionToFirstFilled()
 }
 
-function hasWeeklyRows(rows: WeeklyRowsBySection) {
-  return Object.values(rows).some((sectionRows) => sectionRows.some((row) => Object.values(row).some((value) => String(value || '').trim())))
-}
-
 function sectionDisplayTitle(title: string) {
   return title.replace(/^[一二三]、/, '')
 }
@@ -485,60 +482,6 @@ function selectSection(sectionId: SectionId) {
   commitEditSilently()
   activeSectionId.value = sectionId
   selectFirstRowInSection(sectionId)
-}
-
-// 历史草稿正文保留三段结构，用它还原可编辑行。
-function parseDraftRows(body: string): WeeklyRowsBySection {
-  const rows: WeeklyRowsBySection = { summary: [], follow: [], next: [] }
-  let sectionId: SectionId | '' = ''
-  let row: WeeklyRowPayload | null = null
-  const saveRow = () => {
-    if (sectionId && row && Object.values(row).some((value) => String(value || '').trim())) rows[sectionId].push(row)
-    row = null
-  }
-
-  body.split('\n').forEach((line) => {
-    const text = line.trim()
-    if (!text) return
-    if (text === '一、本周工作总结') {
-      saveRow()
-      sectionId = 'summary'
-      return
-    }
-    if (text === '二、重点工作跟进') {
-      saveRow()
-      sectionId = 'follow'
-      return
-    }
-    if (text === '三、下周工作计划') {
-      saveRow()
-      sectionId = 'next'
-      return
-    }
-    if (!sectionId) return
-    if (text.startsWith('本周主要工作内容') || text.startsWith('如有需要补充')) {
-      saveRow()
-      sectionId = ''
-      return
-    }
-
-    const category = text.match(/^【(.+)】$/)
-    if (category) {
-      saveRow()
-      row = { category: category[1].trim() }
-      return
-    }
-
-    if (!row) row = {}
-    if (text.startsWith('完成情况：')) row.status = text.replace('完成情况：', '').trim()
-    else if (text.startsWith('后续计划：')) row.plan = text.replace('后续计划：', '').trim()
-    else if (text.startsWith('当前进展：')) row.progress = text.replace('当前进展：', '').trim()
-    else if (text.startsWith('困难与求助：')) row.difficulty = text.replace('困难与求助：', '').trim()
-    else row.content = [row.content, text.replace(/^\d+[.、．\s]+/, '')].filter(Boolean).join('\n')
-  })
-
-  saveRow()
-  return rows
 }
 
 function rowPayload(sectionId: SectionId, row: WeeklyRow) {
@@ -971,11 +914,6 @@ async function loadDraft(name: string) {
 }
 
 async function loadLatestHistory(showSuccess = true) {
-  if (!weeklyReports.value.length) {
-    setStatus('暂无历史周报，可先手动新增内容。', 'normal')
-    return
-  }
-  const latestReport = weeklyReports.value[0]
   loading.prefill = true
   try {
     const prefill = await getWeeklyPrefill()
@@ -988,10 +926,15 @@ async function loadLatestHistory(showSuccess = true) {
       follow: prefill.follow_rows || [],
       next: prefill.next_rows || [],
     }
-    const draft = await getDraft('weekly', latestReport.name)
-    const draftRows = parseDraftRows(draft.body || '')
-    applyRowsBySection(hasWeeklyRows(draftRows) ? draftRows : prefillRows)
-    if (showSuccess) setStatus(`已获取最新历史周报：${prefill.source || latestReport.name}`, 'ok')
+    applyRowsBySection(prefillRows)
+    if (showSuccess) {
+      setStatus(
+        prefill.source
+          ? `已获取最新历史周报：${prefill.source}。上次“下周计划”已写入本次“本周工作总结”，重点工作跟进已复制，下周工作计划已按本周分类预填、内容待补充。`
+          : '没有找到可用于预填的历史周报。',
+        prefill.source ? 'ok' : 'error',
+      )
+    }
     activeStep.value = 1
     markReportDirty()
     saveWeeklyDraft()
@@ -1197,10 +1140,27 @@ async function confirmSend() {
     sendBlockers.value = blockers
     return
   }
+  const toCount = splitRecipients(payload.to).length
+  const ccCount = splitRecipients(payload.cc).length
+  const recipientText = `收件人 ${toCount} 人${ccCount ? `，抄送 ${ccCount} 人` : ''}`
+  try {
+    await ElMessageBox.confirm(`确认发送当前周报邮件吗？\n${recipientText}\n主题：${payload.subject}`, '发送确认', {
+      confirmButtonText: '发送',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') setStatus(error instanceof Error ? error.message : '发送确认失败', 'error')
+    return
+  }
   loading.send = true
   try {
     const result = await sendMail(payload)
-    ElMessage.success(result.mode === 'sent' ? '邮件已发送' : result.message)
+    loading.send = false
+    void ElMessageBox.alert(result.mode === 'sent' ? '邮件已发送' : result.message, result.mode === 'sent' ? '发送成功' : '处理完成', {
+      confirmButtonText: '知道了',
+      type: 'success',
+    }).catch(() => undefined)
   } catch (error) {
     setStatus(error instanceof Error ? error.message : '邮件发送失败', 'error')
   } finally {
@@ -1319,7 +1279,7 @@ onMounted(initializeWeekly)
           <IconTextButton icon="sparkle" size="md" :disabled="loading.summarize" @click="summarizeFromDiaries">
             从工作日记智能总结
           </IconTextButton>
-          <IconTextButton icon="history" size="md" :disabled="loading.prefill" @click="loadLatestHistory">
+          <IconTextButton icon="history" size="md" :disabled="loading.prefill" @click="loadLatestHistory(true)">
             获取最新历史报告
           </IconTextButton>
         </div>
@@ -1527,15 +1487,35 @@ onMounted(initializeWeekly)
       </aside>
 
       <section class="mail-compose-card">
-        <div class="mail-row">
+        <div class="mail-row mail-address-row">
           <span>收件人</span>
-          <el-select v-model="toRecipients" multiple filterable allow-create default-first-option placeholder="添加收件人">
+          <el-select
+            v-model="toRecipients"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            collapse-tags
+            collapse-tags-tooltip
+            :max-collapse-tags="3"
+            placeholder="添加收件人"
+          >
             <el-option v-for="item in toRecipients" :key="item" :label="item" :value="item" />
           </el-select>
         </div>
-        <div class="mail-row">
+        <div class="mail-row mail-address-row">
           <span>抄送</span>
-          <el-select v-model="ccRecipients" multiple filterable allow-create default-first-option placeholder="添加抄送">
+          <el-select
+            v-model="ccRecipients"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            collapse-tags
+            collapse-tags-tooltip
+            :max-collapse-tags="3"
+            placeholder="添加抄送"
+          >
             <el-option v-for="item in ccRecipients" :key="item" :label="item" :value="item" />
           </el-select>
         </div>
@@ -1545,7 +1525,12 @@ onMounted(initializeWeekly)
         </div>
         <div class="mail-body-preview-row">
           <span>邮件正文</span>
-          <div class="mail-body-preview" v-html="mailBodyPreviewHtml"></div>
+          <div class="mail-body-preview-wrap">
+            <button class="mail-body-fullscreen" type="button" aria-label="全屏查看邮件正文" @click="mailBodyPreviewOpen = true">
+              <el-icon><FullScreen /></el-icon>
+            </button>
+            <div class="mail-body-preview" v-html="mailBodyPreviewHtml"></div>
+          </div>
         </div>
         <div class="mail-attachment-status">
           <span>附件状态</span>
@@ -1571,7 +1556,7 @@ onMounted(initializeWeekly)
       v-model="historyPanelOpen"
       class="weekly-history-drawer"
       direction="rtl"
-      size="420px"
+      size="42rem"
       append-to-body
       title="历史报告管理"
     >
@@ -1669,7 +1654,7 @@ onMounted(initializeWeekly)
       v-model="promptDialogVisible"
       class="weekly-prompt-dialog"
       :title="promptDialogTitle"
-      width="min(620px, 94vw)"
+      width="min(62rem, 94vw)"
       append-to-body
       destroy-on-close
       :close-on-click-modal="false"
@@ -1681,6 +1666,17 @@ onMounted(initializeWeekly)
           <el-button class="prompt-dialog-button prompt-dialog-button--primary" @click="savePromptEditor">保存</el-button>
         </div>
       </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="mailBodyPreviewOpen"
+      class="mail-body-preview-dialog"
+      title="邮件正文"
+      fullscreen
+      append-to-body
+      destroy-on-close
+    >
+      <div class="mail-body-dialog-preview" v-html="mailBodyPreviewHtml"></div>
     </el-dialog>
 
     <section class="wizard-footer">

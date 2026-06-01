@@ -486,9 +486,7 @@ $shadow-panel: 0 14px 34px rgba(79, 112, 170, 0.08);
 .trip-action-bar {
   @include panel;
 
-  position: sticky;
   z-index: 20;
-  bottom: 0;
   display: flex;
   grid-column: 1 / -1;
   min-width: 0;
@@ -666,6 +664,7 @@ $shadow-panel: 0 14px 34px rgba(79, 112, 170, 0.08);
 
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .trip-attachment-paper {
@@ -892,6 +891,7 @@ $shadow-panel: 0 14px 34px rgba(79, 112, 170, 0.08);
   grid-template-columns: 82px minmax(0, 1fr);
   grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
   gap: 10px 12px;
+  overflow: hidden;
 
   label {
     display: grid;
@@ -940,6 +940,40 @@ $shadow-panel: 0 14px 34px rgba(79, 112, 170, 0.08);
   }
 }
 
+.trip-mail-address-row {
+  align-items: start;
+
+  > span {
+    padding-top: 11px;
+  }
+
+  .el-select__wrapper {
+    max-height: 76px;
+    align-items: center;
+    overflow-y: auto;
+  }
+
+  .el-select__selection {
+    min-width: 0;
+    align-items: center;
+  }
+
+  .el-select__placeholder {
+    display: flex;
+    align-items: center;
+    line-height: 1;
+  }
+
+  .el-tag {
+    max-width: min(260px, 32%);
+  }
+
+  .el-select__tags-text {
+    @include ellipsis;
+    display: block;
+  }
+}
+
 .trip-mail-body-preview-row {
   display: grid;
   grid-column: 1 / -1;
@@ -962,18 +996,68 @@ $shadow-panel: 0 14px 34px rgba(79, 112, 170, 0.08);
   }
 }
 
+.trip-mail-body-preview-wrap {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+.trip-mail-body-fullscreen {
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid $border;
+  border-radius: 6px;
+  color: $primary;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 8px 20px rgba(21, 73, 156, 0.1);
+  cursor: pointer;
+
+  &:hover {
+    border-color: rgba(21, 73, 156, 0.42);
+    background: #f4f8ff;
+  }
+}
+
 .trip-mail-body-preview {
   min-width: 0;
   height: 100%;
-  min-height: 300px;
+  min-height: 0;
   overflow: auto;
-  padding: 14px 16px;
+  padding: 40px 16px 14px;
   border: 1px solid $border;
   border-radius: 6px;
   color: #263754;
   background: #ffffff;
   box-sizing: border-box;
   font-size: 13px;
+  line-height: 1.75;
+}
+
+.trip-mail-body-dialog {
+  .el-dialog__body {
+    height: calc(100dvh - 61px);
+    padding: 16px 20px 20px;
+    overflow: hidden;
+  }
+}
+
+.trip-mail-body-dialog-preview {
+  height: 100%;
+  overflow: auto;
+  padding: 16px 18px;
+  border: 1px solid $border;
+  border-radius: 6px;
+  color: #263754;
+  background: #ffffff;
+  font-size: 14px;
   line-height: 1.75;
 }
 
@@ -1481,7 +1565,7 @@ $shadow-panel: 0 14px 34px rgba(79, 112, 170, 0.08);
   }
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1199px) {
   .trip-main {
     overflow-y: auto;
   }
@@ -1545,7 +1629,11 @@ $shadow-panel: 0 14px 34px rgba(79, 112, 170, 0.08);
   }
 
   .trip-mail-panel {
-    min-height: 760px;
+    min-height: max-content;
+  }
+
+  .trip-mail-body-preview {
+    min-height: 320px;
   }
 }
 

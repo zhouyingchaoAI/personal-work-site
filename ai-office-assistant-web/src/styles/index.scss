@@ -1,3 +1,13 @@
+html {
+  font-size: 10px;
+}
+
+@media (min-width: 1200px) {
+  html {
+    font-size: clamp(7.2px, min(0.598086vw, 1.062699vh), 10px);
+  }
+}
+
 :root {
   --color-primary: #15499c;
   --color-primary-hover: #1d5cab;
@@ -32,8 +42,10 @@
 
 body {
   min-width: 320px;
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 100dvh;
   margin: 0;
+  overflow: hidden;
 }
 
 button,
@@ -46,7 +58,8 @@ button {
 }
 
 #app {
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
 }
 
 .text-button {
