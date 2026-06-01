@@ -396,6 +396,20 @@ export interface MailConfig {
   imap_password_masked?: string
   imap_ssl: boolean
   email_signature: string
+  personal_email: string
+  personal_smtp_host: string
+  personal_smtp_port: number
+  personal_smtp_user: string
+  personal_smtp_password?: string
+  personal_smtp_password_masked?: string
+  personal_smtp_ssl: boolean
+  personal_smtp_tls: boolean
+  personal_imap_host: string
+  personal_imap_port: number
+  personal_imap_user: string
+  personal_imap_password?: string
+  personal_imap_password_masked?: string
+  personal_imap_ssl: boolean
   reference?: Partial<MailConfig>
 }
 
@@ -583,6 +597,50 @@ export interface McpLobsterInstallResponse {
 }
 
 export type AgentKind = 'weekly' | 'trip' | 'diary' | 'mailassistant' | 'news' | 'forum' | 'dashboard'
+
+export interface ReimbursementItem {
+  key: string
+  email_uid?: string
+  email_subject?: string
+  email_date?: string
+  email_from?: string
+  filename: string
+  size: number
+  content_type?: string
+  is_pdf: boolean
+  is_image: boolean
+  is_ofd?: boolean
+  is_stub?: boolean
+  source_url?: string
+  email_body?: string
+  source?: 'mail' | 'upload'
+  included?: boolean
+  invoice_type?: string
+  invoice_date?: string
+  invoice_amount?: string
+  invoice_location?: string
+  invoice_from?: string
+  invoice_to?: string
+}
+
+export interface ReimbursementScanResponse {
+  ok: boolean
+  items: ReimbursementItem[]
+  total_scanned: number
+  error?: string
+}
+
+export interface ReimbursementMergeResponse {
+  ok: boolean
+  filename: string
+  pages: number
+  error?: string
+}
+
+export interface ReimbursementUploadResponse extends ReimbursementItem {
+  ok?: boolean
+  error?: string
+}
 
 const backendUrl = import.meta.env.VITE_PERSONAL_WORK_BACKEND_URL?.replace(/\/$/, '') || ''
 const backendOrigin = backendUrl ? new URL(backendUrl).origin : ''
@@ -790,8 +848,8 @@ export function saveMailConfig(payload: Partial<MailConfig>) {
   return post<MailConfigSaveResponse>('/mail-config', payload)
 }
 
-export function testMailConfig() {
-  return post<MailConfigTestResponse>('/test-mail-config', {})
+export function testMailConfig(account: 'company' | 'personal' = 'company') {
+  return post<MailConfigTestResponse>('/test-mail-config', { account })
 }
 
 export function getAdminConfig() {
@@ -926,4 +984,61 @@ export function mcpEndpointUrl() {
 export function openclawPlatformUrl(path: string) {
   if (/^https?:\/\//.test(path)) return path
   return backendOrigin && path.startsWith('/') ? `${backendOrigin}${path}` : path
+}
+
+export function scanInvoiceAttachments(start: string, end: string, account: 'company' | 'personal') {
+  return request<ReimbursementScanResponse>(`/reimbursement/scan?start=${start}&end=${end}&account=${account}`)
+}
+
+export function uploadReimbursementFile(filename: string, dataB64: string) {
+  return post<ReimbursementUploadResponse>('/reimbursement/upload', { filename, data: dataB64 })
+}
+
+export interface ReimbursementFetchUrlResponse extends Partial<ReimbursementItem> {
+  ok: boolean
+  spa?: boolean
+  error?: string
+}
+
+export function fetchReimbursementUrl(url: string, hintSubject?: string, hintBody?: string) {
+  return post<ReimbursementFetchUrlResponse>('/reimbursement/fetch-url', {
+    url,
+    hint_subject: hintSubject || '',
+    hint_body: hintBody || '',
+  })
+}
+
+export function mergeReimbursementPdf(items: { key: string }[], outputName: string) {
+  return post<ReimbursementMergeResponse>('/reimbursement/merge', { items, output_name: outputName })
+}
+
+export interface ReimbursementEmailResponse {
+  ok: boolean
+  subject?: string
+  from?: string
+  date?: string
+  html?: string
+  attachments?: string[]
+  error?: string
+}
+
+export function fetchReimbursementEmail(uid: string, account: 'company' | 'personal') {
+  return request<ReimbursementEmailResponse>(
+    `/reimbursement/email?uid=${encodeURIComponent(uid)}&account=${account}`,
+  )
+}
+
+export function reimbursementAttachmentUrl(key: string, download = false) {
+  const base = backendUrl ? `${backendUrl}/api` : '/personal-work-api'
+  return `${base}/reimbursement/attachment?key=${encodeURIComponent(key)}${download ? '&download=1' : ''}`
+}
+
+export function reimbursementOfdPreviewUrl(key: string) {
+  const base = backendUrl ? `${backendUrl}/api` : '/personal-work-api'
+  return `${base}/reimbursement/ofd-preview?key=${encodeURIComponent(key)}`
+}
+
+export function reimbursementOutputUrl(filename: string) {
+  const base = backendUrl ? `${backendUrl}/api` : '/personal-work-api'
+  return `${base}/reimbursement/output?name=${encodeURIComponent(filename)}`
 }

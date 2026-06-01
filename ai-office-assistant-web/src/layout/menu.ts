@@ -12,6 +12,7 @@ import {
   Tools,
   UserFilled,
   Suitcase,
+  Tickets,
 } from '@element-plus/icons-vue'
 import type { User } from '../services/personalWorkApi'
 
@@ -23,6 +24,7 @@ export type MenuId =
   | 'forum'
   | 'news'
   | 'mailassistant'
+  | 'reimbursement'
   | 'lobsterbase'
   | 'help'
   | 'mailconfig'
@@ -54,6 +56,7 @@ export const sidebarMenuItems: SidebarMenuItem[] = [
   { id: 'forum', label: '金点子论坛', icon: Opportunity, iconTone: 'orange', group: 'main', roles: ['member', 'admin', 'superadmin'] },
   { id: 'news', label: '每日资讯', icon: Reading, iconTone: 'deep-blue', group: 'main', roles: ['member', 'admin', 'superadmin'] },
   { id: 'mailassistant', label: '邮件助手', icon: Message, iconTone: 'blue', group: 'main', roles: ['member', 'admin', 'superadmin'] },
+  { id: 'reimbursement', label: '报销助手', icon: Tickets, iconTone: 'orange', group: 'main', roles: ['member', 'admin', 'superadmin'] },
   { id: 'lobsterbase', label: '龙虾基地', icon: Ship, iconTone: 'green', group: 'main', roles: ['member', 'admin', 'superadmin'] },
   { id: 'config', label: '设置', icon: Setting, iconTone: 'line', group: 'footer', roles: ['member', 'admin', 'superadmin'] },
   // { id: 'help', label: '帮助与反馈', icon: QuestionFilled, iconTone: 'line', group: 'footer', roles: ['member', 'admin', 'superadmin'] },

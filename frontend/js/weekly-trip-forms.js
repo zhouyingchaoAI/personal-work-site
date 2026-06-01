@@ -32,7 +32,8 @@
     }
 
     function rowPreview(row) {
-      const parts = [row.category, row.content, row.status, row.progress, row.plan, row.difficulty]
+      // 工作分类已在卡片标题展示，预览只保留工作内容等正文，避免占行导致编号被截断。
+      const parts = [row.content, row.status, row.progress, row.plan, row.difficulty]
         .map(value => String(value || '').trim())
         .filter(Boolean);
       return parts.join('\n') || '点击填写任务内容';

@@ -346,6 +346,18 @@ def user_mail_config(username):
         "imap_password": settings.get("imap_password", "") or settings.get("smtp_password", ""),
         "imap_ssl": bool(config.get("imap_ssl", True)),
         "email_signature": settings.get("email_signature", default_email_signature_for_user(username)),
+        "personal_email": settings.get("personal_email", ""),
+        "personal_smtp_host": settings.get("personal_smtp_host", ""),
+        "personal_smtp_port": int(settings.get("personal_smtp_port") or 587),
+        "personal_smtp_user": settings.get("personal_smtp_user", ""),
+        "personal_smtp_password": settings.get("personal_smtp_password", ""),
+        "personal_smtp_ssl": bool(settings.get("personal_smtp_ssl", False)),
+        "personal_smtp_tls": bool(settings.get("personal_smtp_tls", True)),
+        "personal_imap_host": settings.get("personal_imap_host", ""),
+        "personal_imap_port": int(settings.get("personal_imap_port") or 993),
+        "personal_imap_user": settings.get("personal_imap_user", ""),
+        "personal_imap_password": settings.get("personal_imap_password", ""),
+        "personal_imap_ssl": bool(settings.get("personal_imap_ssl", True)),
         "reference": reference,
     }
 
@@ -370,13 +382,39 @@ def save_user_mail_config(username, payload):
         settings["smtp_user"] = settings.get("smtp_user") or settings["user_email"]
     if settings.get("smtp_user"):
         settings["imap_user"] = settings.get("imap_user") or settings["smtp_user"]
+    personal_str_fields = ["personal_email", "personal_smtp_host", "personal_smtp_user", "personal_imap_host", "personal_imap_user"]
+    for field in personal_str_fields:
+        if field in payload:
+            settings[field] = str(payload.get(field, "") or "").strip()
+    if payload.get("personal_smtp_port"):
+        settings["personal_smtp_port"] = int(payload.get("personal_smtp_port") or 587)
+    if payload.get("personal_imap_port"):
+        settings["personal_imap_port"] = int(payload.get("personal_imap_port") or 993)
+    if "personal_smtp_ssl" in payload:
+        settings["personal_smtp_ssl"] = bool(payload.get("personal_smtp_ssl"))
+    if "personal_smtp_tls" in payload:
+        settings["personal_smtp_tls"] = bool(payload.get("personal_smtp_tls"))
+    if "personal_imap_ssl" in payload:
+        settings["personal_imap_ssl"] = bool(payload.get("personal_imap_ssl"))
+    if payload.get("personal_smtp_password"):
+        settings["personal_smtp_password"] = str(payload.get("personal_smtp_password") or "").strip()
+    if payload.get("personal_imap_password"):
+        settings["personal_imap_password"] = str(payload.get("personal_imap_password") or "").strip()
+    if settings.get("personal_email") and not settings.get("personal_smtp_user"):
+        settings["personal_smtp_user"] = settings["personal_email"]
+    if settings.get("personal_smtp_user") and not settings.get("personal_imap_user"):
+        settings["personal_imap_user"] = settings["personal_smtp_user"]
     write_config(config)
     clear_mail_cache(username)
     result = user_mail_config(username)
     result["smtp_password_masked"] = "已配置" if result.get("smtp_password") else "未配置"
     result["imap_password_masked"] = "已配置" if result.get("imap_password") else "未配置"
+    result["personal_smtp_password_masked"] = "已配置" if result.get("personal_smtp_password") else "未配置"
+    result["personal_imap_password_masked"] = "已配置" if result.get("personal_imap_password") else "未配置"
     result.pop("smtp_password", None)
     result.pop("imap_password", None)
+    result.pop("personal_smtp_password", None)
+    result.pop("personal_imap_password", None)
     return {"ok": True, "mail_config": result}
 
 

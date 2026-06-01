@@ -1,6 +1,6 @@
 /* Frontend stylesheet manifest. Feature styles live in frontend/css/. */
 @import url("/personal-office-assistant/frontend/css/base.css");
-@import url("/personal-office-assistant/frontend/css/reports.css");
+@import url("/personal-office-assistant/frontend/css/reports.css?v=20260601b");
 @import url("/personal-office-assistant/frontend/css/admin-mail.css");
 @import url("/personal-office-assistant/frontend/css/diary-forum-news.css");
 @import url("/personal-office-assistant/frontend/css/agent.css");

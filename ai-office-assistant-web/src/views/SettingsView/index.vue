@@ -55,6 +55,7 @@ import {
 import './index.scss'
 
 type SettingsTab = 'mailconfig' | 'config' | 'skills' | 'usermanage' | 'mcp'
+type MailTab = 'company' | 'personal'
 
 const props = defineProps<{
   activeMenu: MenuId
@@ -66,6 +67,7 @@ const emit = defineEmits<{
 
 const user = computed(() => authState.user)
 const activeTab = ref<SettingsTab>('mailconfig')
+const activeMailTab = ref<MailTab>('company')
 const loadedTabs = reactive<Record<SettingsTab, boolean>>({
   mailconfig: false,
   config: false,
@@ -77,6 +79,8 @@ const loading = reactive({
   mailConfig: false,
   saveMail: false,
   testMail: false,
+  savePersonalMail: false,
+  testPersonalMail: false,
   adminConfig: false,
   saveAdmin: false,
   models: false,
@@ -108,6 +112,20 @@ const mailForm = reactive({
   trip_cc: '',
   email_signature: '',
 })
+const personalMailForm = reactive({
+  personal_email: '',
+  personal_smtp_host: '',
+  personal_smtp_port: 587,
+  personal_smtp_user: '',
+  personal_smtp_password: '',
+  personal_smtp_ssl: false,
+  personal_smtp_tls: true,
+  personal_imap_host: '',
+  personal_imap_port: 993,
+  personal_imap_user: '',
+  personal_imap_password: '',
+  personal_imap_ssl: true,
+})
 const mailMeta = reactive({
   smtp_password_masked: '',
   imap_password_masked: '',
@@ -117,6 +135,8 @@ const mailMeta = reactive({
   imap_host: '',
   imap_port: 993,
   imap_ssl: true,
+  personal_smtp_password_masked: '',
+  personal_imap_password_masked: '',
 })
 const mailReference = ref<Partial<MailConfig>>({})
 
@@ -302,6 +322,20 @@ function applyMailConfig(data: MailConfig) {
   mailMeta.imap_host = data.imap_host || ''
   mailMeta.imap_port = data.imap_port || 993
   mailMeta.imap_ssl = !!data.imap_ssl
+  personalMailForm.personal_email = data.personal_email || ''
+  personalMailForm.personal_smtp_host = data.personal_smtp_host || ''
+  personalMailForm.personal_smtp_port = data.personal_smtp_port || 587
+  personalMailForm.personal_smtp_user = data.personal_smtp_user || ''
+  personalMailForm.personal_smtp_password = ''
+  personalMailForm.personal_smtp_ssl = !!data.personal_smtp_ssl
+  personalMailForm.personal_smtp_tls = data.personal_smtp_tls !== false
+  personalMailForm.personal_imap_host = data.personal_imap_host || ''
+  personalMailForm.personal_imap_port = data.personal_imap_port || 993
+  personalMailForm.personal_imap_user = data.personal_imap_user || ''
+  personalMailForm.personal_imap_password = ''
+  personalMailForm.personal_imap_ssl = data.personal_imap_ssl !== false
+  mailMeta.personal_smtp_password_masked = data.personal_smtp_password_masked || '未配置'
+  mailMeta.personal_imap_password_masked = data.personal_imap_password_masked || '未配置'
   mailReference.value = data.reference || {}
 }
 
@@ -335,6 +369,25 @@ function mailConfigPayload() {
   }
 }
 
+function personalMailConfigPayload() {
+  const email = personalMailForm.personal_email.trim()
+  const smtpUser = personalMailForm.personal_smtp_user.trim() || email
+  return {
+    personal_email: email,
+    personal_smtp_host: personalMailForm.personal_smtp_host.trim(),
+    personal_smtp_port: personalMailForm.personal_smtp_port,
+    personal_smtp_user: smtpUser,
+    personal_smtp_password: personalMailForm.personal_smtp_password,
+    personal_smtp_ssl: personalMailForm.personal_smtp_ssl,
+    personal_smtp_tls: personalMailForm.personal_smtp_tls,
+    personal_imap_host: personalMailForm.personal_imap_host.trim(),
+    personal_imap_port: personalMailForm.personal_imap_port,
+    personal_imap_user: personalMailForm.personal_imap_user.trim() || smtpUser,
+    personal_imap_password: personalMailForm.personal_imap_password,
+    personal_imap_ssl: personalMailForm.personal_imap_ssl,
+  }
+}
+
 async function handleSaveMailConfig() {
   loading.saveMail = true
   try {
@@ -352,13 +405,40 @@ async function handleTestMailConfig() {
   loading.testMail = true
   try {
     await saveMailConfig(mailConfigPayload())
-    const result = await testMailConfig()
+    const result = await testMailConfig('company')
     await loadMailConfig()
     ElMessage.success(result.message || '邮箱配置测试成功')
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
     loading.testMail = false
+  }
+}
+
+async function handleSavePersonalMailConfig() {
+  loading.savePersonalMail = true
+  try {
+    const result = await saveMailConfig(personalMailConfigPayload())
+    applyMailConfig(result.mail_config)
+    ElMessage.success('个人邮箱配置已保存')
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.savePersonalMail = false
+  }
+}
+
+async function handleTestPersonalMailConfig() {
+  loading.testPersonalMail = true
+  try {
+    await saveMailConfig(personalMailConfigPayload())
+    const result = await testMailConfig('personal')
+    await loadMailConfig()
+    ElMessage.success(result.message || '个人邮箱配置测试成功')
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.testPersonalMail = false
   }
 }
 
@@ -874,84 +954,170 @@ onMounted(() => {
           </button>
         </div>
 
-        <div class="settings-grid">
-          <label>
-            <span>本人邮箱</span>
-            <input v-model="mailForm.user_email" :placeholder="mailReference.user_email" />
-          </label>
-          <label>
-            <span>SMTP 发件地址</span>
-            <input v-model="mailForm.smtp_from" :placeholder="mailReference.smtp_from" />
-          </label>
-          <label>
-            <span>SMTP 用户名</span>
-            <input v-model="mailForm.smtp_user" :placeholder="mailReference.smtp_user" />
-            <em>留空保存时会自动使用本人邮箱。</em>
-          </label>
-          <label>
-            <span>SMTP 授权码/密码</span>
-            <input v-model="mailForm.smtp_password" type="password" placeholder="留空则保持原密码不变" />
-            <em>状态：{{ mailMeta.smtp_password_masked }}</em>
-          </label>
-          <div class="settings-info-box">
-            <span>SMTP 服务器（全局）</span>
-            <strong>{{ mailMeta.smtp_host || 'smtp.263.net' }}</strong>
-          </div>
-          <div class="settings-info-box">
-            <span>SMTP 端口 / SSL</span>
-            <strong>{{ mailMeta.smtp_port }} / {{ mailMeta.smtp_ssl ? 'SSL' : 'TLS' }}</strong>
-          </div>
+        <div class="settings-mail-tabs">
+          <button
+            :class="{ active: activeMailTab === 'company' }"
+            type="button"
+            @click="activeMailTab = 'company'"
+          >
+            公司邮箱
+            <em v-if="mailForm.user_email">{{ mailForm.user_email }}</em>
+            <em v-else class="unconfigured">未配置</em>
+          </button>
+          <button
+            :class="{ active: activeMailTab === 'personal' }"
+            type="button"
+            @click="activeMailTab = 'personal'"
+          >
+            个人邮箱
+            <em v-if="personalMailForm.personal_email">{{ personalMailForm.personal_email }}</em>
+            <em v-else class="unconfigured">未配置</em>
+          </button>
         </div>
 
-        <h4 class="settings-subtitle">收件箱 IMAP</h4>
-        <div class="settings-grid">
-          <label>
-            <span>IMAP 用户名</span>
-            <input v-model="mailForm.imap_user" :placeholder="mailReference.imap_user" />
-            <em>留空保存时会自动使用 SMTP 用户名。</em>
-          </label>
-          <label>
-            <span>IMAP 授权码/密码</span>
-            <input v-model="mailForm.imap_password" type="password" placeholder="留空则保持原密码不变" />
-            <em>状态：{{ mailMeta.imap_password_masked }}</em>
-          </label>
-          <div class="settings-info-box">
-            <span>IMAP 服务器（全局）</span>
-            <strong>{{ mailMeta.imap_host || 'imap.263.net' }}</strong>
+        <template v-if="activeMailTab === 'company'">
+          <div class="settings-grid">
+            <label>
+              <span>本人邮箱</span>
+              <input v-model="mailForm.user_email" :placeholder="mailReference.user_email" />
+            </label>
+            <label>
+              <span>SMTP 发件地址</span>
+              <input v-model="mailForm.smtp_from" :placeholder="mailReference.smtp_from" />
+            </label>
+            <label>
+              <span>SMTP 用户名</span>
+              <input v-model="mailForm.smtp_user" :placeholder="mailReference.smtp_user" />
+              <em>留空保存时会自动使用本人邮箱。</em>
+            </label>
+            <label>
+              <span>SMTP 授权码/密码</span>
+              <input v-model="mailForm.smtp_password" type="password" placeholder="留空则保持原密码不变" />
+              <em>状态：{{ mailMeta.smtp_password_masked }}</em>
+            </label>
+            <div class="settings-info-box">
+              <span>SMTP 服务器（全局）</span>
+              <strong>{{ mailMeta.smtp_host || 'smtp.263.net' }}</strong>
+            </div>
+            <div class="settings-info-box">
+              <span>SMTP 端口 / SSL</span>
+              <strong>{{ mailMeta.smtp_port }} / {{ mailMeta.smtp_ssl ? 'SSL' : 'TLS' }}</strong>
+            </div>
           </div>
-          <div class="settings-info-box">
-            <span>IMAP 端口 / SSL</span>
-            <strong>{{ mailMeta.imap_port }} / {{ mailMeta.imap_ssl ? 'SSL' : '非 SSL' }}</strong>
-          </div>
-        </div>
 
-        <h4 class="settings-subtitle">报告邮件</h4>
-        <div class="settings-grid">
-          <label>
-            <span>周报收件人</span>
-            <input v-model="mailForm.weekly_to" :placeholder="mailReference.weekly_to" />
-          </label>
-          <label>
-            <span>周报抄送</span>
-            <input v-model="mailForm.weekly_cc" :placeholder="mailReference.weekly_cc" />
-          </label>
-          <label>
-            <span>出差报告收件人</span>
-            <input v-model="mailForm.trip_to" :placeholder="mailReference.trip_to" />
-          </label>
-          <label>
-            <span>出差报告抄送</span>
-            <input v-model="mailForm.trip_cc" :placeholder="mailReference.trip_cc" />
-          </label>
-          <label class="settings-field-full">
-            <span>邮件签名模板</span>
-            <textarea v-model="mailForm.email_signature" placeholder="留空则使用默认签名"></textarea>
-          </label>
-        </div>
-        <div class="settings-actions">
-          <button class="settings-button settings-button--ghost" type="button" :disabled="loading.saveMail" @click="handleSaveMailConfig">保存我的邮件配置</button>
-          <button class="settings-button settings-button--primary" type="button" :disabled="loading.testMail" @click="handleTestMailConfig">测试我的邮箱配置</button>
-        </div>
+          <h4 class="settings-subtitle">收件箱 IMAP</h4>
+          <div class="settings-grid">
+            <label>
+              <span>IMAP 用户名</span>
+              <input v-model="mailForm.imap_user" :placeholder="mailReference.imap_user" />
+              <em>留空保存时会自动使用 SMTP 用户名。</em>
+            </label>
+            <label>
+              <span>IMAP 授权码/密码</span>
+              <input v-model="mailForm.imap_password" type="password" placeholder="留空则保持原密码不变" />
+              <em>状态：{{ mailMeta.imap_password_masked }}</em>
+            </label>
+            <div class="settings-info-box">
+              <span>IMAP 服务器（全局）</span>
+              <strong>{{ mailMeta.imap_host || 'imap.263.net' }}</strong>
+            </div>
+            <div class="settings-info-box">
+              <span>IMAP 端口 / SSL</span>
+              <strong>{{ mailMeta.imap_port }} / {{ mailMeta.imap_ssl ? 'SSL' : '非 SSL' }}</strong>
+            </div>
+          </div>
+
+          <h4 class="settings-subtitle">报告邮件</h4>
+          <div class="settings-grid">
+            <label>
+              <span>周报收件人</span>
+              <input v-model="mailForm.weekly_to" :placeholder="mailReference.weekly_to" />
+            </label>
+            <label>
+              <span>周报抄送</span>
+              <input v-model="mailForm.weekly_cc" :placeholder="mailReference.weekly_cc" />
+            </label>
+            <label>
+              <span>出差报告收件人</span>
+              <input v-model="mailForm.trip_to" :placeholder="mailReference.trip_to" />
+            </label>
+            <label>
+              <span>出差报告抄送</span>
+              <input v-model="mailForm.trip_cc" :placeholder="mailReference.trip_cc" />
+            </label>
+            <label class="settings-field-full">
+              <span>邮件签名模板</span>
+              <textarea v-model="mailForm.email_signature" placeholder="留空则使用默认签名"></textarea>
+            </label>
+          </div>
+          <div class="settings-actions">
+            <button class="settings-button settings-button--ghost" type="button" :disabled="loading.saveMail" @click="handleSaveMailConfig">保存</button>
+            <button class="settings-button settings-button--primary" type="button" :disabled="loading.testMail" @click="handleTestMailConfig">测试连接</button>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="settings-grid">
+            <label>
+              <span>邮箱地址</span>
+              <input v-model="personalMailForm.personal_email" placeholder="yourname@gmail.com" />
+            </label>
+            <label>
+              <span>SMTP 用户名</span>
+              <input v-model="personalMailForm.personal_smtp_user" placeholder="留空则使用邮箱地址" />
+            </label>
+            <label>
+              <span>SMTP 授权码/密码</span>
+              <input v-model="personalMailForm.personal_smtp_password" type="password" placeholder="留空则保持原密码不变" />
+              <em>状态：{{ mailMeta.personal_smtp_password_masked }}</em>
+            </label>
+            <label>
+              <span>SMTP 服务器</span>
+              <input v-model="personalMailForm.personal_smtp_host" placeholder="smtp.gmail.com" />
+            </label>
+            <label>
+              <span>SMTP 端口</span>
+              <input v-model.number="personalMailForm.personal_smtp_port" type="number" placeholder="587" />
+            </label>
+            <label class="settings-check">
+              <input v-model="personalMailForm.personal_smtp_ssl" type="checkbox" />
+              <span>使用 SSL</span>
+            </label>
+            <label class="settings-check">
+              <input v-model="personalMailForm.personal_smtp_tls" type="checkbox" />
+              <span>使用 TLS (STARTTLS)</span>
+            </label>
+          </div>
+
+          <h4 class="settings-subtitle">收件箱 IMAP</h4>
+          <div class="settings-grid">
+            <label>
+              <span>IMAP 服务器</span>
+              <input v-model="personalMailForm.personal_imap_host" placeholder="imap.gmail.com" />
+            </label>
+            <label>
+              <span>IMAP 端口</span>
+              <input v-model.number="personalMailForm.personal_imap_port" type="number" placeholder="993" />
+            </label>
+            <label>
+              <span>IMAP 用户名</span>
+              <input v-model="personalMailForm.personal_imap_user" placeholder="留空则使用 SMTP 用户名" />
+            </label>
+            <label>
+              <span>IMAP 授权码/密码</span>
+              <input v-model="personalMailForm.personal_imap_password" type="password" placeholder="留空则保持原密码不变" />
+              <em>状态：{{ mailMeta.personal_imap_password_masked }}</em>
+            </label>
+            <label class="settings-check">
+              <input v-model="personalMailForm.personal_imap_ssl" type="checkbox" />
+              <span>使用 SSL 连接 IMAP</span>
+            </label>
+          </div>
+          <div class="settings-actions">
+            <button class="settings-button settings-button--ghost" type="button" :disabled="loading.savePersonalMail" @click="handleSavePersonalMailConfig">保存</button>
+            <button class="settings-button settings-button--primary" type="button" :disabled="loading.testPersonalMail" @click="handleTestPersonalMailConfig">测试连接</button>
+          </div>
+        </template>
       </section>
 
       <section v-else-if="activeTab === 'config'" class="settings-panel">

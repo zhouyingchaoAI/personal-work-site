@@ -334,8 +334,12 @@ class Handler(BaseHTTPRequestHandler):
             data = user_mail_config(username)
             data["smtp_password_masked"] = "已配置" if data.get("smtp_password") else "未配置"
             data["imap_password_masked"] = "已配置" if data.get("imap_password") else "未配置"
+            data["personal_smtp_password_masked"] = "已配置" if data.get("personal_smtp_password") else "未配置"
+            data["personal_imap_password_masked"] = "已配置" if data.get("personal_imap_password") else "未配置"
             data.pop("smtp_password", None)
             data.pop("imap_password", None)
+            data.pop("personal_smtp_password", None)
+            data.pop("personal_imap_password", None)
             self.send_json(data)
             return
         if parsed.path == "/api/mailbox":
@@ -377,6 +381,87 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{encoded_name}")
             self.end_headers()
             self.wfile.write(raw)
+            return
+        if parsed.path == "/api/reimbursement/scan":
+            qs = urllib.parse.parse_qs(parsed.query)
+            username = self.current_user().get("username", "")
+            start = qs.get("start", [""])[0]
+            end = qs.get("end", [""])[0]
+            account = qs.get("account", ["company"])[0]
+            try:
+                self.send_json(scan_invoice_attachments(username, start, end, account))
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if parsed.path == "/api/reimbursement/email":
+            qs = urllib.parse.parse_qs(parsed.query)
+            username = self.current_user().get("username", "")
+            uid = qs.get("uid", [""])[0]
+            account = qs.get("account", ["company"])[0]
+            try:
+                self.send_json(get_reimbursement_email_html(username, account, uid))
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if parsed.path == "/api/reimbursement/attachment":
+            qs = urllib.parse.parse_qs(parsed.query)
+            username = self.current_user().get("username", "")
+            key = qs.get("key", [""])[0]
+            try:
+                path = get_reimbursement_attachment(username, key)
+                if not path or not path.exists():
+                    self.send_json({"ok": False, "error": "附件不存在"}, status=404)
+                    return
+                raw = path.read_bytes()
+                display_name = path.name.split("__", 1)[1] if "__" in path.name else path.name
+                download = qs.get("download", ["0"])[0] == "1"
+                self.send_response(200)
+                self.send_header("Content-Type", mail_part_content_type_from_name(display_name, raw))
+                self.send_header("Content-Length", str(len(raw)))
+                if download:
+                    encoded_name = urllib.parse.quote(display_name)
+                    self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{encoded_name}")
+                self.end_headers()
+                self.wfile.write(raw)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if parsed.path == "/api/reimbursement/ofd-preview":
+            qs = urllib.parse.parse_qs(parsed.query)
+            username = self.current_user().get("username", "")
+            key = qs.get("key", [""])[0]
+            try:
+                png = render_ofd_preview(username, key)
+                if not png:
+                    self.send_json({"ok": False, "error": "OFD 渲染失败或不支持"}, status=404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(png)))
+                self.end_headers()
+                self.wfile.write(png)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if parsed.path == "/api/reimbursement/output":
+            qs = urllib.parse.parse_qs(parsed.query)
+            username = self.current_user().get("username", "")
+            filename = qs.get("name", [""])[0]
+            try:
+                path = reimbursement_output_dir(username) / Path(filename).name
+                if not path.exists():
+                    self.send_json({"ok": False, "error": "文件不存在"}, status=404)
+                    return
+                raw = path.read_bytes()
+                encoded_name = urllib.parse.quote(path.name)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/pdf")
+                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{encoded_name}")
+                self.end_headers()
+                self.wfile.write(raw)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
             return
         if parsed.path == "/api/reports":
             username = self.current_user().get("username", "")
@@ -613,10 +698,22 @@ class Handler(BaseHTTPRequestHandler):
                 result = change_password(payload, username)
             elif parsed.path == "/api/profile":
                 result = save_user_profile(payload, username)
+            elif parsed.path == "/api/reimbursement/upload":
+                result = save_reimbursement_upload(username, payload.get("filename", "attachment"), payload.get("data", ""))
+            elif parsed.path == "/api/reimbursement/fetch-url":
+                result = fetch_and_save_url(
+                    username,
+                    payload.get("url", ""),
+                    payload.get("hint_subject", ""),
+                    payload.get("hint_body", ""),
+                )
+            elif parsed.path == "/api/reimbursement/merge":
+                result = merge_reimbursement_pdf(username, payload.get("items", []), payload.get("output_name", "报销附件"))
             elif parsed.path == "/api/mail-config":
                 result = save_user_mail_config(username, payload)
             elif parsed.path == "/api/test-mail-config":
-                result = test_user_mail_config(username)
+                account = str(payload.get("account") or "company").strip()
+                result = test_user_mail_config(username, account)
             elif parsed.path == "/api/admin-config":
                 if not self.require_admin():
                     return

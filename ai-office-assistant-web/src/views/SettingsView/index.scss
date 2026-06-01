@@ -1150,6 +1150,74 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
   line-height: 1.6;
 }
 
+.settings-mail-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid $border;
+
+  button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 10px 20px 12px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: $text-muted;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: color 0.15s;
+
+    em {
+      font-style: normal;
+      font-size: 11px;
+      font-weight: 400;
+      color: $text-muted;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+
+      &.unconfigured {
+        color: #bbb;
+      }
+    }
+
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -2px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: transparent;
+      border-radius: 2px 2px 0 0;
+      transition: background 0.15s;
+    }
+
+    &:hover {
+      color: $primary;
+    }
+
+    &.active {
+      color: $primary;
+
+      em {
+        color: $primary;
+        opacity: 0.7;
+      }
+
+      &::after {
+        background: $primary;
+      }
+    }
+  }
+}
+
 @media (max-width: 1180px) {
   .settings-page-head {
     grid-template-columns: 1fr;

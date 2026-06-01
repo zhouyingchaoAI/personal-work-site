@@ -9,6 +9,7 @@ import DiaryView from '../DiaryView/index.vue'
 import ForumView from '../ForumView/index.vue'
 import LobsterBaseView from '../LobsterBaseView/index.vue'
 import MailAssistantView from '../MailAssistantView/index.vue'
+import ReimbursementView from '../ReimbursementView/index.vue'
 import NewsView from '../NewsView/index.vue'
 import SettingsView from '../SettingsView/index.vue'
 import TripReportView from '../TripReportView/index.vue'
@@ -157,6 +158,7 @@ async function handleLogout() {
     <ForumView v-else-if="activeMenu === 'forum'" />
     <NewsView v-else-if="activeMenu === 'news'" />
     <MailAssistantView v-else-if="activeMenu === 'mailassistant'" />
+    <ReimbursementView v-else-if="activeMenu === 'reimbursement'" />
     <LobsterBaseView v-else-if="activeMenu === 'lobsterbase'" />
     <SettingsView
       v-else-if="['config', 'mailconfig', 'skills', 'usermanage', 'mcp'].includes(activeMenu)"
@@ -287,7 +289,7 @@ async function handleLogout() {
       </section>
     </aside>
 
-    <aside v-else-if="!['weekly', 'trip', 'diary', 'forum', 'news', 'mailassistant', 'lobsterbase', 'config', 'mailconfig', 'skills', 'usermanage', 'mcp'].includes(activeMenu)" class="assistant-panel">
+    <aside v-else-if="!['weekly', 'trip', 'diary', 'forum', 'news', 'mailassistant', 'reimbursement', 'lobsterbase', 'config', 'mailconfig', 'skills', 'usermanage', 'mcp'].includes(activeMenu)" class="assistant-panel">
       <section class="assistant-hero">
         <div class="speech-bubble">
           Hi，{{ user.name || user.username }}！今天想先从哪件事开始呢？

@@ -29,6 +29,25 @@ def smtp_settings(username=None):
     }
 
 
+def smtp_settings_personal(username):
+    mail = user_mail_config(username)
+    return {
+        "host": mail.get("personal_smtp_host", ""),
+        "port": int(mail.get("personal_smtp_port") or 587),
+        "user": mail.get("personal_smtp_user", ""),
+        "password": mail.get("personal_smtp_password", ""),
+        "from_addr": mail.get("personal_email", ""),
+        "use_ssl": bool(mail.get("personal_smtp_ssl", False)),
+        "use_tls": bool(mail.get("personal_smtp_tls", True)),
+    }
+
+
+def smtp_settings_for_account(username, account="company"):
+    if account == "personal":
+        return smtp_settings_personal(username)
+    return smtp_settings(username)
+
+
 def imap_settings(username=None):
     mail = user_mail_config(username)
     return {
@@ -38,6 +57,23 @@ def imap_settings(username=None):
         "password": mail.get("imap_password", "") or mail.get("smtp_password", ""),
         "use_ssl": bool(mail.get("imap_ssl", True)),
     }
+
+
+def imap_settings_personal(username):
+    mail = user_mail_config(username)
+    return {
+        "host": mail.get("personal_imap_host", ""),
+        "port": int(mail.get("personal_imap_port") or 993),
+        "user": mail.get("personal_imap_user", "") or mail.get("personal_smtp_user", ""),
+        "password": mail.get("personal_imap_password", ""),
+        "use_ssl": bool(mail.get("personal_imap_ssl", True)),
+    }
+
+
+def imap_settings_for_account(username, account="company"):
+    if account == "personal":
+        return imap_settings_personal(username)
+    return imap_settings(username)
 
 
 def validate_smtp_ready(settings):
@@ -64,8 +100,8 @@ def validate_imap_ready(settings):
         raise ValueError("当前账号收件箱未配置完整，缺少：" + "、".join(missing) + "。请到左侧“邮件配置”补充后再查看邮件。")
 
 
-def test_user_mail_config(username):
-    settings = smtp_settings(username)
+def test_user_mail_config(username, account="company"):
+    settings = smtp_settings_for_account(username, account)
     validate_smtp_ready(settings)
     if settings["use_ssl"]:
         with smtplib.SMTP_SSL(settings["host"], settings["port"], context=ssl.create_default_context(), timeout=20) as smtp:
@@ -75,11 +111,23 @@ def test_user_mail_config(username):
             if settings["use_tls"]:
                 smtp.starttls(context=ssl.create_default_context())
             smtp.login(settings["user"], settings["password"])
-    return {"ok": True, "message": "邮箱配置测试成功，可以正常登录 SMTP。"}
+    label = "个人邮箱" if account == "personal" else "公司邮箱"
+    return {"ok": True, "message": f"{label}配置测试成功，可以正常登录 SMTP。"}
 
 
 def imap_connect(username):
     settings = imap_settings(username)
+    validate_imap_ready(settings)
+    if settings["use_ssl"]:
+        box = imaplib.IMAP4_SSL(settings["host"], settings["port"], timeout=20)
+    else:
+        box = imaplib.IMAP4(settings["host"], settings["port"], timeout=20)
+    box.login(settings["user"], settings["password"])
+    return box
+
+
+def imap_connect_for_account(username, account="company"):
+    settings = imap_settings_for_account(username, account)
     validate_imap_ready(settings)
     if settings["use_ssl"]:
         box = imaplib.IMAP4_SSL(settings["host"], settings["port"], timeout=20)
@@ -465,10 +513,13 @@ def append_email_signature_html(body_html, username=None):
     return html.rstrip() + f'<p>{sig_html}</p>'
 
 
-def build_message(payload, username=None):
-    settings = smtp_settings(username)
+def build_message(payload, username=None, account="company"):
+    settings = smtp_settings_for_account(username, account)
     mail_cfg = user_mail_config(username)
-    user_email = mail_cfg.get("user_email", "")
+    if account == "personal":
+        user_email = mail_cfg.get("personal_email", "")
+    else:
+        user_email = mail_cfg.get("user_email", "")
     from_addr = payload.get("from") or user_email or settings["from_addr"] or settings["user"]
     if not from_addr:
         from_addr = "no-reply@local"

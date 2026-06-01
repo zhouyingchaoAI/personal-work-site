@@ -143,6 +143,13 @@ const pageConfigs: Record<MenuId, DeskPetConfig> = {
     summary: '我可以说明连接配置、检查密钥状态，或帮你梳理外部客户端接入步骤。',
     actions: ['检查 MCP 状态', '说明连接配置', '梳理接入步骤'],
   },
+  reimbursement: {
+    agent: 'dashboard',
+    title: '报销助手',
+    intro: 'Hi~ 我可以帮你整理报销单据。',
+    summary: '我可以帮你检查发票信息、整理报销说明，或汇总本次报销的费用明细。',
+    actions: ['检查发票信息', '整理报销说明', '汇总费用明细'],
+  },
 }
 
 const currentConfig = computed(() => pageConfigs[props.activeMenu])

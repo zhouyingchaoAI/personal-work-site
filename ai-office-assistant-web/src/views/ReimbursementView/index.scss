@@ -1,0 +1,647 @@
+$primary: #15499c;
+$text: #273653;
+$text-muted: #65748d;
+$border: #dce7f6;
+
+.reimbursement-main {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.reimbursement-header {
+  flex-shrink: 0;
+  padding: 16px 32px 14px;
+  border-bottom: 1px solid $border;
+  h1 { margin: 0 0 2px; font-size: 20px; font-weight: 800; color: $text; }
+  p  { margin: 0; font-size: 12px; color: $text-muted; }
+}
+
+.reimbursement-body {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 32px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+// ── 扫描控制栏 ──
+.reimbursement-scan-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.reimbursement-scan-fields {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.scan-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  > span { font-size: 12px; font-weight: 600; color: $text-muted; }
+}
+
+.reimbursement-datepicker { width: 280px !important; }
+
+.reimbursement-account-toggle {
+  display: inline-flex;
+  border: 1px solid $border;
+  border-radius: 8px;
+  overflow: hidden;
+  button {
+    padding: 7px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 0;
+    background: transparent;
+    color: $text-muted;
+    cursor: pointer;
+    &.active { background: $primary; color: #fff; }
+    &:hover:not(.active) { background: #f0f4ff; color: $primary; }
+  }
+}
+
+.reimbursement-scan-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+.reimbursement-scan-status {
+  margin: 0;
+  font-size: 13px;
+  color: $text-muted;
+  padding: 8px 12px;
+  background: #f8fbff;
+  border-radius: 8px;
+  border: 1px solid $border;
+}
+
+// ── 列表区域 ──
+.reimbursement-list-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reimbursement-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: $text-muted;
+  font-weight: 600;
+}
+
+// ── 表格 ──
+// 外层：固定高度 + 纵向滚动；内层：宽度至少 860px + 横向滚动
+.reimbursement-table {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid $border;
+  border-radius: 12px;
+  overflow: auto;           // 纵横都可滚动
+  background: #fff;
+}
+
+$grid-cols: 32px 24px minmax(160px, 1fr) 88px 118px 88px 188px 52px 48px 88px;
+
+.reimbursement-table__head {
+  display: grid;
+  grid-template-columns: $grid-cols;
+  align-items: center;
+  min-width: 908px;          // 防止整体过窄
+  padding: 8px 12px;
+  background: #f4f8ff;
+  border-bottom: 1px solid $border;
+  font-size: 11px;
+  font-weight: 700;
+  color: $text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+
+  > * { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+}
+
+.reimbursement-table__row {
+  display: grid;
+  grid-template-columns: $grid-cols;
+  align-items: center;
+  min-width: 908px;          // 与表头一致
+  padding: 10px 12px;
+  gap: 8px;
+  border-bottom: 1px solid $border;
+  transition: background 0.12s, opacity 0.15s;
+  cursor: default;
+
+  > * { min-width: 0; }       // 防止格子内容撑出列宽
+
+  &:last-child { border-bottom: 0; }
+  &:hover { background: #f8fbff; }
+  &.row--excluded { opacity: 0.4; }
+  &.row--dragging { opacity: 0.5; background: #edf4ff; }
+  &.row--dragover {
+    border-top: 2px solid $primary;
+    background: #edf4ff;
+  }
+}
+
+// 列
+.col-check {
+  display: flex; align-items: center; justify-content: center;
+  input[type='checkbox'] { width: 15px; height: 15px; accent-color: $primary; cursor: pointer; }
+}
+
+.col-drag {
+  display: flex; align-items: center; justify-content: center;
+  cursor: grab;
+  &:active { cursor: grabbing; }
+}
+
+.drag-handle {
+  font-size: 16px;
+  color: #bbb;
+  line-height: 1;
+  user-select: none;
+  &:hover { color: $primary; }
+}
+
+// 文件列
+.file-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.file-thumb {
+  position: relative;
+  width: 52px;
+  height: 40px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f0f4fa;
+  flex-shrink: 0;
+  cursor: pointer;
+
+  img { width: 100%; height: 100%; object-fit: cover; }
+
+  .pdf-icon {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 800; color: #e53935;
+  }
+
+  .file-thumb__overlay {
+    position: absolute; inset: 0;
+    background: rgba(21, 73, 156, 0.55);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 16px;
+    opacity: 0; transition: opacity 0.15s;
+  }
+
+  &:hover .file-thumb__overlay { opacity: 1; }
+}
+
+.file-meta {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  strong {
+    font-size: 13px; font-weight: 700; color: $text;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  em {
+    font-style: normal; font-size: 11px; color: $text-muted;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  span { font-size: 11px; color: #aaa; }
+}
+
+// 发票类型选择器
+.type-select {
+  width: 80px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid transparent;
+  cursor: pointer;
+  appearance: none;
+  text-align: center;
+
+  &--purple  { background: #f3e5f5; color: #7b1fa2; border-color: #ce93d8; }
+  &--green   { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
+  &--blue    { background: #e3f2fd; color: #1565c0; border-color: #90caf9; }
+  &--orange  { background: #fff3e0; color: #e65100; border-color: #ffcc80; }
+  &--yellow  { background: #fffde7; color: #f57f17; border-color: #fff176; }
+  &--teal    { background: #e0f2f1; color: #00695c; border-color: #80cbc4; }
+  &--gray    { background: #f5f5f5; color: #616161; border-color: #e0e0e0; }
+}
+
+// 日期输入
+.date-input {
+  width: 120px;
+  padding: 4px 6px;
+  border: 1px solid $border;
+  border-radius: 6px;
+  font-size: 12px;
+  color: $text;
+  background: #fff;
+  outline: none;
+  &:focus { border-color: $primary; }
+}
+
+.fallback-date { font-style: normal; font-size: 11px; color: #bbb; display: block; margin-top: 2px; }
+
+// 金额输入
+.amount-input {
+  width: 82px;
+  padding: 4px 6px;
+  border: 1px solid $border;
+  border-radius: 6px;
+  font-size: 12px;
+  color: $text;
+  background: #fff;
+  outline: none;
+  &:focus { border-color: $primary; }
+}
+
+// stub 占位项样式
+.file-thumb--stub {
+  background: #fff8e1;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; color: #f57c00;
+  cursor: default;
+  &:hover .file-thumb__overlay { opacity: 0; }
+}
+
+.stub-tag {
+  font-size: 10px; font-weight: 700;
+  padding: 1px 5px; border-radius: 3px;
+  background: #fff3e0; color: #e65100;
+}
+
+.stub-link {
+  font-size: 11px; font-weight: 600;
+  color: $primary; text-decoration: underline;
+  cursor: pointer;
+  &:hover { opacity: 0.8; }
+}
+
+// OFD 图标和标签
+.ofd-icon { color: #7b1fa2 !important; }
+.file-meta__tags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.size-tag { font-size: 11px; color: #aaa; }
+.ofd-tag {
+  font-size: 10px; font-weight: 700;
+  padding: 1px 5px; border-radius: 3px;
+  background: #f3e5f5; color: #7b1fa2;
+}
+
+// 行程
+.route-row {
+  display: flex; align-items: center; gap: 4px;
+}
+
+.route-input {
+  width: 72px;
+  padding: 4px 6px;
+  border: 1px solid $border;
+  border-radius: 6px;
+  font-size: 12px;
+  color: $text;
+  background: #fff;
+  outline: none;
+  &:focus { border-color: $primary; }
+}
+
+.route-arrow { font-size: 12px; color: $text-muted; flex-shrink: 0; }
+.route-na { color: #ccc; font-size: 13px; }
+
+.location-input {
+  width: 178px;
+  padding: 4px 6px;
+  border: 1px solid $border;
+  border-radius: 6px;
+  font-size: 12px;
+  color: $text;
+  background: #fff;
+  outline: none;
+  &:focus { border-color: $primary; }
+}
+
+// 来源徽章
+.source-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  &--mail   { background: #e3f2fd; color: #1565c0; }
+  &--upload { background: #e8f5e9; color: #2e7d32; }
+}
+
+// 邮件内容列
+.col-mail { display: flex; align-items: center; justify-content: center; }
+
+// 操作列
+.col-actions { display: flex; gap: 3px; justify-content: flex-end; }
+
+// 空状态
+.reimbursement-empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: $text-muted;
+  font-size: 14px;
+  line-height: 2;
+  p { margin: 0; }
+}
+
+// ── 生成 PDF 栏（贴底固定） ──
+.reimbursement-merge-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 32px;
+  margin: 0 -32px;      // 与 body padding 对齐，撑满宽度
+  border-top: 1px solid $border;
+  background: #f8fbff;
+}
+
+.merge-name-field {
+  display: flex; align-items: center; gap: 8px;
+  > span { font-size: 13px; font-weight: 600; color: $text-muted; white-space: nowrap; }
+}
+
+.merge-name-input {
+  padding: 7px 12px;
+  border: 1px solid $border;
+  border-radius: 8px;
+  font-size: 13px;
+  width: 220px;
+  background: #fff;
+  color: $text;
+  outline: none;
+  &:focus { border-color: $primary; }
+}
+
+.reimb-result {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: $text; margin-left: auto;
+  > span { font-weight: 600; }
+}
+
+// ── 预览弹窗 ──
+.preview-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+
+.preview-modal {
+  background: #fff;
+  border-radius: 14px;
+  width: 100%;
+  max-width: 900px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.25);
+}
+
+.preview-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid $border;
+  strong { font-size: 14px; color: $text; }
+}
+
+.preview-modal__body {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f4f8;
+  min-height: 400px;
+}
+
+.preview-img {
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.preview-iframe {
+  width: 100%;
+  height: 75vh;
+  border: 0;
+}
+
+// ── stub 邮件预览弹框 ──
+.stub-modal {
+  background: #fff;
+  border-radius: 14px;
+  width: 100%;
+  max-width: 680px;
+  height: min(90vh, 600px);  // 固定高度确保 footer 可见
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.25);
+}
+
+.stub-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid $border;
+  flex-shrink: 0;
+}
+
+.stub-modal__title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  strong { font-size: 15px; color: $text; }
+  span { font-size: 12px; color: $text-muted; }
+}
+
+.stub-modal__body {
+  flex: 1;
+  min-height: 0;        // 关键：让 flex 子项能收缩，footer 不被挤出
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stub-invoice-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: #f8fbff;
+  border-radius: 8px;
+  border: 1px solid $border;
+  font-size: 13px;
+  color: $text;
+
+  strong { font-size: 15px; font-weight: 800; color: #c62828; }
+  span { color: $text-muted; }
+}
+
+.type-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  &--住宿  { background: #f3e5f5; color: #7b1fa2; }
+  &--火车  { background: #e8f5e9; color: #2e7d32; }
+  &--机票  { background: #e3f2fd; color: #1565c0; }
+  &--餐饮  { background: #fff3e0; color: #e65100; }
+  &--出租车 { background: #fffde7; color: #f57f17; }
+  &--通讯费 { background: #e0f2f1; color: #00695c; }
+  &--其他  { background: #f5f5f5; color: #616161; }
+}
+
+.stub-email-content {
+  font-size: 13px;
+  line-height: 1.8;
+  color: $text;
+  white-space: pre-wrap;
+  word-break: break-word;
+
+  :deep(.email-link) {
+    color: $primary;
+    text-decoration: underline;
+    word-break: break-all;
+  }
+}
+
+.email-html-frame {
+  flex: 1;
+  min-height: 360px;
+  width: 100%;
+  border: 1px solid $border;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.email-loading {
+  color: $text-muted;
+  font-size: 13px;
+  padding: 24px 0;
+  text-align: center;
+}
+
+.email-attach-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+
+  .email-attach-label { color: $text-muted; font-weight: 700; }
+  .email-attach-chip {
+    padding: 3px 10px;
+    background: #eef4ff;
+    border: 1px solid $border;
+    border-radius: 12px;
+    color: $primary;
+    word-break: break-all;
+  }
+}
+
+.stub-modal__footer {
+  flex-shrink: 0;
+  padding: 14px 20px;
+  border-top: 2px solid $border;
+  background: #f8fbff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stub-fetch-btn {
+  align-self: flex-start;
+  min-width: 140px;
+}
+
+.stub-modal__tip {
+  margin: 0;
+  font-size: 12px;
+  color: $text-muted;
+}
+
+.stub-modal__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+// ── 通用按钮 ──
+.reimb-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 8px 16px; border-radius: 8px;
+  font-size: 13px; font-weight: 700;
+  border: 1px solid transparent;
+  cursor: pointer; text-decoration: none; white-space: nowrap;
+  transition: background 0.12s, opacity 0.12s;
+
+  &--primary {
+    background: $primary; color: #fff; border-color: $primary;
+    &:hover:not(:disabled) { opacity: 0.88; }
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+  }
+  &--ghost {
+    background: #fff; color: $primary; border-color: $border;
+    &:hover:not(:disabled) { background: #f0f4ff; border-color: $primary; }
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+  }
+  &--danger {
+    background: #fff; color: #e53935; border-color: #ffc9c9;
+    &:hover { background: #fff0f0; border-color: #e53935; }
+  }
+  &--sm { padding: 5px 9px; font-size: 12px; border-radius: 6px; }
+}
+
+@media (max-width: 1100px) {
+  .reimbursement-body { padding: 16px; }
+  // 小屏直接靠横向滚动，不再压缩列宽
+}
+
+@media (max-width: 860px) {
+  .reimbursement-table__head { display: none; }
+  .reimbursement-table__row {
+    grid-template-columns: 28px 20px 1fr auto;
+    grid-template-rows: auto auto auto;
+    row-gap: 6px;
+    .col-type, .col-date, .col-route, .col-source, .col-mail {
+      grid-column: 3;
+    }
+    .col-actions { grid-column: 4; grid-row: 1; }
+  }
+}

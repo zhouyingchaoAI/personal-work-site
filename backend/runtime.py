@@ -27,6 +27,7 @@ MODULES = [
     "memory.py",
     "workflows.py",
     "mcp.py",
+    "reimbursement.py",
     "server.py",
 ]
 

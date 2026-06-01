@@ -322,13 +322,23 @@ def build_weekly_prefill(max_row, read_cell, source_name):
                 }
             )
 
+    # 下周工作计划：工作分类默认与本周工作总结一致，工作内容留空待填。
+    next_rows = []
+    next_lines = []
+    for item in summary_rows:
+        category = item.get("category", "")
+        if not category:
+            continue
+        next_rows.append({"category": category, "content": "", "difficulty": ""})
+        next_lines.append(xlsx_row_text([category, "", ""]))
+
     return {
         "weekly_summary": "\n".join(summary),
         "weekly_follow": "\n".join(follow),
-        "weekly_next": "",
+        "weekly_next": "\n".join(next_lines),
         "summary_rows": summary_rows,
         "follow_rows": follow_rows,
-        "next_rows": [],
+        "next_rows": next_rows,
         "source": source_name,
     }
 
@@ -348,14 +358,16 @@ def empty_weekly_prefill():
 def user_weekly_prefill_source(username=None):
     if not username:
         return None
-    items = [
-        item
-        for item in generated_files(username) + report_files(username)
-        if item.get("kind") == "weekly"
-    ]
-    if not items:
-        return None
-    return sorted(items, key=lambda item: (item["sort_key"], item["mtime"]), reverse=True)[0]
+
+    def newest_weekly(items):
+        weekly = [item for item in items if item.get("kind") == "weekly"]
+        if not weekly:
+            return None
+        return sorted(weekly, key=lambda item: (item["sort_key"], item["mtime"]), reverse=True)[0]
+
+    # 优先取已归档的真实历史周报（reports/weekly，发送后由 promote_sent_report 移入），
+    # 避免被本周尚未发送的 generated 草稿盖过；没有历史时才回退到 generated 输出。
+    return newest_weekly(report_files(username)) or newest_weekly(generated_files(username))
 
 
 def weekly_prefill(username=None):
@@ -882,13 +894,14 @@ def save_draft(payload, username=None):
 
 
 def send_mail(payload, username=None):
-    settings = smtp_settings(username)
+    account = str(payload.get("mail_account") or "company").strip()
+    settings = smtp_settings_for_account(username, account)
     if not settings["host"]:
         draft = save_draft(payload, username)
         return {"ok": True, "mode": "draft", "message": f"邮件未发出：当前账号未配置 SMTP 服务器，已生成邮件草稿：{draft}"}
     validate_smtp_ready(settings)
 
-    msg = build_message(payload, username)
+    msg = build_message(payload, username, account)
     recipients = split_addresses(payload.get("to", "")) + split_addresses(payload.get("cc", ""))
     if not recipients:
         raise ValueError("请填写收件人邮箱")

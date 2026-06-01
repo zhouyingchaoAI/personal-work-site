@@ -756,7 +756,7 @@
         state.weeklyPrefilled = true;
         const restored = force ? false : restoreSavedFormDraft('weekly');
         if (prefill.source) {
-          el('status').textContent = restored ? '已恢复上次未生成的周报草稿。' : `已获取最新历史周报：${prefill.source}。上次“下周计划”已写入本次“本周工作内容”，重点工作已复制，下周计划保持为空。`;
+          el('status').textContent = restored ? '已恢复上次未生成的周报草稿。' : `已获取最新历史周报：${prefill.source}。上次“下周计划”已写入本次“本周工作总结”，重点工作跟进已复制，下周工作计划已按本周分类预填、内容待补充。`;
           el('status').className = 'status ok';
         } else {
           el('status').textContent = '没有找到可用于预填的历史周报。';

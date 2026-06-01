@@ -195,7 +195,7 @@
       line-height: 1.42;
       white-space: pre-wrap;
       display: -webkit-box;
-      -webkit-line-clamp: 4;
+      -webkit-line-clamp: 10;
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
