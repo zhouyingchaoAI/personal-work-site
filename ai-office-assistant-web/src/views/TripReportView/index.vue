@@ -15,6 +15,7 @@ import {
 } from '@element-plus/icons-vue'
 import IconTextButton from '../../components/IconTextButton/index.vue'
 import { authState, defaultOptimizePrompt } from '../../services/authSession'
+import { parseMailRecipients, serializeMailRecipientEmails, serializeMailRecipients, type MailRecipientField } from '../../utils/mailRecipients'
 import {
   deleteReportTemplate,
   deleteHistory,
@@ -233,15 +234,15 @@ const promptDialogVisible = computed({
   },
 })
 const toRecipients = computed({
-  get: () => splitRecipients(mailDraft.to),
+  get: () => parseMailRecipients(mailDraft.to, 'to'),
   set: (value: string[]) => {
-    mailDraft.to = value.join(';')
+    mailDraft.to = serializeMailRecipients(value, 'to')
   },
 })
 const ccRecipients = computed({
-  get: () => splitRecipients(mailDraft.cc),
+  get: () => parseMailRecipients(mailDraft.cc, 'cc'),
   set: (value: string[]) => {
-    mailDraft.cc = value.join(';')
+    mailDraft.cc = serializeMailRecipients(value, 'cc')
   },
 })
 
@@ -271,10 +272,6 @@ function escapeHtml(value: string) {
 
 function textToHtml(value: string) {
   return escapeHtml(value).replace(/\n/g, '<br>')
-}
-
-function splitRecipients(value: string) {
-  return value.split(/[;,，；\s]+/).map((item) => item.trim()).filter(Boolean)
 }
 
 function stepForTab(tab: TripTabId) {
@@ -680,8 +677,8 @@ async function generateReport() {
 
 function buildSendPayload(): SendMailPayload {
   return {
-    to: mailDraft.to.trim(),
-    cc: mailDraft.cc.trim(),
+    to: serializeMailRecipientEmails(mailDraft.to, 'to'),
+    cc: serializeMailRecipientEmails(mailDraft.cc, 'cc'),
     subject: mailDraft.subject.trim(),
     body: mailDraft.body.trim(),
     body_html: mailDraft.body_html,
@@ -702,6 +699,19 @@ function clearSendReview() {
   sendBlockers.value = []
 }
 
+function handleRecipientPaste(event: Event, field: MailRecipientField) {
+  const clipboardEvent = event as ClipboardEvent
+  const text = clipboardEvent.clipboardData?.getData('text') || ''
+  const pasted = parseMailRecipients(text, field)
+  if (!pasted.length) return
+  clipboardEvent.preventDefault()
+  const current = field === 'to' ? mailDraft.to : mailDraft.cc
+  const next = serializeMailRecipients([current, ...pasted], field)
+  if (field === 'to') mailDraft.to = next
+  else mailDraft.cc = next
+  clearSendReview()
+}
+
 async function sendReport() {
   const payload = buildSendPayload()
   const blockers = findSendBlockers(payload)
@@ -710,8 +720,8 @@ async function sendReport() {
     ElMessage.warning(blockers.join('；'))
     return
   }
-  const toCount = splitRecipients(payload.to).length
-  const ccCount = splitRecipients(payload.cc).length
+  const toCount = parseMailRecipients(payload.to, 'to').length
+  const ccCount = parseMailRecipients(payload.cc, 'cc').length
   const recipientText = `收件人 ${toCount} 人${ccCount ? `，抄送 ${ccCount} 人` : ''}`
   try {
     await ElMessageBox.confirm(`确认发送当前出差报告邮件吗？\n${recipientText}\n主题：${payload.subject}`, '发送确认', {
@@ -1128,6 +1138,7 @@ onMounted(initializeTrip)
               collapse-tags-tooltip
               :max-collapse-tags="3"
               placeholder="添加收件人"
+              @paste.capture="handleRecipientPaste($event, 'to')"
             >
               <el-option v-for="item in toRecipients" :key="item" :label="item" :value="item" />
             </el-select>
@@ -1144,6 +1155,7 @@ onMounted(initializeTrip)
               collapse-tags-tooltip
               :max-collapse-tags="3"
               placeholder="添加抄送"
+              @paste.capture="handleRecipientPaste($event, 'cc')"
             >
               <el-option v-for="item in ccRecipients" :key="item" :label="item" :value="item" />
             </el-select>

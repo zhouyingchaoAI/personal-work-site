@@ -6,6 +6,7 @@ import { Calendar, Delete, Document, Download, EditPen, FullScreen, Setting, Upl
 import IconTextButton from '../../components/IconTextButton/index.vue'
 import weeklyEmptyPlaceholder from '../../assets/weekly-empty-placeholder.png'
 import { authState, defaultOptimizePrompt } from '../../services/authSession'
+import { parseMailRecipients, serializeMailRecipientEmails, serializeMailRecipients, type MailRecipientField } from '../../utils/mailRecipients'
 import {
   deleteHistory,
   deleteReport,
@@ -283,15 +284,15 @@ const periodRange = computed<string[]>({
   },
 })
 const toRecipients = computed({
-  get: () => splitRecipients(mailDraft.to),
+  get: () => parseMailRecipients(mailDraft.to, 'to'),
   set: (value: string[]) => {
-    mailDraft.to = value.join(';')
+    mailDraft.to = serializeMailRecipients(value, 'to')
   },
 })
 const ccRecipients = computed({
-  get: () => splitRecipients(mailDraft.cc),
+  get: () => parseMailRecipients(mailDraft.cc, 'cc'),
   set: (value: string[]) => {
-    mailDraft.cc = value.join(';')
+    mailDraft.cc = serializeMailRecipients(value, 'cc')
   },
 })
 const weeklyTemplateDownloadUrl = computed(() => resourceUrl(weeklyTemplate.value?.download_url || '/download-template?kind=weekly'))
@@ -322,10 +323,6 @@ function escapeHtml(value: string) {
 
 function textToHtml(value: string) {
   return escapeHtml(value).replace(/\n/g, '<br>')
-}
-
-function splitRecipients(value: string) {
-  return value.split(/[;,，；\s]+/).map((item) => item.trim()).filter(Boolean)
 }
 
 function readFileAsDataUrl(file: File) {
@@ -1062,10 +1059,23 @@ function clearSendReview() {
   sendBlockers.value = []
 }
 
+function handleRecipientPaste(event: Event, field: MailRecipientField) {
+  const clipboardEvent = event as ClipboardEvent
+  const text = clipboardEvent.clipboardData?.getData('text') || ''
+  const pasted = parseMailRecipients(text, field)
+  if (!pasted.length) return
+  clipboardEvent.preventDefault()
+  const current = field === 'to' ? mailDraft.to : mailDraft.cc
+  const next = serializeMailRecipients([current, ...pasted], field)
+  if (field === 'to') mailDraft.to = next
+  else mailDraft.cc = next
+  clearSendReview()
+}
+
 function buildSendPayload(): SendMailPayload {
   return {
-    to: mailDraft.to.trim(),
-    cc: mailDraft.cc.trim(),
+    to: serializeMailRecipientEmails(mailDraft.to, 'to'),
+    cc: serializeMailRecipientEmails(mailDraft.cc, 'cc'),
     subject: mailDraft.subject.trim(),
     body: mailDraft.body,
     body_html: mailDraft.body_html,
@@ -1140,8 +1150,8 @@ async function confirmSend() {
     sendBlockers.value = blockers
     return
   }
-  const toCount = splitRecipients(payload.to).length
-  const ccCount = splitRecipients(payload.cc).length
+  const toCount = parseMailRecipients(payload.to, 'to').length
+  const ccCount = parseMailRecipients(payload.cc, 'cc').length
   const recipientText = `收件人 ${toCount} 人${ccCount ? `，抄送 ${ccCount} 人` : ''}`
   try {
     await ElMessageBox.confirm(`确认发送当前周报邮件吗？\n${recipientText}\n主题：${payload.subject}`, '发送确认', {
@@ -1499,6 +1509,7 @@ onMounted(initializeWeekly)
             collapse-tags-tooltip
             :max-collapse-tags="3"
             placeholder="添加收件人"
+            @paste.capture="handleRecipientPaste($event, 'to')"
           >
             <el-option v-for="item in toRecipients" :key="item" :label="item" :value="item" />
           </el-select>
@@ -1515,6 +1526,7 @@ onMounted(initializeWeekly)
             collapse-tags-tooltip
             :max-collapse-tags="3"
             placeholder="添加抄送"
+            @paste.capture="handleRecipientPaste($event, 'cc')"
           >
             <el-option v-for="item in ccRecipients" :key="item" :label="item" :value="item" />
           </el-select>
