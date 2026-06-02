@@ -79,8 +79,20 @@ $layout-gap: 24px;
     min-width: 0;
   }
 
+  .sidebar-menu-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 2px;
+    scrollbar-gutter: stable;
+  }
+
   .sidebar-nav--footer {
-    margin-top: auto;
+    flex: 0 0 auto;
+    margin-top: 0;
     padding-top: 24px;
     border-top: 1px solid #dce7f6;
   }
@@ -646,6 +658,15 @@ $layout-gap: 24px;
       display: flex;
       min-width: max-content;
       gap: 8px;
+    }
+
+    .sidebar-menu-scroll {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-right: 0;
+      scrollbar-gutter: auto;
     }
 
     .sidebar-nav--footer {

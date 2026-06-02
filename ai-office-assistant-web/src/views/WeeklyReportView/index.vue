@@ -6,6 +6,7 @@ import { Calendar, Delete, Document, Download, EditPen, FullScreen, Setting, Upl
 import IconTextButton from '../../components/IconTextButton/index.vue'
 import weeklyEmptyPlaceholder from '../../assets/weekly-empty-placeholder.png'
 import { authState, defaultOptimizePrompt } from '../../services/authSession'
+import { createMailSendConfirmMessage } from '../../utils/mailSendConfirm'
 import { parseMailRecipients, serializeMailRecipientEmails, serializeMailRecipients, type MailRecipientField } from '../../utils/mailRecipients'
 import {
   deleteHistory,
@@ -1150,14 +1151,18 @@ async function confirmSend() {
     sendBlockers.value = blockers
     return
   }
-  const toCount = parseMailRecipients(payload.to, 'to').length
-  const ccCount = parseMailRecipients(payload.cc, 'cc').length
-  const recipientText = `收件人 ${toCount} 人${ccCount ? `，抄送 ${ccCount} 人` : ''}`
+  const toRecipients = parseMailRecipients(payload.to, 'to')
+  const ccRecipients = parseMailRecipients(payload.cc, 'cc')
   try {
-    await ElMessageBox.confirm(`确认发送当前周报邮件吗？\n${recipientText}\n主题：${payload.subject}`, '发送确认', {
+    await ElMessageBox.confirm(createMailSendConfirmMessage({
+      intro: '确认发送当前周报邮件吗？',
+      subject: payload.subject,
+      toRecipients,
+      ccRecipients,
+    }), '发送确认', {
       confirmButtonText: '发送',
       cancelButtonText: '取消',
-      type: 'warning',
+      customClass: 'mail-send-confirm-box',
     })
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') setStatus(error instanceof Error ? error.message : '发送确认失败', 'error')

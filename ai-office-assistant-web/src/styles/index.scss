@@ -69,6 +69,146 @@ button {
   border: 0;
 }
 
+.mail-send-confirm-box.el-message-box {
+  width: min(56rem, calc(100vw - 3.2rem));
+  max-width: calc(100vw - 3.2rem);
+}
+
+.mail-send-confirm-box {
+  .el-message-box__status {
+    display: none;
+  }
+
+  .el-message-box__message {
+    width: 100%;
+  }
+
+  .el-message-box__content {
+    align-items: flex-start;
+  }
+}
+
+.mail-send-confirm {
+  display: grid;
+  min-width: 0;
+  gap: 1.2rem;
+  color: var(--color-text);
+
+  &.is-expanded {
+    max-height: min(56rem, 62vh);
+    overflow: auto;
+    padding-right: 0.4rem;
+  }
+}
+
+.mail-send-confirm__intro {
+  margin: 0;
+  color: #33476a;
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.mail-send-confirm__subject,
+.mail-send-confirm__group {
+  display: grid;
+  min-width: 0;
+  gap: 0.8rem;
+  padding: 1rem 1.2rem;
+  border: 1px solid #dbe7fb;
+  border-radius: 0.8rem;
+  background: #f8fbff;
+}
+
+.mail-send-confirm__subject {
+  grid-template-columns: 5.6rem minmax(0, 1fr);
+  align-items: start;
+}
+
+.mail-send-confirm__label {
+  color: #14213d;
+  font-size: 1.3rem;
+  font-weight: 850;
+  line-height: 1.5;
+}
+
+.mail-send-confirm__subject-text {
+  min-width: 0;
+  color: #33476a;
+  font-size: 1.3rem;
+  font-weight: 650;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.mail-send-confirm__group-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.mail-send-confirm__count {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.mail-send-confirm__recipients {
+  display: flex;
+  max-height: 5.8rem;
+  min-width: 0;
+  align-content: flex-start;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  overflow: hidden;
+
+  &.is-expanded {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+.mail-send-confirm__recipient,
+.mail-send-confirm__empty {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  padding: 0.45rem 0.8rem;
+  border-radius: 0.6rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.mail-send-confirm__recipient {
+  border: 1px solid #cddbf0;
+  color: #15499c;
+  background: #ffffff;
+}
+
+.mail-send-confirm__empty {
+  color: var(--color-muted);
+  background: transparent;
+}
+
+.mail-send-confirm__toggle {
+  justify-self: start;
+  margin-top: -0.2rem;
+  padding: 0;
+  border: 0;
+  color: var(--color-primary);
+  background: transparent;
+  font-size: 1.2rem;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
 .ai-field-actions {
   display: flex;
   flex-wrap: wrap;

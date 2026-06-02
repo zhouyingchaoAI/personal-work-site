@@ -27,23 +27,25 @@ function isActive(item: SidebarMenuItem) {
       <img class="brand-logo" :src="sidebarLogo" alt="CHENCY" />
     </div>
 
-    <nav class="sidebar-nav" aria-label="工作台导航">
-      <button
-        v-for="item in mainItems"
-        :key="item.id"
-        :class="['nav-item', `nav-item--${item.iconTone}`, { active: isActive(item) }]"
-        type="button"
-        :aria-current="isActive(item) ? 'page' : undefined"
-        @click="emit('select', item.id)"
-      >
-        <span class="nav-item__icon">
-          <span v-if="item.iconText" class="nav-item__icon-text">{{ item.iconText }}</span>
-          <el-icon v-else-if="item.icon"><component :is="item.icon" /></el-icon>
-        </span>
-        <span class="nav-item__label">{{ item.label }}</span>
-        <span v-if="item.statusDot" class="nav-item__status" aria-hidden="true"></span>
-      </button>
-    </nav>
+    <div class="sidebar-menu-scroll">
+      <nav class="sidebar-nav sidebar-nav--main" aria-label="工作台导航">
+        <button
+          v-for="item in mainItems"
+          :key="item.id"
+          :class="['nav-item', `nav-item--${item.iconTone}`, { active: isActive(item) }]"
+          type="button"
+          :aria-current="isActive(item) ? 'page' : undefined"
+          @click="emit('select', item.id)"
+        >
+          <span class="nav-item__icon">
+            <span v-if="item.iconText" class="nav-item__icon-text">{{ item.iconText }}</span>
+            <el-icon v-else-if="item.icon"><component :is="item.icon" /></el-icon>
+          </span>
+          <span class="nav-item__label">{{ item.label }}</span>
+          <span v-if="item.statusDot" class="nav-item__status" aria-hidden="true"></span>
+        </button>
+      </nav>
+    </div>
 
     <nav v-if="footerItems.length" class="sidebar-nav sidebar-nav--footer" aria-label="辅助导航">
       <button
