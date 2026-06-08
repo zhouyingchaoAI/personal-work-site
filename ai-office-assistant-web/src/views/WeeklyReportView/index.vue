@@ -885,6 +885,15 @@ function applyDraft(draft: DraftResponse) {
   clearSendReview()
 }
 
+function applyGeneratedDraft(draft: DraftResponse) {
+  const currentTo = mailDraft.to
+  const currentCc = mailDraft.cc
+  applyDraft(draft)
+  // 重新生成附件只更新正文和附件，保留用户已填写的联系人。
+  if (currentTo) mailDraft.to = currentTo
+  if (currentCc) mailDraft.cc = currentCc
+}
+
 async function loadWeeklyMailRecipients() {
   if (mailDraft.to && mailDraft.cc) return
   try {
@@ -1018,7 +1027,7 @@ async function generateReport() {
       weekly_next: cleanRows('next'),
     })
     selectedReport.value = result.file
-    applyDraft(result.draft)
+    applyGeneratedDraft(result.draft)
     activeStep.value = 2
     isReportDirty.value = false
     setStatus(`已生成标准文件，并设为当前邮件附件：${result.file}`, 'ok')
