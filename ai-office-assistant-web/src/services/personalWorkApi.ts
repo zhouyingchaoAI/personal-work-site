@@ -546,6 +546,7 @@ export interface AgentUiPatch {
 
 export interface AgentChatResponse {
   ok: boolean
+  session_id?: string
   reply?: string
   error?: string
   skill_calls?: AgentSkillCall[]
@@ -927,8 +928,8 @@ export function runSkillTest(payload: { name: string; arguments: Record<string, 
   return post<SkillTestResponse>('/skill-test', payload)
 }
 
-export function agentChat(kind: AgentKind, messages: AgentMessage[]) {
-  return post<AgentChatResponse>('/agent', { kind, messages })
+export function agentChat(kind: AgentKind, messages: AgentMessage[], sessionId?: string) {
+  return post<AgentChatResponse>('/agent', { kind, messages, ...(sessionId ? { session_id: sessionId } : {}) })
 }
 
 export function openclawSso() {

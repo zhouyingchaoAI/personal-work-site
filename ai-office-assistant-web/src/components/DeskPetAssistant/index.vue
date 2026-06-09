@@ -35,6 +35,7 @@ const mode = ref<PetMode>('sleep')
 const inputText = ref('')
 const loading = ref(false)
 const messages = ref<AgentMessage[]>([])
+const agentSessionIds = ref<Partial<Record<AgentKind, string>>>({})
 // 已绑定的龙虾：绑定后对话直通该龙虾，否则走本地页面助手。
 const boundLobster = ref<BoundLobster | null>(null)
 const position = ref({ left: 0, top: 0 })
@@ -237,6 +238,56 @@ function resetMessages() {
   inputText.value = ''
 }
 
+function sessionStorageKey() {
+  return `desk-pet-agent-sessions:${props.userName || 'anonymous'}`
+}
+
+function loadAgentSessions() {
+  const raw = localStorage.getItem(sessionStorageKey())
+  if (!raw) {
+    agentSessionIds.value = {}
+    return
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<Record<AgentKind, string>>
+    agentSessionIds.value = parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    localStorage.removeItem(sessionStorageKey())
+    agentSessionIds.value = {}
+  }
+}
+
+function saveAgentSession(kind: AgentKind, sessionId?: string) {
+  if (!sessionId) return
+  agentSessionIds.value = { ...agentSessionIds.value, [kind]: sessionId }
+  localStorage.setItem(sessionStorageKey(), JSON.stringify(agentSessionIds.value))
+}
+
+function normalizeContextText(text: string) {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+function collectPageContext() {
+  const contentRoot = document.querySelector('.app-layout__content')
+  if (!contentRoot) return null
+  const clone = contentRoot.cloneNode(true) as HTMLElement
+  clone.querySelectorAll('.desk-pet-shell, script, style, textarea, input[type="password"]').forEach((node) => node.remove())
+  const text = normalizeContextText(clone.innerText || clone.textContent || '')
+  if (!text) return null
+  return {
+    menu: props.activeMenu,
+    agent: currentConfig.value.agent,
+    title: currentConfig.value.title,
+    visible_text: text.slice(0, 1800),
+  }
+}
+
+function messageWithPageContext(content: string) {
+  const context = collectPageContext()
+  if (!context) return content
+  return `${content}\n\n[系统提示：当前智能体类型为 ${currentConfig.value.title}，以下是当前页面上下文。请优先结合这些页面内容回答；如果页面内容不足，再询问用户补充。]\n${JSON.stringify(context, null, 2)}`
+}
+
 async function loadBinding() {
   try {
     const result = await getAssistantLobster()
@@ -292,8 +343,11 @@ async function sendMessage(text = inputText.value) {
       if (!result.ok) throw new Error(result.error || '龙虾暂时不可用')
       messages.value.push({ role: 'assistant', content: result.reply || '（龙虾没有返回内容）' })
     } else {
-      const result = await agentChat(currentConfig.value.agent, messages.value.slice(-8))
+      const agentKind = currentConfig.value.agent
+      const payloadMessages: AgentMessage[] = [{ role: 'user', content: messageWithPageContext(content) }]
+      const result = await agentChat(agentKind, payloadMessages, agentSessionIds.value[agentKind])
       if (!result.ok) throw new Error(result.error || 'AI 助手暂时不可用')
+      saveAgentSession(agentKind, result.session_id)
       messages.value.push({ role: 'assistant', content: result.reply || '我已经看过当前内容，暂时没有新的补充。' })
     }
   } catch (error) {
@@ -413,10 +467,18 @@ function handleOutsidePointerDown(event: PointerEvent) {
 watch(
   () => props.activeMenu,
   () => {
-    // 页面切换后刷新桌宠上下文，保证不同页面展示不同对话入口。
+    // 页面切换后刷新桌宠上下文，保证不同页面展示不同对话入口；后端 session_id 会按助手类型继续复用。
     setMode('sleep')
     resetMessages()
     nextTick(constrainPosition)
+  },
+)
+
+watch(
+  () => props.userName,
+  () => {
+    loadAgentSessions()
+    resetMessages()
   },
 )
 
@@ -426,6 +488,7 @@ watch(panelWidth, () => nextTick(measurePanel))
 
 onMounted(() => {
   windowSize.value = { width: window.innerWidth, height: window.innerHeight }
+  loadAgentSessions()
   resetMessages()
   loadBinding()
   restorePosition()
