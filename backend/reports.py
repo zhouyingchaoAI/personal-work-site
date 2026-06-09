@@ -119,23 +119,11 @@ def generated_files(username=None):
 
 
 def all_files(username=None):
-    user_files = generated_files(username) + report_files(username)
-    if username and not any(not f.get("generated") for f in user_files):
-        user_files = user_files + report_files(None)
-    return user_files
+    return generated_files(username) + report_files(username)
 
 
 def newest(kind, username=None, fallback_shared=False):
     items = [item for item in report_files(username) if item["kind"] == kind]
-    if not items and fallback_shared and username:
-        items = [item for item in report_files(None) if item["kind"] == kind]
-    if not items and fallback_shared and username:
-        for fallback_user in ("zhouyingchao", "admin"):
-            if fallback_user == username:
-                continue
-            items = [item for item in report_files(fallback_user) if item["kind"] == kind]
-            if items:
-                break
     if not items:
         return None
     return sorted(items, key=lambda item: (item["sort_key"], item["mtime"]), reverse=True)[0]
@@ -143,13 +131,6 @@ def newest(kind, username=None, fallback_shared=False):
 
 def newest_any(kind, username=None, fallback_shared=False):
     items = [item for item in all_files(username) if item["kind"] == kind]
-    if not items and fallback_shared and username:
-        items = [item for item in all_files(None) if item["kind"] == kind]
-    if not items and kind == "weekly":
-        for fallback_user in ("zhouyingchao", "admin"):
-            items = [item for item in all_files(fallback_user) if item["kind"] == kind]
-            if items:
-                break
     if not items:
         return None
     return sorted(items, key=lambda item: (item["sort_key"], item["mtime"]), reverse=True)[0]
@@ -556,11 +537,20 @@ def format_trip_body(path):
         department = cell_text(0, 3)
         location = cell_text(0, 5)
         date_text = cell_text(1, 1)
-        purpose = cell_text(2, 1)
-        itinerary = cell_text(3, 1)
-        details = cell_text(4, 1)
-        issues = cell_text(5, 1)
-        suggestions = cell_text(6, 1)
+        def section_text(label, fallback_row=None):
+            for row_idx in range(len(table.rows)):
+                if cell_text(row_idx, 0) == label:
+                    return cell_text(row_idx, 1)
+            if fallback_row is None:
+                return ""
+            return cell_text(fallback_row, 1)
+
+        purpose = section_text("出差目的", 2)
+        itinerary = section_text("行程概览", 3)
+        details = section_text("工作详情", 4)
+        work_approach = section_text("工作思路")
+        issues = section_text("问题与反馈", 5)
+        suggestions = section_text("总结与建议", 6)
 
         # ===== 纯文本版本 =====
         lines = []
@@ -585,6 +575,10 @@ def format_trip_body(path):
         if details:
             lines.append("【工作详情】")
             lines.append(details)
+            lines.append("")
+        if work_approach:
+            lines.append("【工作思路】")
+            lines.append(work_approach)
             lines.append("")
         if issues:
             lines.append("【问题与困难】")
@@ -627,6 +621,9 @@ def format_trip_body(path):
         if details:
             h.append(f'<p style="{section_style}">【工作详情】</p>')
             h.append(f'<p style="{content_style}">{html_escape(details).replace(chr(10), "<br>")}</p>')
+        if work_approach:
+            h.append(f'<p style="{section_style}">【工作思路】</p>')
+            h.append(f'<p style="{content_style}">{html_escape(work_approach).replace(chr(10), "<br>")}</p>')
         if issues:
             h.append(f'<p style="{section_style}">【问题与困难】</p>')
             h.append(f'<p style="{content_style}">{html_escape(issues).replace(chr(10), "<br>")}</p>')

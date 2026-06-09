@@ -192,6 +192,7 @@
         purpose: el('tripPurpose').value,
         itinerary: el('tripItinerary').value,
         details: el('tripDetails').value,
+        work_approach: el('tripWorkApproach').value,
         issues: el('tripIssues').value,
         suggestions: el('tripSuggestions').value
       };
@@ -253,10 +254,14 @@
             tripPurpose: draft.trip.purpose,
             tripItinerary: draft.trip.itinerary,
             tripDetails: draft.trip.details,
+            tripWorkApproach: draft.trip.work_approach,
             tripIssues: draft.trip.issues,
             tripSuggestions: draft.trip.suggestions
           }).forEach(([id, value]) => {
-            if (value !== undefined && value !== null) el(id).value = value;
+            if (value === undefined || value === null) return;
+            const nextValue = String(value);
+            if (!nextValue.trim() && el(id).value.trim()) return;
+            el(id).value = nextValue;
           });
           renderTripCards();
           state.tripPrefilled = true;
@@ -319,6 +324,7 @@
       { key: 'purpose', title: '出差目的', fields: [['tripPurpose', '出差目的', true]] },
       { key: 'itinerary', title: '行程概览', fields: [['tripItinerary', '行程概览', true]] },
       { key: 'details', title: '工作详情', fields: [['tripDetails', '工作详情', true]] },
+      { key: 'work_approach', title: '工作思路', fields: [['tripWorkApproach', '工作思路', true]] },
       { key: 'issues', title: '问题与反馈', fields: [['tripIssues', '问题与反馈', true]] },
       { key: 'suggestions', title: '总结与建议', fields: [['tripSuggestions', '总结与建议', true]] }
     ];

@@ -6,9 +6,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8765 \
     OPENCLAW_PLATFORM_INTERNAL_URL=http://host.docker.internal:18080/openclaw \
     OPENCLAW_PLATFORM_PUBLIC_URL=https://yfdemo.chencytech.com/openclaw \
-    OPENCLAW_OFFICE_SSO_SECRET=openclaw-office-sso-dev
+    OPENCLAW_OFFICE_SSO_SECRET=openclaw-office-sso-dev \
+    TZ=Asia/Shanghai
 
 WORKDIR /app
+
+# 时区统一为 Asia/Shanghai（与宿主机及 openclaw-runtime 一致）。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tzdata \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo $TZ > /etc/timezone \
+    && rm -rf /var/lib/apt/lists/*
 
 # 中文字体：OFD 渲染（easyofd）需要，否则发票文字渲染为空白。
 # 用开源文泉驿字体顶替 easyofd font_map 期望的系统字体文件名。

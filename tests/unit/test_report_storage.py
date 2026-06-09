@@ -171,6 +171,7 @@ class ReportStorageTests(unittest.TestCase):
                     "purpose": "首次出差",
                     "itinerary": "客户现场",
                     "details": "完成沟通",
+                    "work_approach": "先试点再推广",
                     "issues": "无",
                     "suggestions": "持续跟进",
                 },
@@ -183,6 +184,8 @@ class ReportStorageTests(unittest.TestCase):
             preview = rt.preview_docx(path)
             self.assertIn("新用户", preview)
             self.assertIn("首次出差", preview)
+            self.assertIn("工作思路", preview)
+            self.assertIn("先试点再推广", preview)
         finally:
             rt.read_config = old_read_config
             rt.newest = old_newest
@@ -203,6 +206,12 @@ class ReportStorageTests(unittest.TestCase):
         self.assertEqual(prefill["weekly_summary"], "")
         self.assertEqual(prefill["summary_rows"], [])
         self.assertEqual(prefill["source"], "")
+
+    def test_trip_prefill_new_user_ignores_other_users_reports(self):
+        prefill = rt.trip_prefill("newuser")
+
+        self.assertEqual(prefill["source"], "")
+        self.assertNotIn("work_approach", prefill)
 
     def test_report_template_upload_and_delete_are_global(self):
         raw = b"template bytes"

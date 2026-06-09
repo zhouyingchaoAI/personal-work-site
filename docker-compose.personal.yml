@@ -9,12 +9,15 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
+      TZ: Asia/Shanghai
       HOST: 0.0.0.0
       PORT: 8765
       OPENCLAW_PLATFORM_INTERNAL_URL: http://host.docker.internal:18080/openclaw
       OPENCLAW_PLATFORM_PUBLIC_URL: https://yfdemo.chencytech.com/openclaw
       OPENCLAW_OFFICE_SSO_SECRET: openclaw-office-sso-dev
     volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
       - ./backend:/app/backend
       - ./frontend:/app/frontend
       - ./ai-office-assistant-web/dist:/app/ai-office-assistant-web/dist

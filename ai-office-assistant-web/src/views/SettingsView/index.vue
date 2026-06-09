@@ -44,6 +44,8 @@ import {
   updateAdminUser,
   installMcpToLobster,
   restartLobster,
+  getAssistantLobster,
+  saveAssistantLobster,
   type AdminConfig,
   type AgentConfig,
   type LobsterAgent,
@@ -197,6 +199,11 @@ const mcpStatus = ref('')
 const lobsters = ref<LobsterAgent[]>([])
 const lobsterStatus = ref('')
 const installingLobsterId = ref<number | null>(null)
+// 悬浮助手绑定龙虾
+const boundLobsterId = ref<number | null>(null)
+const selectedBindId = ref<number | null>(null)
+const bindStatus = ref('')
+const savingBind = ref(false)
 
 const agentLabels = [
   { key: 'weekly', label: '周报助手' },
@@ -877,10 +884,59 @@ async function confirmInstallMcp(withRestart: boolean) {
   }
 }
 
+function lobsterLabel(agent: LobsterAgent) {
+  // 多个同名龙虾靠 #编号 + 模型 + 创建日期 区分。
+  const statusText = agent.status === 'running' ? '运行中' : agent.status === 'exited' ? '已停止' : agent.status || '未知'
+  const parts = [`${agent.agent_name} #${agent.agent_id}`, statusText]
+  if (agent.model) parts.push(agent.model)
+  const created = (agent.created_at || '').slice(0, 10)
+  if (created) parts.push(`建于${created}`)
+  return parts.join(' · ')
+}
+
+async function loadAssistantBinding() {
+  // 悬浮助手绑定：拉龙虾列表 + 当前绑定。
+  await loadLobsters()
+  try {
+    const result = await getAssistantLobster()
+    boundLobsterId.value = result.ok && result.lobster ? result.lobster.agent_id : null
+    selectedBindId.value = boundLobsterId.value
+  } catch (error) {
+    bindStatus.value = errorMessage(error)
+  }
+}
+
+async function saveAssistantBinding() {
+  savingBind.value = true
+  bindStatus.value = ''
+  try {
+    const agentId = selectedBindId.value
+    const name = lobsters.value.find((item) => item.agent_id === agentId)?.agent_name || ''
+    const result = await saveAssistantLobster(agentId, name)
+    boundLobsterId.value = result.lobster ? result.lobster.agent_id : null
+    selectedBindId.value = boundLobsterId.value
+    bindStatus.value = boundLobsterId.value ? `已绑定「${name} #${boundLobsterId.value}」，悬浮助手对话将直通该龙虾。` : '已解除绑定，悬浮助手恢复本地助手。'
+    ElMessage.success(bindStatus.value)
+  } catch (error) {
+    bindStatus.value = errorMessage(error)
+    ElMessage.error(bindStatus.value)
+  } finally {
+    savingBind.value = false
+  }
+}
+
+async function unbindAssistant() {
+  selectedBindId.value = null
+  await saveAssistantBinding()
+}
+
 async function loadActiveTab() {
   // 无权限 tab 只展示提示，不发起管理接口请求。
   if (!canOpenTab(activeTab.value)) return
-  if (activeTab.value === 'mailconfig' && !loadedTabs.mailconfig) await loadMailConfig()
+  if (activeTab.value === 'mailconfig' && !loadedTabs.mailconfig) {
+    await loadMailConfig()
+    void loadAssistantBinding()
+  }
   if (activeTab.value === 'config' && !loadedTabs.config) await loadAdminConfig()
   if (activeTab.value === 'skills' && !loadedTabs.skills) await loadSkills()
   if (activeTab.value === 'usermanage' && !loadedTabs.usermanage) await loadUsers()
@@ -944,6 +1000,43 @@ onMounted(() => {
 
       <section v-else-if="activeTab === 'mailconfig'" class="settings-panel">
         <div class="settings-section-head">
+          <div>
+            <h3>悬浮助手绑定龙虾</h3>
+            <span>绑定后，右下角悬浮助手的对话将直通所选龙虾（支持多轮）；不绑定则使用本地页面助手。</span>
+          </div>
+          <button class="settings-button settings-button--ghost" type="button" :disabled="loading.lobsters" @click="loadAssistantBinding">
+            <el-icon><Refresh /></el-icon>
+            刷新列表
+          </button>
+        </div>
+        <div class="settings-assistant-bind">
+          <el-select
+            v-model="selectedBindId"
+            clearable
+            filterable
+            :loading="loading.lobsters"
+            placeholder="选择要绑定的龙虾（留空=不绑定）"
+            class="settings-assistant-bind-select"
+          >
+            <el-option
+              v-for="agent in lobsters"
+              :key="agent.agent_id"
+              :label="lobsterLabel(agent)"
+              :value="agent.agent_id"
+              :disabled="agent.status !== 'running'"
+            />
+          </el-select>
+          <button class="settings-button settings-button--primary" type="button" :disabled="savingBind" @click="saveAssistantBinding">
+            {{ savingBind ? '保存中…' : '保存绑定' }}
+          </button>
+          <button v-if="boundLobsterId" class="settings-button settings-button--ghost" type="button" :disabled="savingBind" @click="unbindAssistant">
+            解除绑定
+          </button>
+        </div>
+        <p v-if="!loading.lobsters && !lobsters.length" class="settings-hint">还没有龙虾，去「龙虾基地」创建一个后再来绑定。</p>
+        <p v-if="bindStatus" class="settings-hint">{{ bindStatus }}</p>
+
+        <div class="settings-section-head settings-section-head--spaced">
           <div>
             <h3>我的邮箱账户</h3>
             <span>发送邮件需要 SMTP；读取收件箱需要 IMAP。</span>

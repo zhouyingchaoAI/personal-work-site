@@ -108,6 +108,13 @@ const tripGroups: TripGroup[] = [
     fields: [{ key: 'details', label: '工作详情', multiline: true, required: true }],
   },
   {
+    id: 'work_approach',
+    title: '工作思路',
+    subtitle: '梳理判断逻辑和推进路径',
+    tone: 'orange',
+    fields: [{ key: 'work_approach', label: '工作思路', multiline: true }],
+  },
+  {
     id: 'issues',
     title: '问题与反馈',
     subtitle: '记录问题、风险与待协同事项',
@@ -169,6 +176,7 @@ const tripForm = reactive<Record<TripFieldKey, string>>({
   purpose: '',
   itinerary: '',
   details: '',
+  work_approach: '',
   issues: '',
   suggestions: '',
 })
@@ -177,6 +185,7 @@ const promptForm = reactive<Partial<Record<TripFieldKey, string>>>({
   purpose: '',
   itinerary: '',
   details: '',
+  work_approach: '',
   issues: '',
   suggestions: '',
 })
@@ -452,7 +461,11 @@ function restoreTripDraft() {
     if (!draft?.trip) return false
     Object.keys(tripForm).forEach((keyName) => {
       const fieldKey = keyName as TripFieldKey
-      if (draft.trip[fieldKey] !== undefined && draft.trip[fieldKey] !== null) tripForm[fieldKey] = String(draft.trip[fieldKey])
+      const draftValue = draft.trip[fieldKey]
+      if (draftValue === undefined || draftValue === null) return
+      const nextValue = String(draftValue)
+      if (!nextValue.trim() && String(tripForm[fieldKey] || '').trim()) return
+      tripForm[fieldKey] = nextValue
     })
     return true
   } catch {
@@ -475,6 +488,7 @@ function applyTripPrefill(prefill: TripPayload) {
   tripForm.purpose = prefill.purpose || ''
   tripForm.itinerary = prefill.itinerary || ''
   tripForm.details = prefill.details || ''
+  tripForm.work_approach = prefill.work_approach || ''
   tripForm.issues = prefill.issues || ''
   tripForm.suggestions = prefill.suggestions || ''
 }
@@ -591,6 +605,7 @@ function instantTripPreviewHtml() {
     ['出差目的', tripForm.purpose],
     ['行程概览', tripForm.itinerary],
     ['工作详情', tripForm.details],
+    ['工作思路', tripForm.work_approach],
     ['问题与反馈', tripForm.issues],
     ['总结与建议', tripForm.suggestions],
   ]
@@ -616,6 +631,7 @@ function instantMailBody() {
     ['出差目的', tripForm.purpose],
     ['行程概览', tripForm.itinerary],
     ['工作详情', tripForm.details],
+    ['工作思路', tripForm.work_approach],
     ['问题与反馈', tripForm.issues],
     ['总结与建议', tripForm.suggestions],
   ]
@@ -659,6 +675,7 @@ function tripPayload(): TripPayload {
     purpose: tripForm.purpose,
     itinerary: tripForm.itinerary,
     details: tripForm.details,
+    work_approach: tripForm.work_approach,
     issues: tripForm.issues,
     suggestions: tripForm.suggestions,
   }

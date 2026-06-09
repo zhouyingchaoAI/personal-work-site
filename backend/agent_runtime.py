@@ -713,13 +713,13 @@ def _trip_preview_intent(text: str) -> bool:
 def _trip_context_payload(context: dict) -> dict:
     keys = (
         "reporter", "department", "location", "trip_start", "trip_end",
-        "purpose", "itinerary", "details", "issues", "suggestions",
+        "purpose", "itinerary", "details", "work_approach", "issues", "suggestions",
     )
     return {key: str(context.get(key) or "").strip() for key in keys}
 
 
 def _trip_payload_has_content(payload: dict) -> bool:
-    return any(str(payload.get(k) or "").strip() for k in ("location", "purpose", "itinerary", "details", "issues", "suggestions"))
+    return any(str(payload.get(k) or "").strip() for k in ("location", "purpose", "itinerary", "details", "work_approach", "issues", "suggestions"))
 
 
 def _trip_material_from_user_text(text: str) -> str:

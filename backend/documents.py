@@ -438,10 +438,10 @@ def format_trip_date_text(start, end):
     return start_text or end_text
 
 
-def trip_prefill(username=None):
-    template = Path((newest("trip", username, fallback_shared=True) or {}).get("path", ""))
+def read_trip_docx_sections(template):
+    template = Path(template or "")
     if not template.exists() or template.suffix.lower() != ".docx":
-        return {"source": ""}
+        return None
 
     try:
         from docx import Document
@@ -458,6 +458,8 @@ def trip_prefill(username=None):
         for row in table.findall("w:tr", ns):
             rows.append([normalize_numbered_text(xml_text(cell).strip()) for cell in row.findall("w:tc", ns)])
 
+        row_count = len(rows)
+
         def get_cell(row_idx, col_idx):
             try:
                 return rows[row_idx][col_idx]
@@ -470,8 +472,18 @@ def trip_prefill(username=None):
             return {"source": template.name}
         table = doc.tables[0]
 
+        row_count = len(table.rows)
+
         def get_cell(row_idx, col_idx):
             return table_cell_text(table, row_idx, col_idx)
+
+    def get_section(label, fallback_row=None):
+        for row_idx in range(row_count):
+            if get_cell(row_idx, 0).strip() == label:
+                return get_cell(row_idx, 1)
+        if fallback_row is None:
+            return ""
+        return get_cell(fallback_row, 1)
 
     date_text = get_cell(1, 1)
     start, end = split_trip_date(date_text)
@@ -483,12 +495,19 @@ def trip_prefill(username=None):
         "trip_start": start,
         "trip_end": end,
         "trip_date_text": date_text,
-        "purpose": get_cell(2, 1),
-        "itinerary": get_cell(3, 1),
-        "details": get_cell(4, 1),
-        "issues": get_cell(5, 1),
-        "suggestions": get_cell(6, 1),
+        "purpose": get_section("出差目的", 2),
+        "itinerary": get_section("行程概览", 3),
+        "details": get_section("工作详情", 4),
+        "work_approach": get_section("工作思路"),
+        "issues": get_section("问题与反馈", 5),
+        "suggestions": get_section("总结与建议", 6),
     }
+
+
+def trip_prefill(username=None):
+    template = Path((newest("trip", username) or {}).get("path", ""))
+    sections = read_trip_docx_sections(template)
+    return sections or {"source": ""}
 
 
 def generate_weekly(payload, username=None):
@@ -724,19 +743,54 @@ def generate_trip_from_docx_template(template, output, values):
         def cell(row_idx, actual_col_idx):
             return rows[row_idx].findall(w_tag("tc"))[actual_col_idx]
 
+        def row_label(row):
+            cells = row.findall(w_tag("tc"))
+            return xml_text(cells[0]).strip() if cells else ""
+
+        def find_row(label):
+            for row_idx, row_item in enumerate(rows):
+                if row_label(row_item) == label:
+                    return row_idx
+            return None
+
+        def ensure_section_row(label, after_label):
+            row_idx = find_row(label)
+            if row_idx is not None:
+                return row_idx
+            after_idx = find_row(after_label)
+            if after_idx is None:
+                return None
+            import copy
+            new_row = copy.deepcopy(rows[after_idx])
+            table.insert(list(table).index(rows[after_idx]) + 1, new_row)
+            rows.insert(after_idx + 1, new_row)
+            set_docx_xml_cell_text(cell(after_idx + 1, 0), label)
+            set_docx_xml_cell_text(cell(after_idx + 1, 1), "")
+            return after_idx + 1
+
+        section_map = {
+            "出差目的": values.get("purpose", ""),
+            "行程概览": values.get("itinerary", ""),
+            "工作详情": values.get("details", ""),
+            "工作思路": values.get("work_approach", ""),
+            "问题与反馈": values.get("issues", ""),
+            "总结与建议": values.get("suggestions", ""),
+        }
+        for label in section_map:
+            ensure_section_row(label, "工作详情" if label == "工作思路" else "工作思路" if label in {"问题与反馈", "总结与建议"} else "行程概览")
+
         cell_map = {
             (0, 1): values.get("reporter", ""),
             (0, 3): values.get("department", "场景研究院"),
             (0, 5): values.get("location", ""),
             (1, 1): values.get("date_text", ""),
-            (2, 1): values.get("purpose", ""),
-            (3, 1): values.get("itinerary", ""),
-            (4, 1): values.get("details", ""),
-            (5, 1): values.get("issues", ""),
-            (6, 1): values.get("suggestions", ""),
         }
         for (row_idx, col_idx), value in cell_map.items():
             set_docx_xml_cell_text(cell(row_idx, col_idx), value)
+        for label, value in section_map.items():
+            row_idx = find_row(label)
+            if row_idx is not None:
+                set_docx_xml_cell_text(cell(row_idx, 1), value)
 
         output.parent.mkdir(parents=True, exist_ok=True)
         temp_output = output.with_suffix(output.suffix + ".tmp")
@@ -801,6 +855,7 @@ def generate_trip_default_docx(output, values):
             row(cell("出差目的", bold=True), cell(values.get("purpose", ""), 5)),
             row(cell("行程概览", bold=True), cell(values.get("itinerary", ""), 5)),
             row(cell("工作详情", bold=True), cell(values.get("details", ""), 5)),
+            row(cell("工作思路", bold=True), cell(values.get("work_approach", ""), 5)),
             row(cell("问题与反馈", bold=True), cell(values.get("issues", ""), 5)),
             row(cell("总结与建议", bold=True), cell(values.get("suggestions", ""), 5)),
         ]
@@ -855,6 +910,7 @@ def generate_trip(payload, username=None):
         "purpose": payload.get("purpose", ""),
         "itinerary": payload.get("itinerary", ""),
         "details": payload.get("details", ""),
+        "work_approach": payload.get("work_approach", ""),
         "issues": payload.get("issues", ""),
         "suggestions": payload.get("suggestions", ""),
     }

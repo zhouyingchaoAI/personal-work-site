@@ -798,6 +798,7 @@
         el('tripPurpose').value = prefill.purpose || '';
         el('tripItinerary').value = prefill.itinerary || '';
         el('tripDetails').value = prefill.details || '';
+        el('tripWorkApproach').value = prefill.work_approach || '';
         el('tripIssues').value = prefill.issues || '';
         el('tripSuggestions').value = prefill.suggestions || '';
         renderTripCards();

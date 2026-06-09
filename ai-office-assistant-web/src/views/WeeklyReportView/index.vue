@@ -154,6 +154,7 @@ const loading = reactive({
   template: false,
 })
 
+
 const weeklyPeriod = reactive({
   start: '',
   end: '',
@@ -994,13 +995,19 @@ async function summarizeFromDiaries() {
       setStatus(data.warning || '该范围内没有工作日记', 'error')
       return
     }
-    const parsed = parseDiarySummary(data.summary || '')
-    applyRowsBySection({
-      summary: parsed.summary.map((content) => ({ category: '', content, status: '已完成' })),
-      follow: parsed.follow.map((content) => ({ progress: content })),
-      next: parsed.next.map((content) => ({ category: '', content, difficulty: '正常' })),
-    })
-    setStatus('工作日记总结已应用到周报，请检查后再生成正文', 'ok')
+    // 日记总结只更新「本周工作总结」和「下周工作计划」；「重点工作跟进」沿用历史周报内容，不覆盖。
+    if (data.rows && [data.rows.summary, data.rows.next].some((rows) => rows?.length)) {
+      // 后端已返回结构化行（分类对齐历史周报），直接应用。
+      applyRows('summary', data.rows.summary || [])
+      applyRows('next', data.rows.next || [])
+    } else {
+      // 兼容回退：后端只给了纯文本时按段落拆分。
+      const parsed = parseDiarySummary(data.summary || '')
+      applyRows('summary', parsed.summary.map((content) => ({ category: '', content, status: '已完成' })))
+      applyRows('next', parsed.next.map((content) => ({ category: '', content, difficulty: '正常' })))
+    }
+    syncActiveSectionToFirstFilled()
+    setStatus('已更新本周工作总结和下周工作计划（重点工作跟进保留上周内容），请检查后再生成正文', 'ok')
     activeStep.value = 1
     markReportDirty()
     saveWeeklyDraft()
@@ -1233,7 +1240,60 @@ async function deleteReportItem(report: ReportFile) {
   await loadReports()
 }
 
+const PENDING_DIARY_SUMMARY_KEY = 'pendingDiarySummary'
+
+// 读取并清除日记页弹框总结好的结果（含时段与 summary/next 行）。
+function takePendingDiarySummary(): {
+  start?: string
+  end?: string
+  rows?: { summary?: WeeklyRowPayload[]; next?: WeeklyRowPayload[] }
+} | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_DIARY_SUMMARY_KEY)
+    if (!raw) return null
+    sessionStorage.removeItem(PENDING_DIARY_SUMMARY_KEY)
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+// 来自日记总结的初始化：summary+next 立刻套用（不被慢请求阻塞），follow 单独从历史周报补齐。
+async function initializeFromDiarySummary(pending: NonNullable<ReturnType<typeof takePendingDiarySummary>>) {
+  loading.init = true
+  if (pending.start && pending.end) {
+    weeklyPeriod.start = pending.start
+    weeklyPeriod.end = pending.end
+  }
+  applyRows('summary', pending.rows?.summary || [])
+  applyRows('next', pending.rows?.next || [])
+  applyRows('follow', [])
+  syncActiveSectionToFirstFilled()
+  activeStep.value = 1
+  setStatus('已应用日记总结的本周工作总结与下周计划，正在载入历史的重点工作跟进...', 'ok')
+  initialized.value = true
+  loading.init = false
+  // 重点工作跟进沿用历史周报：只取 follow，不触碰 summary/next。
+  try {
+    await loadReports()
+    if (weeklyReports.value.length) {
+      const prefill = await getWeeklyPrefill()
+      if (!prefill.error) applyRows('follow', prefill.follow_rows || [])
+    }
+  } catch {
+    /* 历史预填失败不影响已套用的日记总结 */
+  }
+  setStatus('已套用日记总结（本周总结/下周计划），重点工作跟进沿用历史周报，请检查后再生成正文', 'ok')
+  markReportDirty()
+  saveWeeklyDraft()
+}
+
 async function initializeWeekly() {
+  const pending = takePendingDiarySummary()
+  if (pending?.rows) {
+    await initializeFromDiarySummary(pending)
+    return
+  }
   loading.init = true
   setDefaultWeeklyDates()
   try {

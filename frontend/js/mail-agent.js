@@ -1089,6 +1089,7 @@
         purpose: el('tripPurpose').value,
         itinerary: el('tripItinerary').value,
         details: el('tripDetails').value,
+        work_approach: el('tripWorkApproach').value,
         issues: el('tripIssues').value,
         suggestions: el('tripSuggestions').value
       };
@@ -1112,6 +1113,7 @@
         if (data.purpose !== undefined) el('tripPurpose').value = data.purpose;
         if (data.itinerary !== undefined) el('tripItinerary').value = data.itinerary;
         if (data.details !== undefined) el('tripDetails').value = data.details;
+        if (data.work_approach !== undefined) el('tripWorkApproach').value = data.work_approach;
         if (data.issues !== undefined) el('tripIssues').value = data.issues;
         if (data.suggestions !== undefined) el('tripSuggestions').value = data.suggestions;
         renderTripCards();

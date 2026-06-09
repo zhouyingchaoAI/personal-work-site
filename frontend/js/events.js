@@ -94,6 +94,7 @@
         purpose: el('tripPurpose').value,
         itinerary: el('tripItinerary').value,
         details: el('tripDetails').value,
+        work_approach: el('tripWorkApproach').value,
         issues: el('tripIssues').value,
         suggestions: el('tripSuggestions').value
       };

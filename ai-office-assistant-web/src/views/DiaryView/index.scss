@@ -646,6 +646,18 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
   padding: 0;
 }
 
+.diary-list-group-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  background: #f3f4f6;
+  border-bottom: 1px solid #e5e7eb;
+}
+
 .diary-list-item {
   display: grid;
   min-width: 0;
@@ -988,5 +1000,116 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
 
   .diary-list-tag {
     width: max-content;
+  }
+}
+
+.diary-summarize-tip {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #4b5563;
+}
+
+.diary-summarize-tip--muted {
+  margin-top: 10px;
+  color: #9ca3af;
+}
+
+.diary-summarize-select {
+  width: 100%;
+}
+
+.diary-summarize-steps {
+  margin-bottom: 16px;
+}
+
+.diary-summarize-step {
+  display: grid;
+  gap: 12px;
+}
+
+.diary-summarize-list {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px 2px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+
+  .el-checkbox-group {
+    display: grid;
+    gap: 2px;
+  }
+}
+
+.diary-summarize-check {
+  display: flex;
+  height: auto;
+  align-items: flex-start;
+  width: 100%;
+  margin: 0;
+  padding: 6px 10px;
+  white-space: normal;
+
+  :deep(.el-checkbox__label) {
+    display: grid;
+    gap: 2px;
+    line-height: 1.5;
+
+    strong {
+      color: #1f2937;
+      font-size: 13px;
+    }
+
+    span {
+      color: #6b7280;
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+  }
+}
+
+.diary-summarize-result {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px 6px;
+
+  h4 {
+    margin: 10px 0 6px;
+    color: #15499c;
+    font-size: 14px;
+    font-weight: 800;
+  }
+
+  ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+
+  li {
+    margin: 4px 0;
+    color: #273653;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-line;
+
+    em {
+      margin-right: 6px;
+      padding: 0 6px;
+      border-radius: 4px;
+      background: #eef2fb;
+      color: #15499c;
+      font-style: normal;
+      font-size: 12px;
+    }
+  }
+
+  .diary-summarize-empty {
+    list-style: none;
+    margin-left: -18px;
+    color: #9ca3af;
   }
 }

@@ -164,6 +164,23 @@ def write_config(config):
     CONFIG_PATH.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def get_assistant_lobster(username):
+    """返回用户为悬浮助手绑定的龙虾 {agent_id, agent_name}，未绑定返回 None。"""
+    return read_config().get("user_assistant_lobster", {}).get(username or "") or None
+
+
+def save_assistant_lobster(username, agent_id, agent_name=""):
+    """保存/清除悬浮助手绑定的龙虾。agent_id 为空表示解绑。"""
+    config = read_config()
+    mapping = config.setdefault("user_assistant_lobster", {})
+    if agent_id:
+        mapping[username] = {"agent_id": int(agent_id), "agent_name": str(agent_name or "")}
+    else:
+        mapping.pop(username or "", None)
+    write_config(config)
+    return mapping.get(username or "")
+
+
 def read_agent_config():
     if not AGENT_CONFIG_PATH.exists():
         return {}

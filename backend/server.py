@@ -257,6 +257,12 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, status=502)
             return
+        if parsed.path == "/api/assistant-lobster":
+            user = self.require_user()
+            if not user:
+                return
+            self.send_json({"ok": True, "lobster": get_assistant_lobster(user.get("username", ""))})
+            return
         if parsed.path == "/api/admin-config":
             if not self.require_admin():
                 return
@@ -469,8 +475,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(
                 {
                     "reports": files,
-                    "latest_weekly": (newest("weekly", username, fallback_shared=True) or {}).get("name", ""),
-                    "latest_trip": (newest("trip", username, fallback_shared=True) or {}).get("name", ""),
+                    "latest_weekly": (newest("weekly", username) or {}).get("name", ""),
+                    "latest_trip": (newest("trip", username) or {}).get("name", ""),
                 }
             )
             return
@@ -817,6 +823,32 @@ class Handler(BaseHTTPRequestHandler):
                     method="POST",
                 )
                 with opener.open(req, timeout=30) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+            elif parsed.path == "/api/assistant-lobster":
+                # 保存/清除悬浮助手绑定的龙虾（agent_id 为空=解绑）。
+                agent_id = payload.get("agent_id")
+                lobster = save_assistant_lobster(username, agent_id, payload.get("agent_name", ""))
+                result = {"ok": True, "lobster": lobster}
+            elif parsed.path == "/api/lobster-chat":
+                # 悬浮助手对话桥接到绑定的龙虾：经 SSO 调平台 chat 端点。
+                message = str(payload.get("message", "") or "").strip()
+                if not message:
+                    raise ValueError("message is required")
+                bound = get_assistant_lobster(username)
+                agent_id = int(payload.get("agent_id") or (bound or {}).get("agent_id") or 0)
+                if not agent_id:
+                    raise ValueError("尚未绑定龙虾，请先在设置页绑定")
+                session_id = str(payload.get("session_id") or "").strip() or f"office-assistant-{username}"
+                token = _openclaw_sso_token(public_user(self.current_user()))
+                target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                req = urllib.request.Request(
+                    f"{target}/api/agents/{agent_id}/chat",
+                    data=json.dumps({"message": message, "session_id": session_id}, ensure_ascii=False).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+                    method="POST",
+                )
+                with opener.open(req, timeout=185) as resp:
                     result = json.loads(resp.read().decode("utf-8"))
             else:
                 self.send_json({"error": "Not found"}, status=404)

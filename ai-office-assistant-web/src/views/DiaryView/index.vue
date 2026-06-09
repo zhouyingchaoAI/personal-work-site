@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowRight, Delete, EditPen, Search } from '@element-plus/icons-vue'
 import IconTextButton from '../../components/IconTextButton/index.vue'
@@ -7,10 +8,13 @@ import { defaultOptimizePrompt } from '../../services/authSession'
 import {
   deleteDiary,
   getDiary,
+  getWeeklyPrefill,
   listDiaries,
   optimizeText,
   saveDiary,
+  summarizeDiaries,
   type DiaryEntry,
+  type DiarySummaryRows,
 } from '../../services/personalWorkApi'
 import './index.scss'
 
@@ -64,6 +68,21 @@ const optimizingField = ref<DiaryFieldKey | ''>('')
 const promptEditor = ref<DiaryFieldKey | ''>('')
 const promptDraft = ref('')
 
+const router = useRouter()
+// 已载入内容的快照，用于判断是否有未保存修改。
+const formSnapshot = ref('')
+
+// 「总结本周→去周报」弹框（三步：选日记 → 确认分类 → 查看结果）。
+const summarizeDialogVisible = ref(false)
+const summarizeStep = ref<1 | 2 | 3>(1)
+const summarizeBusy = ref(false)
+const summarizeRange = ref<string[]>([])
+const rangeDiaries = ref<DiaryEntry[]>([])
+const selectedDates = ref<string[]>([])
+const suggestedCategories = ref<string[]>([])
+const summarizeCategories = ref<string[]>([])
+const summarizeResult = ref<DiarySummaryRows | null>(null)
+
 const filters = reactive({
   keyword: '',
   start: '',
@@ -114,6 +133,25 @@ const listSummary = computed(() => {
   return diaries.value.length ? `共 ${diaries.value.length} 条` : '暂无日记'
 })
 const recentDiaries = computed(() => diaries.value.slice(0, 3))
+// 浏览列表按“周”分组（列表已按日期倒序），便于回顾。
+const diaryGroups = computed(() => {
+  const groups: { key: string; label: string; items: DiaryEntry[] }[] = []
+  for (const entry of diaries.value) {
+    const date = parseDateValue(entry.date)
+    if (!date) continue
+    const day = date.getDay() || 7
+    const monday = new Date(date)
+    monday.setDate(date.getDate() - day + 1)
+    const sunday = new Date(monday)
+    sunday.setDate(monday.getDate() + 6)
+    const key = toDateInputValue(monday)
+    const label = `${formatMonthDay(key)} - ${formatMonthDay(toDateInputValue(sunday))}`
+    const group = groups.find((item) => item.key === key)
+    if (group) group.items.push(entry)
+    else groups.push({ key, label, items: [entry] })
+  }
+  return groups
+})
 const detailUpdatedText = computed(() => formatDateTime(selectedDiary.value?.updated_at || selectedDiary.value?.created_at || ''))
 const currentPromptSection = computed(() => diarySections.find((section) => section.key === promptEditor.value))
 const promptDialogVisible = computed({
@@ -187,6 +225,12 @@ function setStatus(message: string, tone: DiaryStatusTone = 'normal') {
   statusTone.value = tone
 }
 
+function formFingerprint() {
+  return `${diaryForm.today_work} ${diaryForm.tomorrow_plan} ${diaryForm.thoughts}`
+}
+
+const isFormDirty = computed(() => formFingerprint() !== formSnapshot.value)
+
 function applyDiary(diary: DiaryEntry | null) {
   diaryForm.today_work = diary?.today_work || ''
   diaryForm.tomorrow_plan = diary?.tomorrow_plan || ''
@@ -194,6 +238,7 @@ function applyDiary(diary: DiaryEntry | null) {
   diarySections.forEach((section) => {
     optimizePreview[section.key] = null
   })
+  formSnapshot.value = formFingerprint()
 }
 
 function diaryPreview(entry: DiaryEntry) {
@@ -319,6 +364,7 @@ async function saveCurrentDiary() {
     const result = await saveDiary({ date: selectedDate.value, ...diaryForm })
     await loadDiaryList()
     selectedDiary.value = result.diary
+    formSnapshot.value = formFingerprint()
     setStatus(`${formatDateText(selectedDate.value)} 的日记已保存`, 'ok')
     ElMessage.success('日记已保存')
   } catch (error) {
@@ -388,11 +434,180 @@ async function deleteDiaryItem(entry: DiaryEntry) {
   }
 }
 
+async function confirmLeaveIfDirty() {
+  if (!isFormDirty.value) return true
+  try {
+    await ElMessageBox.confirm('当前日记有未保存的修改，确定要离开吗？', '未保存提醒', {
+      confirmButtonText: '仍然离开',
+      cancelButtonText: '继续编辑',
+      type: 'warning',
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+// 跳到周报助手并自动按本周日记生成周报。
+function weekRange(reference: Date) {
+  const day = reference.getDay() || 7
+  const monday = new Date(reference)
+  monday.setHours(0, 0, 0, 0)
+  monday.setDate(reference.getDate() - day + 1)
+  const friday = new Date(monday)
+  friday.setDate(monday.getDate() + 4)
+  return { start: toDateInputValue(monday), end: toDateInputValue(friday) }
+}
+
+// 第一步：打开弹框，默认本周范围并加载日记列表（默认全选）。
+async function openSummarizeDialog() {
+  const { start, end } = weekRange(parseDateValue(selectedDate.value) || new Date())
+  summarizeStep.value = 1
+  summarizeResult.value = null
+  suggestedCategories.value = []
+  summarizeCategories.value = []
+  summarizeRange.value = [start, end]
+  summarizeDialogVisible.value = true
+  await loadRangeDiaries()
+}
+
+async function loadRangeDiaries() {
+  const [start, end] = summarizeRange.value
+  if (!start || !end) {
+    rangeDiaries.value = []
+    selectedDates.value = []
+    return
+  }
+  summarizeBusy.value = true
+  try {
+    const result = await listDiaries({ start, end, limit: 200 })
+    rangeDiaries.value = result.diaries
+    selectedDates.value = result.diaries.map((entry) => entry.date)
+  } catch (error) {
+    rangeDiaries.value = []
+    selectedDates.value = []
+    ElMessage.error(error instanceof Error ? error.message : '加载日记失败')
+  } finally {
+    summarizeBusy.value = false
+  }
+}
+
+// 第二步：拉取上周周报「本周总结 + 下周计划」的分类作提示，供编辑。
+async function goToCategoryStep() {
+  if (!selectedDates.value.length) {
+    ElMessage.warning('请至少勾选一篇日记')
+    return
+  }
+  summarizeStep.value = 2
+  summarizeBusy.value = true
+  try {
+    const prefill = await getWeeklyPrefill()
+    const cats = Array.from(
+      new Set(
+        [...(prefill.summary_rows || []), ...(prefill.next_rows || [])]
+          .map((row) => String(row.category || '').trim())
+          .filter(Boolean),
+      ),
+    )
+    suggestedCategories.value = cats
+    if (!summarizeCategories.value.length) summarizeCategories.value = [...cats]
+  } catch {
+    suggestedCategories.value = []
+  } finally {
+    summarizeBusy.value = false
+  }
+}
+
+// 第三步：调用 AI 总结所选日记，展示结果。
+async function runSummarize() {
+  const [start, end] = summarizeRange.value
+  summarizeBusy.value = true
+  try {
+    const data = await summarizeDiaries(start, end, summarizeCategories.value, selectedDates.value)
+    if (!data.ok) {
+      ElMessage.error(data.error || '工作日记总结失败')
+      return
+    }
+    if (data.mode === 'empty') {
+      ElMessage.warning(data.warning || '所选日记没有内容')
+      return
+    }
+    summarizeResult.value = data.rows || { summary: [], follow: [], next: [] }
+    summarizeStep.value = 3
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '工作日记总结失败')
+  } finally {
+    summarizeBusy.value = false
+  }
+}
+
+// 确认结果：存入 sessionStorage 后跳转周报助手（周报页直接套用，不再重复调用 AI）。
+function confirmSummarizeToWeekly() {
+  const [start, end] = summarizeRange.value
+  const rows = summarizeResult.value || { summary: [], follow: [], next: [] }
+  sessionStorage.setItem(
+    'pendingDiarySummary',
+    JSON.stringify({ start, end, rows: { summary: rows.summary || [], next: rows.next || [] } }),
+  )
+  summarizeDialogVisible.value = false
+  router.push({ path: '/workspace/weekly' })
+}
+
+function addDays(value: string, delta: number) {
+  const date = parseDateValue(value) || new Date()
+  date.setDate(date.getDate() + delta)
+  return toDateInputValue(date)
+}
+
+async function shiftSelectedDate(delta: number) {
+  if (!(await confirmLeaveIfDirty())) return
+  await loadDiaryToForm(addDays(selectedDate.value, delta))
+}
+
+async function copyYesterdayPlan() {
+  const prevDate = addDays(selectedDate.value, -1)
+  loading.current = true
+  try {
+    const result = await getDiary(prevDate)
+    const plan = result.diary?.tomorrow_plan?.trim()
+    if (!plan) {
+      setStatus(`${formatDateText(prevDate)} 没有“明日计划”可复制`, 'error')
+      return
+    }
+    diaryForm.today_work = diaryForm.today_work.trim()
+      ? `${diaryForm.today_work.trim()}\n${plan}`
+      : plan
+    setStatus(`已把 ${formatDateText(prevDate)} 的明日计划填入今日工作`, 'ok')
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : '读取昨日计划失败', 'error')
+  } finally {
+    loading.current = false
+  }
+}
+
+function handleBeforeUnload(event: BeforeUnloadEvent) {
+  if (!isFormDirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onBeforeRouteLeave(async () => {
+  if (activeMode.value !== 'write') return true
+  return confirmLeaveIfDirty()
+})
+
 async function initializeDiary() {
   await Promise.all([loadDiaryToForm(), loadDiaryList()])
 }
 
-onMounted(initializeDiary)
+onMounted(() => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+  initializeDiary()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+})
 </script>
 
 <template>
@@ -421,11 +636,15 @@ onMounted(initializeDiary)
             @change="loadDiaryToForm(selectedDate)"
           />
           <div class="diary-control-actions">
+            <IconTextButton icon="history" :disabled="loading.current" @click="shiftSelectedDate(-1)">前一天</IconTextButton>
+            <IconTextButton icon="history" :disabled="loading.current" @click="shiftSelectedDate(1)">后一天</IconTextButton>
             <IconTextButton icon="history" :disabled="loading.current" @click="loadTodayDiary">载入今天</IconTextButton>
+            <IconTextButton icon="refresh" :disabled="loading.current" @click="copyYesterdayPlan">复制昨日计划</IconTextButton>
             <IconTextButton icon="refresh" @click="clearDiaryForm">清空</IconTextButton>
             <IconTextButton icon="send" variant="primary" :disabled="loading.save" @click="saveCurrentDiary">
               {{ loading.save ? '保存中' : '保存日记' }}
             </IconTextButton>
+            <IconTextButton icon="send" :disabled="loading.current" @click="openSummarizeDialog">总结本周→去周报</IconTextButton>
           </div>
         </section>
 
@@ -528,24 +747,29 @@ onMounted(initializeDiary)
       <section class="diary-browse-content">
         <aside class="diary-list-card">
           <div class="diary-list-scroll">
-            <button
-              v-for="entry in diaries"
-              :key="entry.date"
-              :class="['diary-list-item', { active: selectedDiary?.date === entry.date }]"
-              type="button"
-              @click="selectDiary(entry)"
-            >
-              <span class="diary-list-date">
-                <strong>{{ entry.date.replaceAll('-', '.') }}</strong>
-                <em>{{ formatWeekday(entry.date) }}</em>
-              </span>
-              <span class="diary-list-copy">
-                <strong>{{ diaryPreview(entry) }}</strong>
-                <small>{{ formatUpdateTime(entry.updated_at || entry.created_at || '') }}</small>
-              </span>
-              <span class="diary-list-tag">已记录</span>
-            </button>
-            <div v-if="!diaries.length && !loading.list" class="diary-empty diary-empty--list">暂无日记，去记录第一篇吧。</div>
+            <template v-for="group in diaryGroups" :key="group.key">
+              <div class="diary-list-group-label">{{ group.label }}</div>
+              <button
+                v-for="entry in group.items"
+                :key="entry.date"
+                :class="['diary-list-item', { active: selectedDiary?.date === entry.date }]"
+                type="button"
+                @click="selectDiary(entry)"
+              >
+                <span class="diary-list-date">
+                  <strong>{{ entry.date.replaceAll('-', '.') }}</strong>
+                  <em>{{ formatWeekday(entry.date) }}</em>
+                </span>
+                <span class="diary-list-copy">
+                  <strong>{{ diaryPreview(entry) }}</strong>
+                  <small>{{ formatUpdateTime(entry.updated_at || entry.created_at || '') }}</small>
+                </span>
+                <span class="diary-list-tag">已记录</span>
+              </button>
+            </template>
+            <div v-if="!diaries.length && !loading.list" class="diary-empty diary-empty--list">
+              {{ filters.keyword || filters.start || filters.end ? '没有符合条件的日记，换个关键词或日期范围试试。' : '暂无日记，去记录第一篇吧。' }}
+            </div>
             <div v-if="loading.list" class="diary-empty diary-empty--list">正在加载日记列表...</div>
           </div>
           <footer>{{ listSummary }}</footer>
@@ -604,6 +828,122 @@ onMounted(initializeDiary)
         <div class="diary-prompt-actions prompt-dialog-actions">
           <el-button class="prompt-dialog-button" @click="promptEditor = ''">取消</el-button>
           <el-button class="prompt-dialog-button prompt-dialog-button--primary" @click="savePromptEditor">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="summarizeDialogVisible"
+      class="diary-summarize-dialog"
+      title="总结本周 → 去周报"
+      width="min(640px, 94vw)"
+      append-to-body
+      destroy-on-close
+      :close-on-click-modal="false"
+    >
+      <el-steps :active="summarizeStep - 1" align-center finish-status="success" class="diary-summarize-steps">
+        <el-step title="选择日记" />
+        <el-step title="确认分类" />
+        <el-step title="查看结果" />
+      </el-steps>
+
+      <!-- 第一步：选时间范围 + 勾选日记 -->
+      <div v-if="summarizeStep === 1" class="diary-summarize-step">
+        <p class="diary-summarize-tip">选择日期范围，并勾选要纳入本次总结的日记（默认全选）。</p>
+        <el-date-picker
+          v-model="summarizeRange"
+          type="daterange"
+          value-format="YYYY-MM-DD"
+          format="YYYY.MM.DD"
+          range-separator="→"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          @change="loadRangeDiaries"
+        />
+        <div class="diary-summarize-list">
+          <p v-if="summarizeBusy" class="diary-summarize-tip diary-summarize-tip--muted">正在加载日记...</p>
+          <el-checkbox-group v-else v-model="selectedDates">
+            <el-checkbox v-for="entry in rangeDiaries" :key="entry.date" :value="entry.date" class="diary-summarize-check">
+              <strong>{{ formatMonthDay(entry.date) }} {{ formatWeekday(entry.date) }}</strong>
+              <span>{{ diaryPreview(entry) }}</span>
+            </el-checkbox>
+          </el-checkbox-group>
+          <p v-if="!summarizeBusy && !rangeDiaries.length" class="diary-summarize-tip diary-summarize-tip--muted">
+            该日期范围内没有日记。
+          </p>
+        </div>
+      </div>
+
+      <!-- 第二步：确认/编辑任务分类 -->
+      <div v-else-if="summarizeStep === 2" class="diary-summarize-step">
+        <p class="diary-summarize-tip">
+          下列分类取自上一份周报的「本周总结」与「下周计划」。确认要把本周日记总结归入这些分类（可增删、回车新建）：
+        </p>
+        <el-select
+          v-model="summarizeCategories"
+          class="diary-summarize-select"
+          multiple
+          filterable
+          allow-create
+          default-first-option
+          :loading="summarizeBusy"
+          placeholder="输入分类后回车添加，例如：个人办公智能体"
+        >
+          <el-option v-for="cat in suggestedCategories" :key="cat" :label="cat" :value="cat" />
+        </el-select>
+        <p v-if="!summarizeBusy && !suggestedCategories.length" class="diary-summarize-tip diary-summarize-tip--muted">
+          未找到历史周报分类，可直接输入本周的任务分类。
+        </p>
+      </div>
+
+      <!-- 第三步：查看总结结果 -->
+      <div v-else class="diary-summarize-step">
+        <p class="diary-summarize-tip">总结结果预览（「重点工作跟进」将在周报里沿用历史周报，不在此处生成）：</p>
+        <div class="diary-summarize-result">
+          <h4>本周工作总结</h4>
+          <ul>
+            <li v-for="(row, i) in summarizeResult?.summary || []" :key="`s${i}`">
+              <em>{{ row.category }}</em>{{ row.content }}
+            </li>
+            <li v-if="!(summarizeResult?.summary || []).length" class="diary-summarize-empty">（无）</li>
+          </ul>
+          <h4>下周工作计划</h4>
+          <ul>
+            <li v-for="(row, i) in summarizeResult?.next || []" :key="`n${i}`">
+              <em>{{ row.category }}</em>{{ row.content }}
+            </li>
+            <li v-if="!(summarizeResult?.next || []).length" class="diary-summarize-empty">（无）</li>
+          </ul>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="prompt-dialog-actions">
+          <el-button class="prompt-dialog-button" @click="summarizeDialogVisible = false">取消</el-button>
+          <el-button
+            v-if="summarizeStep === 1"
+            class="prompt-dialog-button prompt-dialog-button--primary"
+            :disabled="summarizeBusy || !selectedDates.length"
+            @click="goToCategoryStep"
+          >
+            下一步
+          </el-button>
+          <template v-else-if="summarizeStep === 2">
+            <el-button class="prompt-dialog-button" @click="summarizeStep = 1">上一步</el-button>
+            <el-button
+              class="prompt-dialog-button prompt-dialog-button--primary"
+              :loading="summarizeBusy"
+              @click="runSummarize"
+            >
+              开始总结
+            </el-button>
+          </template>
+          <template v-else>
+            <el-button class="prompt-dialog-button" @click="summarizeStep = 2">重新总结</el-button>
+            <el-button class="prompt-dialog-button prompt-dialog-button--primary" @click="confirmSummarizeToWeekly">
+              去周报助手
+            </el-button>
+          </template>
         </div>
       </template>
     </el-dialog>

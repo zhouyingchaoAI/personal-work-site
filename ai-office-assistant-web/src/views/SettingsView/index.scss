@@ -1320,3 +1320,29 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
     width: 100%;
   }
 }
+
+.settings-assistant-bind {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 8px;
+}
+
+.settings-assistant-bind-select {
+  min-width: 320px;
+  flex: 1 1 320px;
+}
+
+.settings-hint {
+  margin: 6px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.settings-section-head--spaced {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid #edf1f7;
+}

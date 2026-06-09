@@ -118,6 +118,7 @@ export interface TripPayload {
   purpose?: string
   itinerary?: string
   details?: string
+  work_approach?: string
   issues?: string
   suggestions?: string
 }
@@ -167,10 +168,17 @@ export interface OptimizeResponse {
   warning?: string
 }
 
+export interface DiarySummaryRows {
+  summary: WeeklyRowPayload[]
+  follow: WeeklyRowPayload[]
+  next: WeeklyRowPayload[]
+}
+
 export interface DiarySummaryResponse {
   ok: boolean
   mode?: string
   summary?: string
+  rows?: DiarySummaryRows
   warning?: string
   error?: string
 }
@@ -581,6 +589,7 @@ export interface LobsterAgent {
   provider?: string
   model?: string
   status?: string
+  created_at?: string
   mcp_services?: Array<{ name?: string }>
 }
 
@@ -740,8 +749,18 @@ export function optimizeText(text: string, prompt: string) {
   return post<OptimizeResponse>('/optimize', { text, prompt })
 }
 
-export function summarizeDiaries(startDate: string, endDate: string) {
-  return post<DiarySummaryResponse>('/diary/summarize', { start_date: startDate, end_date: endDate })
+export function summarizeDiaries(
+  startDate: string,
+  endDate: string,
+  categories?: string[],
+  dates?: string[],
+) {
+  return post<DiarySummaryResponse>('/diary/summarize', {
+    start_date: startDate,
+    end_date: endDate,
+    categories: categories && categories.length ? categories : undefined,
+    dates: dates && dates.length ? dates : undefined,
+  })
 }
 
 export function listDiaries(params: DiaryListParams = {}) {
@@ -930,6 +949,35 @@ export function listMyLobsters() {
 
 export function installMcpToLobster(agentId: number) {
   return post<McpLobsterInstallResponse>('/install-mcp-to-lobster', { agent_id: agentId })
+}
+
+export interface BoundLobster {
+  agent_id: number
+  agent_name: string
+}
+
+export interface AssistantLobsterResponse {
+  ok: boolean
+  lobster: BoundLobster | null
+  error?: string
+}
+
+export interface LobsterChatResponse {
+  ok: boolean
+  reply?: string
+  error?: string
+}
+
+export function getAssistantLobster() {
+  return request<AssistantLobsterResponse>('/assistant-lobster')
+}
+
+export function saveAssistantLobster(agentId: number | null, agentName = '') {
+  return post<AssistantLobsterResponse>('/assistant-lobster', { agent_id: agentId, agent_name: agentName })
+}
+
+export function lobsterChat(message: string, sessionId?: string) {
+  return post<LobsterChatResponse>('/lobster-chat', { message, session_id: sessionId })
 }
 
 export function restartLobster(agentId: number) {

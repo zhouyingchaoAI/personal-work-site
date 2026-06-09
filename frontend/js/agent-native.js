@@ -535,7 +535,7 @@
         ctx.weekly_next = collectWorkRows('next');
       }
     } else if (task === 'trip') {
-      const ids = ['tripReporter','tripDepartment','tripLocation','tripStart','tripEnd','tripPurpose','tripItinerary','tripDetails','tripIssues','tripSuggestions'];
+      const ids = ['tripReporter','tripDepartment','tripLocation','tripStart','tripEnd','tripPurpose','tripItinerary','tripDetails','tripWorkApproach','tripIssues','tripSuggestions'];
       ids.forEach(id => { const el = $id(id); if (el) ctx[id] = el.value; });
     } else if (task === 'diary') {
       const ids = ['diaryTodayWork','diaryTomorrowPlan','diaryThoughts'];

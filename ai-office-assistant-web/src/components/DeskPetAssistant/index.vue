@@ -2,7 +2,14 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ArrowRight, Close, MagicStick, Position, StarFilled } from '@element-plus/icons-vue'
 import type { MenuId } from '../../layout/menu'
-import { agentChat, type AgentKind, type AgentMessage } from '../../services/personalWorkApi'
+import {
+  agentChat,
+  getAssistantLobster,
+  lobsterChat,
+  type AgentKind,
+  type AgentMessage,
+  type BoundLobster,
+} from '../../services/personalWorkApi'
 import sleepPetImage from '../../assets/L1.png'
 import activePetImage from '../../assets/L2.png'
 import './index.scss'
@@ -28,6 +35,8 @@ const mode = ref<PetMode>('sleep')
 const inputText = ref('')
 const loading = ref(false)
 const messages = ref<AgentMessage[]>([])
+// 已绑定的龙虾：绑定后对话直通该龙虾，否则走本地页面助手。
+const boundLobster = ref<BoundLobster | null>(null)
 const position = ref({ left: 0, top: 0 })
 const hasPosition = ref(false)
 const windowSize = ref({ width: 0, height: 0 })
@@ -228,12 +237,22 @@ function resetMessages() {
   inputText.value = ''
 }
 
+async function loadBinding() {
+  try {
+    const result = await getAssistantLobster()
+    boundLobster.value = result.ok ? result.lobster : null
+  } catch {
+    boundLobster.value = null
+  }
+}
+
 function wake() {
   if (ignoreNextClick) {
     ignoreNextClick = false
     return
   }
   if (mode.value === 'sleep') {
+    loadBinding()
     setMode('menu')
     return
   }
@@ -267,9 +286,16 @@ async function sendMessage(text = inputText.value) {
   inputText.value = ''
   loading.value = true
   try {
-    const result = await agentChat(currentConfig.value.agent, messages.value.slice(-8))
-    if (!result.ok) throw new Error(result.error || 'AI 助手暂时不可用')
-    messages.value.push({ role: 'assistant', content: result.reply || '我已经看过当前内容，暂时没有新的补充。' })
+    if (boundLobster.value) {
+      // 已绑定龙虾：对话直通该龙虾（多轮由后端固定 session 维持连续）。
+      const result = await lobsterChat(content)
+      if (!result.ok) throw new Error(result.error || '龙虾暂时不可用')
+      messages.value.push({ role: 'assistant', content: result.reply || '（龙虾没有返回内容）' })
+    } else {
+      const result = await agentChat(currentConfig.value.agent, messages.value.slice(-8))
+      if (!result.ok) throw new Error(result.error || 'AI 助手暂时不可用')
+      messages.value.push({ role: 'assistant', content: result.reply || '我已经看过当前内容，暂时没有新的补充。' })
+    }
   } catch (error) {
     messages.value.push({ role: 'assistant', content: error instanceof Error ? error.message : 'AI 助手暂时不可用' })
   } finally {
@@ -401,6 +427,7 @@ watch(panelWidth, () => nextTick(measurePanel))
 onMounted(() => {
   windowSize.value = { width: window.innerWidth, height: window.innerHeight }
   resetMessages()
+  loadBinding()
   restorePosition()
   window.addEventListener('resize', handleResize)
   window.addEventListener('pointerdown', handleOutsidePointerDown)
@@ -452,8 +479,8 @@ defineExpose({
       <template v-else>
         <header class="desk-pet-chat-head">
           <div>
-            <strong>{{ currentConfig.title }}</strong>
-            <span>{{ props.userName }}，我正在看当前页面</span>
+            <strong>{{ boundLobster ? `龙虾 · ${boundLobster.agent_name} #${boundLobster.agent_id}` : currentConfig.title }}</strong>
+            <span>{{ boundLobster ? `已绑定龙虾，对话直通 ${boundLobster.agent_name} #${boundLobster.agent_id}` : `${props.userName}，我正在看当前页面` }}</span>
           </div>
           <button type="button" aria-label="休眠桌宠" @click="sleep">
             <el-icon><Close /></el-icon>
@@ -463,7 +490,7 @@ defineExpose({
           <article v-for="(message, index) in messages" :key="index" :class="['desk-pet-message', message.role]">
             {{ message.content }}
           </article>
-          <article v-if="loading" class="desk-pet-message assistant">正在思考...</article>
+          <article v-if="loading" class="desk-pet-message assistant">{{ boundLobster ? '龙虾正在思考，请稍候…' : '正在思考...' }}</article>
         </div>
         <div class="desk-pet-chat-actions">
           <button v-for="action in currentConfig.actions" :key="action" type="button" :disabled="loading" @click="sendAction(action)">
