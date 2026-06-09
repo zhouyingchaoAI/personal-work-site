@@ -524,7 +524,7 @@ def generate_weekly(payload, username=None):
 
     ws.sheet_view.showGridLines = False
     ws.freeze_panes = None
-    widths = {"A": 3, "B": 30, "C": 34, "D": 34, "E": 25, "F": 32}
+    widths = {"A": 30, "B": 34, "C": 34, "D": 25, "E": 32}
     for col, width in widths.items():
         ws.column_dimensions[col].width = width
 
@@ -566,14 +566,14 @@ def generate_weekly(payload, username=None):
         cell.alignment = Alignment(wrap_text=True, horizontal=halign, vertical=valign)
 
     def write_section_title(row_idx, title):
-        for col_idx in range(2, 7):
+        for col_idx in range(1, 6):
             write_and_style(row_idx, col_idx, "", halign="left", font=header_font, fill=white_fill)
-        write_and_style(row_idx, 2, title, halign="left", font=header_font, fill=white_fill)
-        merge_safe(row_idx, 2, row_idx, 6)
+        write_and_style(row_idx, 1, title, halign="left", font=header_font, fill=white_fill)
+        merge_safe(row_idx, 1, row_idx, 5)
         ws.row_dimensions[row_idx].height = 32
 
     def write_header(row_idx, labels, merges=None):
-        for col_idx in range(2, 7):
+        for col_idx in range(1, 6):
             write_and_style(row_idx, col_idx, "", halign="center", font=header_font, fill=white_fill, normalize=False)
         for col_idx, label in labels:
             write_and_style(row_idx, col_idx, label, halign="center", font=header_font, fill=white_fill, normalize=False)
@@ -582,10 +582,10 @@ def generate_weekly(payload, username=None):
         ws.row_dimensions[row_idx].height = 28
 
     def write_title(row_idx):
-        for col_idx in range(2, 7):
+        for col_idx in range(1, 6):
             write_and_style(row_idx, col_idx, "", halign="center", font=title_font, fill=title_fill, normalize=False)
-        write_and_style(row_idx, 2, f"工作周报（{period}）", halign="center", font=title_font, fill=title_fill, normalize=False)
-        merge_safe(row_idx, 2, row_idx, 6)
+        write_and_style(row_idx, 1, f"工作周报（{period}）", halign="center", font=title_font, fill=title_fill, normalize=False)
+        merge_safe(row_idx, 1, row_idx, 5)
         ws.row_dimensions[row_idx].height = 44
 
     write_title(1)
@@ -594,53 +594,53 @@ def generate_weekly(payload, username=None):
     summary_header = 3
     summary_start = 4
     write_section_title(summary_title, "一、本周工作总结")
-    write_header(summary_header, [(2, "工作分类"), (3, "工作内容"), (5, "上周内容完成情况"), (6, "后续计划")], [(3, 4)])
+    write_header(summary_header, [(1, "工作分类"), (2, "工作内容"), (4, "上周内容完成情况"), (5, "后续计划")], [(2, 3)])
 
-    # 本周工作总结: B=工作分类 C=工作内容 E=完成情况 F=后续计划
+    # 本周工作总结: A=工作分类 B=工作内容 D=完成情况 E=后续计划
     for idx, row in enumerate(summary_rows, start=summary_start):
-        write_and_style(idx, 2, row[0], halign="center")
-        write_and_style(idx, 3, row[1])
-        write_and_style(idx, 5, row[2])
-        write_and_style(idx, 6, row[3])
-        adjust_row_height(ws, idx, (2, 3, 5, 6))
-        merge_safe(idx, 3, idx, 4)
+        write_and_style(idx, 1, row[0], halign="center")
+        write_and_style(idx, 2, row[1])
+        write_and_style(idx, 4, row[2])
+        write_and_style(idx, 5, row[3])
+        adjust_row_height(ws, idx, (1, 2, 4, 5))
+        merge_safe(idx, 2, idx, 3)
 
     follow_title = summary_start + len(summary_rows)
     follow_header = follow_title + 1
     follow_start = follow_header + 1
     write_section_title(follow_title, "二、重点工作跟进")
-    write_header(follow_header, [(2, "工作分类"), (3, "工作内容"), (4, "当前进展"), (6, "困难与求助")], [(4, 5)])
+    write_header(follow_header, [(1, "工作分类"), (2, "工作内容"), (3, "当前进展"), (5, "困难与求助")], [(3, 4)])
 
-    # 重点工作跟进: B=工作分类 C=工作内容 D=当前进展 F=困难与求助
+    # 重点工作跟进: A=工作分类 B=工作内容 C=当前进展 E=困难与求助
     for idx, row in enumerate(follow_rows, start=follow_start):
-        write_and_style(idx, 2, row[0], halign="center")
-        write_and_style(idx, 3, row[1])
-        write_and_style(idx, 4, row[2])
-        write_and_style(idx, 6, row[3])
-        adjust_row_height(ws, idx, (2, 3, 4, 6))
-        merge_safe(idx, 4, idx, 5)
+        write_and_style(idx, 1, row[0], halign="center")
+        write_and_style(idx, 2, row[1])
+        write_and_style(idx, 3, row[2])
+        write_and_style(idx, 5, row[3])
+        adjust_row_height(ws, idx, (1, 2, 3, 5))
+        merge_safe(idx, 3, idx, 4)
 
     next_title = follow_start + len(follow_rows)
     next_header = next_title + 1
     next_start = next_header + 1
     write_section_title(next_title, "三、下周工作计划")
-    write_header(next_header, [(2, "工作分类"), (3, "工作内容"), (6, "困难与求助")], [(3, 5)])
+    write_header(next_header, [(1, "工作分类"), (2, "工作内容"), (5, "困难与求助")], [(2, 4)])
 
-    # 下周工作计划: B=工作分类 C=工作内容 F=困难与求助
+    # 下周工作计划: A=工作分类 B=工作内容 E=困难与求助
     for idx, row in enumerate(next_rows, start=next_start):
-        write_and_style(idx, 2, row[0], halign="center")
-        write_and_style(idx, 3, row[1])
-        write_and_style(idx, 6, row[2])
-        adjust_row_height(ws, idx, (2, 3, 6))
-        merge_safe(idx, 3, idx, 5)
+        write_and_style(idx, 1, row[0], halign="center")
+        write_and_style(idx, 2, row[1])
+        write_and_style(idx, 5, row[2])
+        adjust_row_height(ws, idx, (1, 2, 5))
+        merge_safe(idx, 2, idx, 4)
 
-    merge_safe(2, 2, 2, 6)
+    merge_safe(2, 1, 2, 5)
 
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.print_area = f"B1:F{next_start + len(next_rows) - 1}"
+    ws.print_area = f"A1:E{next_start + len(next_rows) - 1}"
 
     wb.save(output)
     return output
