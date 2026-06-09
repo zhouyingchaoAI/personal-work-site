@@ -229,7 +229,7 @@ const previewStateText = computed(() => {
 })
 const currentDownloadUrl = computed(() => {
   if (mailDraft.download_url) return downloadUrl(mailDraft.download_url)
-  return mailDraft.attachment ? `/personal-work-download?file=${encodeURIComponent(mailDraft.attachment)}` : ''
+  return mailDraft.attachment ? downloadUrl(`/download?file=${encodeURIComponent(mailDraft.attachment)}`) : ''
 })
 const hasAttachmentPreview = computed(() => Boolean(mailDraft.attachment && mailDraft.preview_html))
 const mailBodyPreviewHtml = computed(() => mailDraft.body_html || `<div>${textToHtml(mailDraft.body || '暂无正文内容')}</div>`)
@@ -801,7 +801,7 @@ async function openHistoryDrawer() {
 }
 
 function reportDownloadUrl(name: string) {
-  return `/personal-work-download?file=${encodeURIComponent(name)}`
+  return downloadUrl(`/download?file=${encodeURIComponent(name)}`)
 }
 
 function reportTime(report: ReportFile) {
