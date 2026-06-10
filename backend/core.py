@@ -24,6 +24,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 import shutil
+import hashlib
 import secrets
 from copy import deepcopy
 from datetime import datetime
@@ -303,12 +304,62 @@ def ensure_user_space(username):
         path.mkdir(parents=True, exist_ok=True)
 
 
+# 账户密码哈希：纯标准库（pbkdf2-hmac-sha256），不引入第三方依赖。
+# 存储格式：pbkdf2_sha256$<iters>$<salt_hex>$<hash_hex>。旧明文密码仍兼容，
+# 并在用户成功登录时自动升级为哈希（见 find_user）。
+_PWD_ALGO = "pbkdf2_sha256"
+_PWD_ITERS = 200_000
+
+
+def hash_password(plain):
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", str(plain or "").encode("utf-8"), salt, _PWD_ITERS)
+    return f"{_PWD_ALGO}${_PWD_ITERS}${salt.hex()}${dk.hex()}"
+
+
+def _is_hashed(stored):
+    return isinstance(stored, str) and stored.startswith(_PWD_ALGO + "$")
+
+
+def verify_password(plain, stored):
+    stored = str(stored or "")
+    if _is_hashed(stored):
+        try:
+            _algo, iters, salt_hex, hash_hex = stored.split("$", 3)
+            dk = hashlib.pbkdf2_hmac("sha256", str(plain or "").encode("utf-8"), bytes.fromhex(salt_hex), int(iters))
+            return secrets.compare_digest(dk.hex(), hash_hex)
+        except Exception:
+            return False
+    # 旧明文密码（迁移期兼容）
+    return str(plain or "") == stored
+
+
+def _upgrade_user_password(username, plain):
+    """登录成功后，把仍是明文存储的账户密码静默升级为哈希。"""
+    try:
+        config = read_config()
+        changed = False
+        for u in config.get("users", []):
+            if u.get("username") == username and not _is_hashed(u.get("password", "")):
+                u["password"] = hash_password(plain)
+                changed = True
+        if changed:
+            write_config(config)
+    except Exception:
+        pass
+
+
 def find_user(username, password=None):
     for user in read_config().get("users", []):
         if user.get("username") != username:
             continue
-        if password is None or str(user.get("password", "")) == str(password):
+        if password is None:
             return user
+        if verify_password(password, user.get("password", "")):
+            if not _is_hashed(user.get("password", "")):
+                _upgrade_user_password(username, password)
+            return user
+        return None
     return None
 
 
@@ -515,7 +566,7 @@ def add_user(payload, caller_username):
     users = config.setdefault("users", [])
     if any(u.get("username") == new_username for u in users):
         raise ValueError("该用户名已存在")
-    new_user = {"username": new_username, "password": password, "role": role, "name": name}
+    new_user = {"username": new_username, "password": hash_password(password), "role": role, "name": name}
     users.append(new_user)
     write_config(config)
     ensure_user_space(new_username)
@@ -553,7 +604,7 @@ def change_password(payload, username):
     config = read_config()
     for u in config.get("users", []):
         if u.get("username") == username:
-            u["password"] = new_password
+            u["password"] = hash_password(new_password)
             break
     write_config(config)
     return {"ok": True}
@@ -582,7 +633,7 @@ def update_user(payload, caller_username):
     if new_name:
         target["name"] = new_name
     if new_password:
-        target["password"] = new_password
+        target["password"] = hash_password(new_password)
     if new_role is not None and caller_role == "superadmin":
         target["role"] = new_role
     write_config(config)
