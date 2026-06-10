@@ -286,6 +286,14 @@ def skill_defs():
             "safe": True,
         },
         {
+            "name": "mailbox.attachment",
+            "module": "邮件",
+            "title": "下载邮件附件",
+            "description": "通过邮件 UID 与附件 part（来自 mailbox.detail 附件项的 part 字段，如 part2）直接获取附件内容（base64）。专供 MCP/Agent 读取附件，无需浏览器 cookie 登录。",
+            "parameters": {"uid": "邮件 UID", "part": "附件 part_key，如 part2，来自 mailbox.detail"},
+            "safe": True,
+        },
+        {
             "name": "mail.send",
             "module": "邮件",
             "title": "发送普通邮件",
@@ -803,6 +811,39 @@ def get_date_skill(args):
     }
 
 
+def mailbox_attachment_skill(args, username):
+    """直接返回邮件附件内容（base64），供 MCP/Agent 读取，无需浏览器 cookie 登录。
+
+    解决龙虾经 MCP 访问邮件时无法下载附件的问题：附件原本只能经 session-cookie
+    认证的 /api/mailbox-part 下载，而 MCP 用的是 secret + X-MCP-Username 认证。
+    """
+    args = args or {}
+    uid = str(args.get("uid", "") or "").strip()
+    part = str(args.get("part", "") or args.get("part_key", "") or "").strip()
+    if not uid or not part:
+        raise ValueError("请提供 uid 和 part（来自 mailbox.detail 附件项的 part 字段，如 part2）")
+    max_bytes = int(args.get("max_bytes", 12 * 1024 * 1024) or 12 * 1024 * 1024)
+    path = get_mail_part(username, uid, part)  # 未缓存会自动从 IMAP 拉取
+    data = path.read_bytes()
+    name_only = path.name.split("__", 1)[-1] if "__" in path.name else path.name
+    mime, _ = mimetypes.guess_type(name_only)
+    result = {
+        "ok": True,
+        "uid": uid,
+        "part": part,
+        "name": name_only,
+        "mime": mime or "application/octet-stream",
+        "size": len(data),
+    }
+    if len(data) > max_bytes:
+        result["ok"] = False
+        result["error"] = f"附件 {len(data)} 字节超过 {max_bytes} 字节上限，未内联返回；请在网页端下载或提高 max_bytes。"
+        return result
+    result["encoding"] = "base64"
+    result["content_base64"] = base64.b64encode(data).decode("ascii")
+    return result
+
+
 def execute_skill(name, arguments, username):
     args = arguments or {}
     if name == "utils.get_date":
@@ -837,6 +878,8 @@ def execute_skill(name, arguments, username):
         return list_inbox_messages(username, args.get("limit", 20), bool(args.get("refresh", False)))
     if name == "mailbox.detail":
         return get_inbox_message(username, str(args.get("uid", "") or ""), bool(args.get("refresh", False)))
+    if name == "mailbox.attachment":
+        return mailbox_attachment_skill(args, username)
     if name == "mail.send":
         args["body_html"] = ""
         return send_mail(args, username)
