@@ -106,5 +106,39 @@ class DatabaseFoundationTests(unittest.TestCase):
             self.assertAlmostEqual(items[0]["confidence"], 0.9)
 
 
+class DatabaseExtraTests(unittest.TestCase):
+    def test_utc_now_iso_format(self):
+        now = db.utc_now()
+        self.assertIn("T", now)
+        self.assertTrue(now.endswith("+00:00"))
+
+    def test_skill_invocations_user_isolated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "app.db"
+            db.init_db(path)
+            db.record_skill_invocation(path, user_id="alice", session_id="s", skill_name="x", source="t", status="success")
+            db.record_skill_invocation(path, user_id="bob", session_id="s", skill_name="y", source="t", status="success")
+            alice = db.list_recent_skill_invocations(path, user_id="alice")
+            self.assertEqual(len(alice), 1)
+            self.assertEqual(alice[0]["skill_name"], "x")
+
+    def test_list_agent_events_across_sessions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "app.db"
+            db.init_db(path)
+            db.record_agent_event(path, user_id="u1", session_id="s1", event_type="e", source="t")
+            db.record_agent_event(path, user_id="u1", session_id="s2", event_type="e", source="t")
+            all_events = db.list_agent_events(path, user_id="u1", limit=10)
+            self.assertEqual(len(all_events), 2)
+
+    def test_remember_default_confidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "app.db"
+            db.init_db(path)
+            db.remember(path, user_id="u1", memory_type="note", content="c")
+            items = db.list_memory_items(path, user_id="u1")
+            self.assertAlmostEqual(items[0]["confidence"], 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()
