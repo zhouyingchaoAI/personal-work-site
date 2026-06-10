@@ -396,6 +396,28 @@ $grid-cols: 32px 24px minmax(160px, 1fr) 88px 118px 88px 188px 52px 48px 88px;
   &:focus { border-color: $primary; }
 }
 
+
+.train-merge-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid $border;
+  border-radius: 8px;
+  background: #fff;
+  color: $text;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+
+  input {
+    width: 14px;
+    height: 14px;
+    accent-color: $primary;
+  }
+}
+
 .reimb-result {
   display: flex; align-items: center; gap: 10px;
   font-size: 13px; color: $text; margin-left: auto;

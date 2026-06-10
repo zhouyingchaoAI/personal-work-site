@@ -289,8 +289,8 @@ def skill_defs():
             "name": "mailbox.attachment",
             "module": "邮件",
             "title": "下载邮件附件",
-            "description": "通过邮件 UID 与附件 part（来自 mailbox.detail 附件项的 part 字段，如 part2）直接获取附件内容（base64）。专供 MCP/Agent 读取附件，无需浏览器 cookie 登录。",
-            "parameters": {"uid": "邮件 UID", "part": "附件 part_key，如 part2，来自 mailbox.detail"},
+            "description": "通过邮件 UID 与附件 part（来自 mailbox.detail 附件项的 part 字段，如 part2）获取免 Cookie 临时下载链接；默认不内联 base64，避免大附件截断。",
+            "parameters": {"uid": "邮件 UID", "part": "附件 part_key，如 part2，来自 mailbox.detail", "include_base64": "是否同时返回 base64，默认 false", "max_bytes": "include_base64=true 时允许内联的最大字节数，默认 1048576"},
             "safe": True,
         },
         {
@@ -812,21 +812,24 @@ def get_date_skill(args):
 
 
 def mailbox_attachment_skill(args, username):
-    """直接返回邮件附件内容（base64），供 MCP/Agent 读取，无需浏览器 cookie 登录。
+    """返回邮件附件的 MCP 专用下载信息，无需浏览器 cookie 登录。
 
-    解决龙虾经 MCP 访问邮件时无法下载附件的问题：附件原本只能经 session-cookie
-    认证的 /api/mailbox-part 下载，而 MCP 用的是 secret + X-MCP-Username 认证。
+    默认只返回临时 download_url，避免大段 base64 被 Agent 写入 shell heredoc 时截断。
+    调用方只有明确传 include_base64=true 时才会得到 content_base64。
     """
     args = args or {}
     uid = str(args.get("uid", "") or "").strip()
     part = str(args.get("part", "") or args.get("part_key", "") or "").strip()
     if not uid or not part:
         raise ValueError("请提供 uid 和 part（来自 mailbox.detail 附件项的 part 字段，如 part2）")
-    max_bytes = int(args.get("max_bytes", 12 * 1024 * 1024) or 12 * 1024 * 1024)
+    include_base64 = bool(args.get("include_base64") or args.get("return_base64"))
+    max_bytes = int(args.get("max_bytes", 1024 * 1024) or 1024 * 1024)
     path = get_mail_part(username, uid, part)  # 未缓存会自动从 IMAP 拉取
     data = path.read_bytes()
     name_only = path.name.split("__", 1)[-1] if "__" in path.name else path.name
-    mime, _ = mimetypes.guess_type(name_only)
+    mime = mail_part_content_type_from_name(name_only, data)
+    download_url = create_mcp_mail_attachment_link(username, uid, part)
+    download_url_absolute = absolute_personal_work_url(download_url)
     result = {
         "ok": True,
         "uid": uid,
@@ -834,12 +837,22 @@ def mailbox_attachment_skill(args, username):
         "name": name_only,
         "mime": mime or "application/octet-stream",
         "size": len(data),
+        "download_url": download_url,
+        "download_url_absolute": download_url_absolute,
+        "download_url_expires_in_seconds": 3600,
+        "download_note": "微信端/OpenClaw 请直接用 download_url_absolute 下载附件；不要把大附件 base64 写入 shell heredoc。此链接由 MCP 专用临时 token 授权，不依赖浏览器 cookie。",
+        "base64_included": False,
     }
+    if not include_base64:
+        result["content_omitted"] = True
+        result["omit_reason"] = "默认不内联返回 base64，避免大附件在 Agent/shell 中被截断；如确需 base64，请传 include_base64=true。"
+        return result
     if len(data) > max_bytes:
-        result["ok"] = False
-        result["error"] = f"附件 {len(data)} 字节超过 {max_bytes} 字节上限，未内联返回；请在网页端下载或提高 max_bytes。"
+        result["content_omitted"] = True
+        result["omit_reason"] = f"附件 {len(data)} 字节超过 {max_bytes} 字节上限，未内联返回 base64；请使用 download_url 下载，或提高 max_bytes。"
         return result
     result["encoding"] = "base64"
+    result["base64_included"] = True
     result["content_base64"] = base64.b64encode(data).decode("ascii")
     return result
 

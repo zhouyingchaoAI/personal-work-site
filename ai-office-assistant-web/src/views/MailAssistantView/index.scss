@@ -98,6 +98,33 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
   }
 }
 
+.mailbox-mode-tabs {
+  display: inline-flex;
+  height: 38px;
+  align-items: center;
+  padding: 3px;
+  border: 1px solid #d3def0;
+  border-radius: 10px;
+  background: #f7faff;
+
+  button {
+    height: 30px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 7px;
+    color: #52637a;
+    background: transparent;
+    font-size: 13px;
+    font-weight: 850;
+
+    &.active {
+      color: $primary;
+      background: #ffffff;
+      box-shadow: 0 2px 8px rgba(21, 73, 156, 0.12);
+    }
+  }
+}
+
 .mail-button {
   display: inline-flex;
   min-width: 0;

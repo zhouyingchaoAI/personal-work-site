@@ -48,6 +48,7 @@ USER_DATA_DIR = BASE_DIR / "user_data"
 CONFIG_PATH = BASE_DIR / "config.json"
 AGENT_CONFIG_PATH = BASE_DIR / "agent_config.json"
 APP_RELATIVE_PATH = "/personal-office-assistant"
+PERSONAL_WORK_SITE_PUBLIC_URL = os.getenv("PERSONAL_WORK_SITE_PUBLIC_URL", "https://yfdemo.chencytech.com").rstrip("/")
 SESSIONS = {}
 DEFAULT_ASSISTANT_PROMPT = (
     "请帮我优化下面的工作内容，要求：\n"

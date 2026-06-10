@@ -222,12 +222,23 @@ export interface DiarySaveResponse {
   diary: DiaryEntry
 }
 
+export interface ForumAttachment {
+  id: string
+  name: string
+  type: string
+  size: number
+  url: string
+  is_image: boolean
+}
+
 export interface ForumComment {
   id: string
   parent_id: string
   author: string
   content: string
+  status?: '' | 'accepted' | 'resolved' | 'rejected' | string
   created_at: string
+  attachments?: ForumAttachment[]
 }
 
 export interface ForumTopic {
@@ -235,6 +246,8 @@ export interface ForumTopic {
   title: string
   body: string
   source: 'user' | 'ai' | string
+  preset?: '' | 'platform_ticket' | string
+  pinned?: boolean
   author: string
   created_at: string
   updated_at: string
@@ -243,6 +256,7 @@ export interface ForumTopic {
   like_count: number
   comment_count: number
   liked?: boolean
+  attachments?: ForumAttachment[]
   comments?: ForumComment[]
 }
 
@@ -259,6 +273,16 @@ export interface ForumTopicResponse {
 export interface ForumAiTopicFile {
   name: string
   data: string
+}
+
+export interface ForumUploadFile extends ForumAiTopicFile {
+  type?: string
+  size?: number
+}
+
+export interface ForumAttachmentResponse {
+  ok: boolean
+  attachment: ForumAttachment
 }
 
 export interface NewsSource {
@@ -363,8 +387,10 @@ export interface MailMessage {
   subject: string
   from: string
   to: string
+  cc?: string
   date: string
   preview: string
+  mailbox?: 'inbox' | 'sent' | string
   body?: string
   body_html?: string
   has_html?: boolean
@@ -528,6 +554,13 @@ export interface SkillTestResponse {
 export interface AgentMessage {
   role: 'user' | 'assistant'
   content: string
+}
+
+export interface AgentSessionDetailResponse {
+  ok: boolean
+  session?: unknown
+  messages?: AgentMessage[]
+  error?: string
 }
 
 export interface AgentSkillCall {
@@ -793,12 +826,21 @@ export function getForumTopic(id: string) {
   return request<ForumTopicResponse>(`/forum/topic?${new URLSearchParams({ id }).toString()}`)
 }
 
-export function createForumTopic(title: string, body: string) {
-  return post<ForumTopicResponse>('/forum/create', { title, body })
+export function uploadForumAttachment(file: File) {
+  const form = new FormData()
+  form.append('file', file, file.name)
+  return request<ForumAttachmentResponse>('/forum/attachment', {
+    method: 'POST',
+    body: form,
+  })
 }
 
-export function addForumComment(topicId: string, content: string, parentId = '') {
-  return post<ForumTopicResponse>('/forum/comment', { topic_id: topicId, content, parent_id: parentId })
+export function createForumTopic(title: string, body: string, attachments: ForumAttachment[] = [], preset = '') {
+  return post<ForumTopicResponse>('/forum/create', { title, body, attachments, preset })
+}
+
+export function addForumComment(topicId: string, content: string, parentId = '', attachments: ForumAttachment[] = [], status = '') {
+  return post<ForumTopicResponse>('/forum/comment', { topic_id: topicId, content, parent_id: parentId, attachments, status })
 }
 
 export function toggleForumLike(topicId: string) {
@@ -847,6 +889,16 @@ export function getMailboxDetail(uid: string, refresh = false) {
   const query = new URLSearchParams({ uid })
   if (refresh) query.set('refresh', '1')
   return request<MailDetailResponse>(`/mailbox-detail?${query.toString()}`)
+}
+
+export function listSentMail(limit: string) {
+  const query = new URLSearchParams({ limit })
+  return request<MailboxResponse>(`/sent-mail?${query.toString()}`)
+}
+
+export function getSentMailDetail(uid: string) {
+  const query = new URLSearchParams({ uid })
+  return request<MailDetailResponse>(`/sent-mail-detail?${query.toString()}`)
 }
 
 export function mailboxAttachmentDownloadUrl(path: string) {
@@ -930,6 +982,10 @@ export function runSkillTest(payload: { name: string; arguments: Record<string, 
 
 export function agentChat(kind: AgentKind, messages: AgentMessage[], sessionId?: string) {
   return post<AgentChatResponse>('/agent', { kind, messages, ...(sessionId ? { session_id: sessionId } : {}) })
+}
+
+export function getAgentSession(sessionId: string, limit = 100) {
+  return post<AgentSessionDetailResponse>('/agent/sessions', { action: 'get', session_id: sessionId, limit })
 }
 
 export function openclawSso() {
@@ -1057,8 +1113,12 @@ export function fetchReimbursementUrl(url: string, hintSubject?: string, hintBod
   })
 }
 
-export function mergeReimbursementPdf(items: { key: string }[], outputName: string) {
-  return post<ReimbursementMergeResponse>('/reimbursement/merge', { items, output_name: outputName })
+export function mergeReimbursementPdf(items: { key: string }[], outputName: string, mergeTrainTickets = false) {
+  return post<ReimbursementMergeResponse>('/reimbursement/merge', {
+    items,
+    output_name: outputName,
+    merge_train_tickets: mergeTrainTickets,
+  })
 }
 
 export interface ReimbursementEmailResponse {

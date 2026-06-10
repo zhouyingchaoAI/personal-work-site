@@ -5,7 +5,9 @@ import { CollectionTag, Paperclip, Promotion, Refresh, View } from '@element-plu
 import {
   getMailConfig,
   getMailboxDetail,
+  getSentMailDetail,
   listMailbox,
+  listSentMail,
   mailboxAttachmentDownloadUrl,
   resourceUrl,
   sendAssistantMail,
@@ -21,7 +23,10 @@ interface ComposeForm {
   body: string
 }
 
+type MailboxMode = 'inbox' | 'sent'
+
 const mailboxLimit = ref('20')
+const mailboxMode = ref<MailboxMode>('inbox')
 const selectedUid = ref('')
 const messages = ref<MailMessage[]>([])
 const detail = ref<MailMessage | null>(null)
@@ -114,10 +119,14 @@ async function loadMailbox(refresh = false) {
   errorText.value = ''
   detail.value = null
   try {
-    const result = await listMailbox(mailboxLimit.value, refresh)
+    const result = mailboxMode.value === 'sent'
+      ? await listSentMail(mailboxLimit.value)
+      : await listMailbox(mailboxLimit.value, refresh)
     messages.value = result.messages || []
     selectedUid.value = ''
-    statusText.value = result.cached ? '已从本地缓存加载，点击刷新可获取最新邮件。' : ''
+    statusText.value = mailboxMode.value === 'sent'
+      ? '展示通过邮件助手发送成功的本地记录。'
+      : (result.cached ? '已从本地缓存加载，点击刷新可获取最新邮件。' : '')
   } catch (error) {
     messages.value = []
     errorText.value = errorMessage(error)
@@ -126,12 +135,18 @@ async function loadMailbox(refresh = false) {
   }
 }
 
+async function switchMailbox(mode: MailboxMode) {
+  if (mailboxMode.value === mode) return
+  mailboxMode.value = mode
+  await loadMailbox(false)
+}
+
 async function openMail(uid: string) {
   if (!uid || loading.detail) return
   selectedUid.value = uid
   loading.detail = true
   try {
-    const result = await getMailboxDetail(uid)
+    const result = mailboxMode.value === 'sent' ? await getSentMailDetail(uid) : await getMailboxDetail(uid)
     detail.value = result.message
   } catch (error) {
     ElMessage.error(errorMessage(error))
@@ -192,9 +207,13 @@ onMounted(async () => {
     <header class="mail-page-head">
       <div>
         <h1>邮件助手</h1>
-        <p>查看收件箱、阅读邮件、发送普通邮件</p>
+        <p>查看收件箱、已发邮件，阅读邮件、发送普通邮件</p>
       </div>
       <div class="mail-page-actions">
+        <div class="mailbox-mode-tabs">
+          <button type="button" :class="{ active: mailboxMode === 'inbox' }" @click="switchMailbox('inbox')">收件箱</button>
+          <button type="button" :class="{ active: mailboxMode === 'sent' }" @click="switchMailbox('sent')">已发邮件</button>
+        </div>
         <el-select v-model="mailboxLimit" class="mail-limit-select" @change="loadMailbox(false)">
           <el-option label="最近 10 封" value="10" />
           <el-option label="最近 20 封" value="20" />
@@ -202,7 +221,7 @@ onMounted(async () => {
         </el-select>
         <button class="mail-button mail-button--ghost" type="button" :disabled="loading.mailbox" @click="loadMailbox(true)">
           <el-icon><Refresh /></el-icon>
-          {{ loading.mailbox ? '刷新中' : '刷新' }}
+          {{ loading.mailbox ? '刷新中' : (mailboxMode === 'sent' ? '重新加载' : '刷新') }}
         </button>
         <button class="mail-button mail-button--primary" type="button" @click="composeDrawerOpen = true">
           <el-icon><Promotion /></el-icon>
@@ -215,13 +234,13 @@ onMounted(async () => {
       <section class="mail-card mailbox-card">
         <div class="mail-section-head">
           <div>
-            <h3>收件箱</h3>
+            <h3>{{ mailboxMode === 'sent' ? '已发邮件' : '收件箱' }}</h3>
             <span>{{ statusText || `${messages.length} 封邮件` }}</span>
           </div>
         </div>
 
         <div v-if="errorText" class="mail-empty mail-empty--error">{{ errorText }}</div>
-        <div v-else-if="loading.mailbox" class="mail-empty">正在读取收件箱...</div>
+        <div v-else-if="loading.mailbox" class="mail-empty">{{ mailboxMode === 'sent' ? '正在读取已发邮件...' : '正在读取收件箱...' }}</div>
         <div v-else-if="messages.length" class="mailbox-list">
           <button
             v-for="message in messages"
@@ -231,7 +250,7 @@ onMounted(async () => {
             @click="openMail(message.uid)"
           >
             <span class="mailbox-subject">{{ message.subject || '无主题' }}</span>
-            <span class="mailbox-meta">{{ message.from || '未知发件人' }}</span>
+            <span class="mailbox-meta">{{ mailboxMode === 'sent' ? `发给：${message.to || '-'}` : (message.from || '未知发件人') }}</span>
             <span class="mailbox-preview">{{ message.preview || '点击邮件查看正文' }}</span>
             <span class="mailbox-bottom">
               <time>{{ message.date || '暂无时间' }}</time>
@@ -239,7 +258,7 @@ onMounted(async () => {
             </span>
           </button>
         </div>
-        <div v-else class="mail-empty">暂无邮件，或当前邮箱没有可读取的收件箱邮件。</div>
+        <div v-else class="mail-empty">{{ mailboxMode === 'sent' ? '暂无已发邮件记录。' : '暂无邮件，或当前邮箱没有可读取的收件箱邮件。' }}</div>
       </section>
 
       <section class="mail-card mail-detail-card">
@@ -257,6 +276,7 @@ onMounted(async () => {
             <h3>{{ detail.subject || '无主题' }}</h3>
             <p>发件人：{{ detail.from || '-' }}</p>
             <p>收件人：{{ detail.to || '-' }}</p>
+            <p v-if="detail.cc">抄送：{{ detail.cc }}</p>
             <p>时间：{{ detail.date || '-' }}</p>
             <div class="mail-attachments">
               <button

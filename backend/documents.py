@@ -974,6 +974,7 @@ def send_mail(payload, username=None):
             if settings["user"]:
                 smtp.login(settings["user"], settings["password"])
             smtp.send_message(msg, to_addrs=recipients)
+    record_sent_mail(payload, username, account)
     promoted = promote_sent_report(payload.get("attachment", ""), username)
     result = {"ok": True, "mode": "sent", "message": "邮件已发送"}
     if promoted:

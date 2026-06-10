@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ArrowRight, Close, MagicStick, Position, StarFilled } from '@element-plus/icons-vue'
-import type { MenuId } from '../../layout/menu'
 import {
   agentChat,
+  getAgentSession,
   getAssistantLobster,
   lobsterChat,
   type AgentKind,
@@ -25,7 +25,6 @@ interface DeskPetConfig {
 }
 
 const props = defineProps<{
-  activeMenu: MenuId
   userName: string
 }>()
 
@@ -35,8 +34,9 @@ const mode = ref<PetMode>('sleep')
 const inputText = ref('')
 const loading = ref(false)
 const messages = ref<AgentMessage[]>([])
+const historyLoadedKey = ref('')
 const agentSessionIds = ref<Partial<Record<AgentKind, string>>>({})
-// 已绑定的龙虾：绑定后对话直通该龙虾，否则走本地页面助手。
+// 已绑定的龙虾：绑定后对话直通该龙虾，否则走本地犇犇助手。
 const boundLobster = ref<BoundLobster | null>(null)
 const position = ref({ left: 0, top: 0 })
 const hasPosition = ref(false)
@@ -54,115 +54,16 @@ let dragStart:
   | null = null
 let ignoreNextClick = false
 
-const pageConfigs: Record<MenuId, DeskPetConfig> = {
-  dashboard: {
-    agent: 'dashboard',
-    title: '首页助手',
-    intro: 'Hi~ 我是你的办公小助手，有什么可以帮你？',
-    summary: '我可以帮你梳理今日重点、快速进入常用功能，或把碎片想法整理成行动清单。',
-    actions: ['梳理今天的工作重点', '推荐一个常用入口', '整理待办优先级'],
-  },
-  weekly: {
-    agent: 'weekly',
-    title: '周报助手',
-    intro: 'Hi~ 我可以协助你整理本周工作。',
-    summary: '根据当前周报内容，我可以帮你补全总结、润色表达，或生成预览前的检查建议。',
-    actions: ['帮你总结本周工作', '润色当前内容', '生成预览检查'],
-  },
-  trip: {
-    agent: 'trip',
-    title: '出差报告助手',
-    intro: 'Hi~ 我可以帮你把出差素材整理成报告。',
-    summary: '我可以梳理出差目的、行程成果、费用说明和邮件发送内容。',
-    actions: ['整理出差目的', '检查报告结构', '生成邮件摘要'],
-  },
-  diary: {
-    agent: 'diary',
-    title: '日记助手',
-    intro: 'Hi~ 我可以帮你把今天的工作沉淀下来。',
-    summary: '我可以根据当前日记内容做润色、补全计划，或提炼可复用的周报素材。',
-    actions: ['整理今日记录', 'AI 润色工作内容', '提炼周报素材'],
-  },
-  forum: {
-    agent: 'forum',
-    title: '论坛助手',
-    intro: 'Hi~ 我可以帮你参与金点子讨论。',
-    summary: '我可以生成话题、提炼观点、补充评论，让讨论更容易沉淀为可执行建议。',
-    actions: ['生成讨论话题', '提炼当前观点', 'AI 潜水评论'],
-  },
-  news: {
-    agent: 'news',
-    title: '资讯助手',
-    intro: 'Hi~ 我可以帮你快速读懂每日资讯。',
-    summary: '我可以汇总重点新闻、提炼风险机会，或生成适合内部同步的摘要。',
-    actions: ['汇总今日资讯', '生成阅读摘要', '提炼跟进行动'],
-  },
-  mailassistant: {
-    agent: 'mailassistant',
-    title: '邮件助手',
-    intro: 'Hi~ 我可以帮你写出更清晰的邮件。',
-    summary: '我可以润色邮件正文、生成正式回复，或从邮件内容里提炼待办事项。',
-    actions: ['润色邮件正文', '生成正式回复', '提炼待办事项'],
-  },
-  lobsterbase: {
-    agent: 'dashboard',
-    title: '龙虾基地助手',
-    intro: 'Hi~ 我可以帮你衔接当前办公流程。',
-    summary: '我可以帮你记录当前事项、整理下一步动作，或回到办公助手继续处理材料。',
-    actions: ['整理当前事项', '生成下一步动作', '回到办公助手'],
-  },
-  help: {
-    agent: 'dashboard',
-    title: '帮助助手',
-    intro: 'Hi~ 我可以帮你定位使用问题。',
-    summary: '我可以解释当前功能、整理反馈内容，或帮你准备一段清晰的问题描述。',
-    actions: ['解释当前功能', '整理反馈内容', '生成问题描述'],
-  },
-  config: {
-    agent: 'dashboard',
-    title: '设置助手',
-    intro: 'Hi~ 我可以帮你检查助手配置。',
-    summary: '我可以解释配置项、检查账号信息，或帮你梳理需要调整的系统能力。',
-    actions: ['检查助手配置', '解释设置项', '整理配置建议'],
-  },
-  mailconfig: {
-    agent: 'mailassistant',
-    title: '邮件配置助手',
-    intro: 'Hi~ 我可以帮你检查邮件配置。',
-    summary: '我可以说明 SMTP/IMAP 配置含义、排查发送问题，或整理配置注意事项。',
-    actions: ['检查邮件配置', '说明配置项', '排查发送问题'],
-  },
-  skills: {
-    agent: 'dashboard',
-    title: 'Skill 助手',
-    intro: 'Hi~ 我可以帮你管理系统 Skill。',
-    summary: '我可以梳理 Skill 用途、整理提示词方向，或帮助你检查启用状态。',
-    actions: ['梳理 Skill 用途', '整理提示词方向', '检查启用状态'],
-  },
-  usermanage: {
-    agent: 'dashboard',
-    title: '用户管理助手',
-    intro: 'Hi~ 我可以帮你处理用户管理事项。',
-    summary: '我可以整理账号权限、生成用户说明，或帮助排查角色配置问题。',
-    actions: ['整理账号权限', '生成用户说明', '排查角色配置'],
-  },
-  mcp: {
-    agent: 'dashboard',
-    title: 'MCP 服务助手',
-    intro: 'Hi~ 我可以帮你检查 MCP 服务配置。',
-    summary: '我可以说明连接配置、检查密钥状态，或帮你梳理外部客户端接入步骤。',
-    actions: ['检查 MCP 状态', '说明连接配置', '梳理接入步骤'],
-  },
-  reimbursement: {
-    agent: 'dashboard',
-    title: '报销助手',
-    intro: 'Hi~ 我可以帮你整理报销单据。',
-    summary: '我可以帮你检查发票信息、整理报销说明，或汇总本次报销的费用明细。',
-    actions: ['检查发票信息', '整理报销说明', '汇总费用明细'],
-  },
+const fixedConfig: DeskPetConfig = {
+  agent: 'dashboard',
+  title: '犇犇 AI助手',
+  intro: 'Hi~ 我是犇犇，有什么可以帮你？',
+  summary: '我可以帮你整理想法、生成待办、润色文字，或回答办公系统相关问题。',
+  actions: ['整理一份待办清单', '帮我润色一段文字', '总结一下当前想法'],
 }
 
-const currentConfig = computed(() => pageConfigs[props.activeMenu])
+
+const currentConfig = computed(() => fixedConfig)
 const shellClass = computed(() => [`desk-pet-shell`, `desk-pet-shell--${mode.value}`])
 const panelWidth = computed(() => Math.min(mode.value === 'chat' ? 390 : 320, Math.max(280, windowSize.value.width - 24)))
 const panelHeight = computed(() => panelSize.value.height || (mode.value === 'chat' ? 520 : 302))
@@ -242,6 +143,70 @@ function sessionStorageKey() {
   return `desk-pet-agent-sessions:${props.userName || 'anonymous'}`
 }
 
+function visibleHistoryKey(kind = currentConfig.value.agent) {
+  const lobsterKey = boundLobster.value ? `lobster:${boundLobster.value.agent_id}` : `agent:${kind}`
+  return `desk-pet-visible-history:${props.userName || 'anonymous'}:${lobsterKey}`
+}
+
+function normalizeVisibleMessages(items: AgentMessage[]) {
+  const cleaned = items
+    .filter((item) => (item.role === 'user' || item.role === 'assistant') && String(item.content || '').trim())
+    .map((item) => ({ role: item.role, content: String(item.content) }))
+  return cleaned.length ? cleaned : [initialMessage()]
+}
+
+function saveVisibleHistory() {
+  localStorage.setItem(visibleHistoryKey(), JSON.stringify(messages.value.slice(-100)))
+}
+
+function loadVisibleHistory() {
+  const raw = localStorage.getItem(visibleHistoryKey())
+  if (!raw) {
+    resetMessages()
+    return
+  }
+  try {
+    const parsed = JSON.parse(raw) as AgentMessage[]
+    messages.value = normalizeVisibleMessages(Array.isArray(parsed) ? parsed : [])
+  } catch {
+    localStorage.removeItem(visibleHistoryKey())
+    resetMessages()
+  }
+}
+
+async function loadChatHistory(force = false) {
+  const kind = currentConfig.value.agent
+  const key = visibleHistoryKey(kind)
+  if (!force && historyLoadedKey.value === key) return
+  historyLoadedKey.value = key
+  if (boundLobster.value) {
+    loadVisibleHistory()
+    await nextTick()
+    scrollMessagesToBottom()
+    return
+  }
+  const sessionId = agentSessionIds.value[kind]
+  if (!sessionId) {
+    loadVisibleHistory()
+    await nextTick()
+    scrollMessagesToBottom()
+    return
+  }
+  try {
+    const result = await getAgentSession(sessionId)
+    if (result.ok && result.messages?.length) {
+      messages.value = normalizeVisibleMessages(result.messages)
+      saveVisibleHistory()
+    } else {
+      loadVisibleHistory()
+    }
+  } catch {
+    loadVisibleHistory()
+  }
+  await nextTick()
+  scrollMessagesToBottom()
+}
+
 function loadAgentSessions() {
   const raw = localStorage.getItem(sessionStorageKey())
   if (!raw) {
@@ -263,37 +228,14 @@ function saveAgentSession(kind: AgentKind, sessionId?: string) {
   localStorage.setItem(sessionStorageKey(), JSON.stringify(agentSessionIds.value))
 }
 
-function normalizeContextText(text: string) {
-  return text.replace(/\s+/g, ' ').trim()
-}
-
-function collectPageContext() {
-  const contentRoot = document.querySelector('.app-layout__content')
-  if (!contentRoot) return null
-  const clone = contentRoot.cloneNode(true) as HTMLElement
-  clone.querySelectorAll('.desk-pet-shell, script, style, textarea, input[type="password"]').forEach((node) => node.remove())
-  const text = normalizeContextText(clone.innerText || clone.textContent || '')
-  if (!text) return null
-  return {
-    menu: props.activeMenu,
-    agent: currentConfig.value.agent,
-    title: currentConfig.value.title,
-    visible_text: text.slice(0, 1800),
-  }
-}
-
-function messageWithPageContext(content: string) {
-  const context = collectPageContext()
-  if (!context) return content
-  return `${content}\n\n[系统提示：当前智能体类型为 ${currentConfig.value.title}，以下是当前页面上下文。请优先结合这些页面内容回答；如果页面内容不足，再询问用户补充。]\n${JSON.stringify(context, null, 2)}`
-}
-
 async function loadBinding() {
   try {
     const result = await getAssistantLobster()
     boundLobster.value = result.ok ? result.lobster : null
   } catch {
     boundLobster.value = null
+  } finally {
+    historyLoadedKey.value = ''
   }
 }
 
@@ -316,6 +258,7 @@ function sleep() {
 
 function openChat() {
   setMode('chat')
+  void loadChatHistory()
   nextTick(() => {
     measurePanel()
     constrainPosition()
@@ -326,6 +269,7 @@ async function sendAction(text: string) {
   inputText.value = ''
   setMode('chat')
   await nextTick()
+  await loadChatHistory()
   await sendMessage(text)
 }
 
@@ -334,6 +278,7 @@ async function sendMessage(text = inputText.value) {
   if (!content || loading.value) return
   setMode('chat')
   messages.value.push({ role: 'user', content })
+  saveVisibleHistory()
   inputText.value = ''
   loading.value = true
   try {
@@ -342,16 +287,19 @@ async function sendMessage(text = inputText.value) {
       const result = await lobsterChat(content)
       if (!result.ok) throw new Error(result.error || '龙虾暂时不可用')
       messages.value.push({ role: 'assistant', content: result.reply || '（龙虾没有返回内容）' })
+      saveVisibleHistory()
     } else {
       const agentKind = currentConfig.value.agent
-      const payloadMessages: AgentMessage[] = [{ role: 'user', content: messageWithPageContext(content) }]
+      const payloadMessages: AgentMessage[] = [{ role: 'user', content }]
       const result = await agentChat(agentKind, payloadMessages, agentSessionIds.value[agentKind])
       if (!result.ok) throw new Error(result.error || 'AI 助手暂时不可用')
       saveAgentSession(agentKind, result.session_id)
       messages.value.push({ role: 'assistant', content: result.reply || '我已经看过当前内容，暂时没有新的补充。' })
+      saveVisibleHistory()
     }
   } catch (error) {
     messages.value.push({ role: 'assistant', content: error instanceof Error ? error.message : 'AI 助手暂时不可用' })
+    saveVisibleHistory()
   } finally {
     loading.value = false
     await nextTick()
@@ -465,20 +413,11 @@ function handleOutsidePointerDown(event: PointerEvent) {
 }
 
 watch(
-  () => props.activeMenu,
-  () => {
-    // 页面切换后刷新桌宠上下文，保证不同页面展示不同对话入口；后端 session_id 会按助手类型继续复用。
-    setMode('sleep')
-    resetMessages()
-    nextTick(constrainPosition)
-  },
-)
-
-watch(
   () => props.userName,
   () => {
     loadAgentSessions()
-    resetMessages()
+    historyLoadedKey.value = ''
+    loadVisibleHistory()
   },
 )
 
@@ -489,8 +428,8 @@ watch(panelWidth, () => nextTick(measurePanel))
 onMounted(() => {
   windowSize.value = { width: window.innerWidth, height: window.innerHeight }
   loadAgentSessions()
-  resetMessages()
-  loadBinding()
+  loadVisibleHistory()
+  loadBinding().then(() => loadChatHistory(true))
   restorePosition()
   window.addEventListener('resize', handleResize)
   window.addEventListener('pointerdown', handleOutsidePointerDown)
@@ -543,7 +482,7 @@ defineExpose({
         <header class="desk-pet-chat-head">
           <div>
             <strong>{{ boundLobster ? `龙虾 · ${boundLobster.agent_name} #${boundLobster.agent_id}` : currentConfig.title }}</strong>
-            <span>{{ boundLobster ? `已绑定龙虾，对话直通 ${boundLobster.agent_name} #${boundLobster.agent_id}` : `${props.userName}，我正在看当前页面` }}</span>
+            <span>{{ boundLobster ? `已绑定龙虾，对话直通 ${boundLobster.agent_name} #${boundLobster.agent_id}` : `${props.userName}，我在这里` }}</span>
           </div>
           <button type="button" aria-label="休眠桌宠" @click="sleep">
             <el-icon><Close /></el-icon>

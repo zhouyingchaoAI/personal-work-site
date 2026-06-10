@@ -11,6 +11,38 @@ def forum_store_path(username):
     return forum_dir / "topics.json"
 
 
+def forum_attachment_dir():
+    attach_dir = USER_DATA_DIR / "_forum" / "attachments"
+    attach_dir.mkdir(parents=True, exist_ok=True)
+    return attach_dir
+
+
+def forum_attachment_url(attachment_id, name):
+    return f"/forum-attachment/{urllib.parse.quote(str(attachment_id))}/{urllib.parse.quote(Path(name).name)}"
+
+
+def forum_public_attachment(item):
+    name = Path(str(item.get("name", "") or "attachment")).name or "attachment"
+    attachment_id = str(item.get("id", "") or "").strip()
+    ctype = str(item.get("type", "") or mimetypes.guess_type(name)[0] or "application/octet-stream")
+    suffix = Path(name).suffix.lower()
+    return {
+        "id": attachment_id,
+        "name": name,
+        "type": ctype,
+        "size": int(item.get("size", 0) or 0),
+        "url": item.get("url") or forum_attachment_url(attachment_id, name),
+        "is_image": ctype.startswith("image/") or suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"},
+    }
+
+
+def forum_public_comment(comment):
+    item = dict(comment)
+    item["status"] = str(item.get("status", "") or "")
+    item["attachments"] = [forum_public_attachment(att) for att in item.get("attachments", []) if att.get("id")]
+    return item
+
+
 def load_forum_topics(username):
     path = forum_store_path(username)
     if not path.exists():
@@ -30,18 +62,111 @@ def forum_public_topic(topic, with_comments=False):
     item = dict(topic)
     comments = item.get("comments", [])
     likes = item.get("likes", [])
+    item["attachments"] = [forum_public_attachment(att) for att in item.get("attachments", []) if att.get("id")]
     item["comment_count"] = len(comments)
     item["like_count"] = len(likes)
     item["view_count"] = int(item.get("view_count", 0) or 0)
     item["heat"] = item["view_count"] + item["like_count"] * 5 + item["comment_count"] * 3
     if not with_comments:
         item.pop("comments", None)
+    else:
+        item["comments"] = [forum_public_comment(comment) for comment in comments]
     item.pop("likes", None)
     return item
 
 
+def forum_allowed_attachment_suffixes():
+    return {
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
+        ".ppt", ".pptx", ".pdf", ".doc", ".docx", ".xls", ".xlsx",
+        ".txt", ".md", ".csv", ".zip", ".rar",
+    }
+
+
+def forum_save_raw_attachment(name, ctype, raw):
+    name = Path(str(name or "attachment")).name or "attachment"
+    suffix = Path(name).suffix.lower()
+    if suffix and suffix not in forum_allowed_attachment_suffixes():
+        raise ValueError(f"暂不支持上传该文件类型：{suffix}")
+    if not raw:
+        raise ValueError(f"附件 {name} 内容为空")
+    if len(raw) > 20 * 1024 * 1024:
+        raise ValueError(f"附件 {name} 超过 20MB")
+    attachment_id = secrets.token_urlsafe(12)
+    stored_name = f"{attachment_id}{suffix or '.bin'}"
+    path = forum_attachment_dir() / stored_name
+    path.write_bytes(raw)
+    ctype = str(ctype or mimetypes.guess_type(name)[0] or "application/octet-stream")
+    return {
+        "id": attachment_id,
+        "name": name,
+        "type": ctype,
+        "size": len(raw),
+        "file": stored_name,
+        "url": forum_attachment_url(attachment_id, name),
+    }
+
+
+def forum_save_uploaded_attachment(item):
+    try:
+        raw = base64.b64decode(item.get("data", "") or "", validate=True)
+    except Exception:
+        name = Path(str(item.get("name", "") or "attachment")).name or "attachment"
+        raise ValueError(f"附件 {name} 读取失败")
+    return forum_save_raw_attachment(item.get("name", ""), item.get("type", ""), raw)
+
+
+def forum_upload_attachment(payload, username):
+    return {"ok": True, "attachment": forum_public_attachment(forum_save_uploaded_attachment(payload))}
+
+
+def forum_upload_attachment_file(name, ctype, raw, username):
+    return {"ok": True, "attachment": forum_public_attachment(forum_save_raw_attachment(name, ctype, raw))}
+
+
+def forum_save_attachments(items):
+    attachments = []
+    total_size = 0
+    for item in (items or [])[:8]:
+        if item.get("data"):
+            attachment = forum_save_uploaded_attachment(item)
+        else:
+            attachment_id = str(item.get("id", "") or "").strip()
+            path = forum_attachment_path(attachment_id)
+            if path is None:
+                continue
+            name = Path(str(item.get("name", "") or path.name)).name or path.name
+            attachment = {
+                "id": attachment_id,
+                "name": name,
+                "type": str(item.get("type", "") or mimetypes.guess_type(name)[0] or "application/octet-stream"),
+                "size": int(item.get("size", 0) or path.stat().st_size),
+                "file": path.name,
+                "url": forum_attachment_url(attachment_id, name),
+            }
+        total_size += int(attachment.get("size", 0) or 0)
+        if total_size > 60 * 1024 * 1024:
+            raise ValueError("单次上传附件总大小不能超过 60MB")
+        attachments.append(attachment)
+    return attachments
+
+
+def forum_attachment_path(attachment_id):
+    safe_id = re.sub(r"[^A-Za-z0-9_-]", "", str(attachment_id or ""))
+    if not safe_id:
+        return None
+    for path in forum_attachment_dir().glob(f"{safe_id}.*"):
+        if path.is_file():
+            return path
+    return None
+
+
+def forum_topic_sort_key(item):
+    return (1 if item.get("pinned") else 0, str(item.get("updated_at", "")))
+
+
 def forum_list_topics(username):
-    topics = sorted(load_forum_topics(username), key=lambda item: item.get("updated_at", ""), reverse=True)
+    topics = sorted(load_forum_topics(username), key=forum_topic_sort_key, reverse=True)
     return {"ok": True, "topics": [forum_public_topic(topic) for topic in topics]}
 
 
@@ -60,6 +185,9 @@ def forum_create_topic(payload, username):
     title = str(payload.get("title", "") or "").strip()
     body = str(payload.get("body", "") or "").strip()
     source = str(payload.get("source", "") or "user").strip() or "user"
+    preset = str(payload.get("preset", "") or "").strip()
+    if preset not in {"", "platform_ticket"}:
+        preset = ""
     if not title:
         raise ValueError("请填写话题标题")
     if not body:
@@ -71,11 +199,14 @@ def forum_create_topic(payload, username):
         "title": title,
         "body": body,
         "source": source,
+        "preset": preset,
+        "pinned": preset == "platform_ticket",
         "author": user.get("name") or username,
         "created_at": now,
         "updated_at": now,
         "view_count": 0,
         "likes": [],
+        "attachments": forum_save_attachments(payload.get("attachments", []) or []),
         "comments": [],
     }
     topics = load_forum_topics(username)
@@ -88,6 +219,9 @@ def forum_add_comment(payload, username):
     topic_id = str(payload.get("topic_id", "") or "").strip()
     content = str(payload.get("content", "") or "").strip()
     parent_id = str(payload.get("parent_id", "") or "").strip()
+    status = str(payload.get("status", "") or "").strip()
+    if status not in {"", "accepted", "resolved", "rejected"}:
+        status = ""
     if not topic_id:
         raise ValueError("请选择话题")
     if not content:
@@ -102,8 +236,12 @@ def forum_add_comment(payload, username):
                 "parent_id": parent_id,
                 "author": user.get("name") or username,
                 "content": content,
+                "status": status,
+                "attachments": forum_save_attachments(payload.get("attachments", []) or []),
                 "created_at": now,
             })
+            if topic.get("preset") == "platform_ticket" and status in {"accepted", "resolved", "rejected"}:
+                topic["pinned"] = False
             topic["updated_at"] = now
             save_forum_topics(username, topics)
             return {"ok": True, "topic": forum_public_topic(topic, with_comments=True)}

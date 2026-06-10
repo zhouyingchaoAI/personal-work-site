@@ -6,6 +6,8 @@ import {
   CircleCheckFilled,
   Close,
   Delete,
+  Document,
+  Download,
   MagicStick,
   Plus,
   Refresh,
@@ -21,7 +23,9 @@ import {
   listForumTopics,
   resourceUrl,
   toggleForumLike,
+  uploadForumAttachment,
   type ForumAiTopicFile,
+  type ForumAttachment,
   type ForumComment,
   type ForumTopic,
 } from '../../services/personalWorkApi'
@@ -31,6 +35,7 @@ import './index.scss'
 interface ForumCreateForm {
   title: string
   body: string
+  preset: string
 }
 
 interface ForumAiForm {
@@ -42,15 +47,22 @@ const topics = ref<ForumTopic[]>([])
 const selectedTopicId = ref('')
 const detailTopic = ref<ForumTopic | null>(null)
 const commentText = ref('')
+const commentStatus = ref('')
 const replyTarget = ref<ForumComment | null>(null)
 const commentPage = ref(1)
 const commentsCollapsed = ref(false)
 const createOpen = ref(false)
 const forumNotice = ref('')
 const aiFiles = ref<File[]>([])
+const createFiles = ref<File[]>([])
+const commentFiles = ref<File[]>([])
+const createUploadStatus = ref('')
+const commentUploadStatus = ref('')
 const commentInputRef = ref<HTMLTextAreaElement | null>(null)
 const aiFileInputRef = ref<HTMLInputElement | null>(null)
-const createForm = reactive<ForumCreateForm>({ title: '', body: '' })
+const createFileInputRef = ref<HTMLInputElement | null>(null)
+const commentFileInputRef = ref<HTMLInputElement | null>(null)
+const createForm = reactive<ForumCreateForm>({ title: '', body: '', preset: '' })
 const aiForm = reactive<ForumAiForm>({ seed: '', chat: '' })
 const loading = reactive({
   list: false,
@@ -65,7 +77,10 @@ const loading = reactive({
 const pageSize = 8
 
 const sortedTopics = computed(() => {
-  return [...topics.value].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+  return [...topics.value].sort((a, b) => {
+    const pinnedDiff = Number(!!b.pinned) - Number(!!a.pinned)
+    return pinnedDiff || b.updated_at.localeCompare(a.updated_at)
+  })
 })
 const selectedTopic = computed(() => detailTopic.value || topics.value.find((topic) => topic.id === selectedTopicId.value) || null)
 const topicComments = computed(() => detailTopic.value?.comments || [])
@@ -88,6 +103,21 @@ const currentUserInitial = computed(() => authorInitial(currentUserName.value))
 
 function sourceName(source: string) {
   return source === 'ai' ? '智能体' : '成员发起'
+}
+
+function presetName(preset?: string) {
+  return preset === 'platform_ticket' ? '平台工单' : ''
+}
+
+function statusName(status?: string) {
+  if (status === 'accepted') return '已采纳'
+  if (status === 'resolved') return '已解决'
+  if (status === 'rejected') return '不采纳'
+  return ''
+}
+
+function isPlatformTicket(topic: ForumTopic | null) {
+  return topic?.preset === 'platform_ticket'
 }
 
 function formatTime(value: string) {
@@ -125,6 +155,111 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : '操作失败'
 }
 
+function formatFileSize(size: number) {
+  if (!size) return '0 B'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+function attachmentUrl(attachment: ForumAttachment) {
+  return resourceUrl(attachment.url)
+}
+
+function isImageAttachment(attachment: ForumAttachment) {
+  return attachment.is_image || attachment.type.startsWith('image/')
+}
+
+function mergeSelectedFiles(current: File[], selected: File[]) {
+  const seen = new Set(current.map((file) => `${file.name}:${file.size}:${file.lastModified}`))
+  const merged = [...current]
+  for (const file of selected) {
+    const key = `${file.name}:${file.size}:${file.lastModified}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      merged.push(file)
+    }
+  }
+  return merged
+}
+
+function updateCreateFiles(event: Event) {
+  const input = event.target as HTMLInputElement
+  createFiles.value = mergeSelectedFiles(createFiles.value, Array.from(input.files || []))
+  input.value = ''
+}
+
+function updateCommentFiles(event: Event) {
+  const input = event.target as HTMLInputElement
+  commentFiles.value = mergeSelectedFiles(commentFiles.value, Array.from(input.files || []))
+  input.value = ''
+}
+
+function pastedImageName(file: File, index: number) {
+  const suffix = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : file.type === 'image/gif' ? 'gif' : 'png'
+  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)
+  return `pasted-image-${stamp}-${index + 1}.${suffix}`
+}
+
+function clipboardImageFiles(event: ClipboardEvent) {
+  const files: File[] = []
+  const items = Array.from(event.clipboardData?.items || [])
+  for (const item of items) {
+    if (!item.type.startsWith('image/')) continue
+    const file = item.getAsFile()
+    if (!file) continue
+    files.push(new File([file], pastedImageName(file, files.length), { type: file.type || 'image/png', lastModified: Date.now() }))
+  }
+  if (!files.length) {
+    for (const file of Array.from(event.clipboardData?.files || [])) {
+      if (file.type.startsWith('image/')) {
+        files.push(new File([file], pastedImageName(file, files.length), { type: file.type || 'image/png', lastModified: Date.now() }))
+      }
+    }
+  }
+  return files
+}
+
+function handleCreatePaste(event: ClipboardEvent) {
+  const images = clipboardImageFiles(event)
+  if (!images.length) return
+  event.preventDefault()
+  createFiles.value = mergeSelectedFiles(createFiles.value, images)
+  ElMessage.success(`已添加 ${images.length} 张剪贴板图片到话题附件`)
+}
+
+function handleCommentPaste(event: ClipboardEvent) {
+  const images = clipboardImageFiles(event)
+  if (!images.length) return
+  event.preventDefault()
+  commentFiles.value = mergeSelectedFiles(commentFiles.value, images)
+  ElMessage.success(`已添加 ${images.length} 张剪贴板图片到评论附件`)
+}
+
+function clearCreateFiles() {
+  createFiles.value = []
+  if (createFileInputRef.value) createFileInputRef.value.value = ''
+}
+
+function clearCommentFiles() {
+  commentFiles.value = []
+  if (commentFileInputRef.value) commentFileInputRef.value.value = ''
+}
+
+function removeCreateFile(index: number) {
+  createFiles.value = createFiles.value.filter((_, itemIndex) => itemIndex !== index)
+  if (!createFiles.value.length && createFileInputRef.value) createFileInputRef.value.value = ''
+}
+
+function removeCommentFile(index: number) {
+  commentFiles.value = commentFiles.value.filter((_, itemIndex) => itemIndex !== index)
+  if (!commentFiles.value.length && commentFileInputRef.value) commentFileInputRef.value.value = ''
+}
+
+function attachmentAccept() {
+  return '.png,.jpg,.jpeg,.gif,.webp,.bmp,.ppt,.pptx,.pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.csv,.zip,.rar'
+}
+
 function showNotice(message: string) {
   forumNotice.value = message
 }
@@ -159,6 +294,7 @@ async function openTopic(id: string) {
   try {
     const result = await getForumTopic(id)
     detailTopic.value = result.topic
+    if (!isPlatformTicket(result.topic)) commentStatus.value = ''
     await refreshTopicList()
   } catch (error) {
     ElMessage.error(errorMessage(error))
@@ -187,9 +323,12 @@ async function submitTopic() {
   }
   loading.create = true
   try {
-    const result = await createForumTopic(title, body)
+    const attachments = await uploadForumFiles(createFiles.value, (message) => { createUploadStatus.value = message })
+    const result = await createForumTopic(title, body, attachments, createForm.preset)
     createForm.title = ''
     createForm.body = ''
+    createForm.preset = ''
+    clearCreateFiles()
     createOpen.value = false
     selectedTopicId.value = result.topic.id
     detailTopic.value = result.topic
@@ -198,6 +337,7 @@ async function submitTopic() {
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
+    createUploadStatus.value = ''
     loading.create = false
   }
 }
@@ -211,7 +351,7 @@ function clearAiFiles() {
   if (aiFileInputRef.value) aiFileInputRef.value.value = ''
 }
 
-// 上传文件需转为 base64，后端会按文件类型提取文本。
+// AI 起题仍需把参考文档转为 base64 发送给后端提取文本。
 function readFileAsBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
@@ -219,6 +359,24 @@ function readFileAsBase64(file: File) {
     reader.onerror = () => reject(reader.error || new Error('读取文件失败'))
     reader.readAsDataURL(file)
   })
+}
+
+async function uploadForumFiles(files: File[], onProgress: (message: string) => void): Promise<ForumAttachment[]> {
+  const totalSize = files.reduce((sum, file) => sum + file.size, 0)
+  if (totalSize > 60 * 1024 * 1024) {
+    throw new Error('单次上传附件总大小不能超过 60MB')
+  }
+  const attachments: ForumAttachment[] = []
+  for (const [index, file] of files.entries()) {
+    if (file.size > 20 * 1024 * 1024) {
+      throw new Error(`附件 ${file.name} 超过 20MB`)
+    }
+    onProgress(`正在上传附件 ${index + 1} / ${files.length}：${file.name}`)
+    const result = await uploadForumAttachment(file)
+    attachments.push(result.attachment)
+  }
+  onProgress('')
+  return attachments
 }
 
 async function submitAiTopic() {
@@ -257,9 +415,12 @@ async function submitComment() {
   }
   loading.comment = true
   try {
-    const result = await addForumComment(selectedTopic.value.id, content, replyTarget.value?.id || '')
+    const attachments = await uploadForumFiles(commentFiles.value, (message) => { commentUploadStatus.value = message })
+    const result = await addForumComment(selectedTopic.value.id, content, replyTarget.value?.id || '', attachments, commentStatus.value)
     detailTopic.value = result.topic
     commentText.value = ''
+    commentStatus.value = ''
+    clearCommentFiles()
     replyTarget.value = null
     commentPage.value = totalCommentPages.value
     commentsCollapsed.value = false
@@ -268,6 +429,7 @@ async function submitComment() {
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
+    commentUploadStatus.value = ''
     loading.comment = false
   }
 }
@@ -372,6 +534,13 @@ onMounted(loadInitialTopics)
               <strong>手动发起话题</strong>
             </div>
             <label class="forum-field forum-field--line">
+              <span>话题类型</span>
+              <select v-model="createForm.preset" class="forum-select">
+                <option value="">普通话题</option>
+                <option value="platform_ticket">平台工单</option>
+              </select>
+            </label>
+            <label class="forum-field forum-field--line">
               <span>话题标题</span>
               <input v-model="createForm.title" maxlength="60" type="text" placeholder="输入一个清晰的标题，便于大家讨论和搜索" />
             </label>
@@ -382,13 +551,35 @@ onMounted(loadInitialTopics)
                   v-model="createForm.body"
                   maxlength="1000"
                   placeholder="详细描述你的想法、问题或改进建议，越具体越有助于讨论..."
+                  @paste="handleCreatePaste"
                 ></textarea>
                 <small>{{ createForm.body.length }} / 1000</small>
               </div>
             </label>
+            <div class="forum-field forum-field--line">
+              <span>附件</span>
+              <label class="forum-file-input">
+                <input ref="createFileInputRef" type="file" multiple :accept="attachmentAccept()" @change="updateCreateFiles" />
+                <em>
+                  <el-icon><Upload /></el-icon>
+                  {{ createFiles.length ? `已选择 ${createFiles.length} 个附件` : '上传图片、PPT、PDF 或 Office 文件' }}
+                </em>
+              </label>
+            </div>
+            <div v-if="createFiles.length" class="forum-pending-file-list forum-pending-file-list--offset">
+              <span v-for="(file, index) in createFiles" :key="`${file.name}-${index}`">
+                <el-icon><Document /></el-icon>
+                <em>{{ file.name }}</em>
+                <small>{{ formatFileSize(file.size) }}</small>
+                <button type="button" aria-label="移除附件" @click="removeCreateFile(index)">
+                  <el-icon><Delete /></el-icon>
+                </button>
+              </span>
+              <button type="button" class="forum-clear-files" @click="clearCreateFiles">清空</button>
+            </div>
             <div class="forum-create-actions">
               <button type="button" class="forum-primary-button" :disabled="loading.create" @click="submitTopic">
-                发布话题
+                {{ createUploadStatus || (loading.create ? '正在发布' : '发布话题') }}
               </button>
             </div>
           </div>
@@ -461,7 +652,11 @@ onMounted(loadInitialTopics)
           >
             <span class="forum-topic-row">
               <strong>{{ topic.title }}</strong>
-              <em :class="['forum-source', topic.source === 'ai' ? 'ai' : 'user']">{{ sourceName(topic.source) }}</em>
+              <span class="forum-topic-badges">
+                <em v-if="topic.pinned" class="forum-topic-badge pinned">置顶</em>
+                <em v-if="presetName(topic.preset)" class="forum-topic-badge ticket">{{ presetName(topic.preset) }}</em>
+                <em :class="['forum-source', topic.source === 'ai' ? 'ai' : 'user']">{{ sourceName(topic.source) }}</em>
+              </span>
             </span>
             <span class="forum-topic-meta">
               <span>{{ topic.author }}</span>
@@ -553,6 +748,8 @@ onMounted(loadInitialTopics)
 
           <div class="forum-detail-scroll">
             <div class="forum-detail-meta">
+              <span v-if="selectedTopic.pinned" class="forum-detail-badge pinned">置顶</span>
+              <span v-if="presetName(selectedTopic.preset)" class="forum-detail-badge ticket">{{ presetName(selectedTopic.preset) }}</span>
               <span>来源：<em :class="['forum-source', selectedTopic.source === 'ai' ? 'ai' : 'user']">{{ sourceName(selectedTopic.source) }}</em></span>
               <span>作者：{{ selectedTopic.author }}</span>
               <span>创建时间：{{ formatTime(selectedTopic.created_at) }}</span>
@@ -586,6 +783,25 @@ onMounted(loadInitialTopics)
 
             <article class="forum-detail-body">{{ selectedTopic.body }}</article>
 
+            <section v-if="selectedTopic.attachments?.length" class="forum-attachments">
+              <a
+                v-for="attachment in selectedTopic.attachments"
+                :key="attachment.id"
+                :href="attachmentUrl(attachment)"
+                :target="isImageAttachment(attachment) ? '_blank' : undefined"
+                rel="noreferrer"
+                class="forum-attachment"
+              >
+                <span v-if="isImageAttachment(attachment)" class="forum-attachment-thumb">
+                  <img :src="attachmentUrl(attachment)" :alt="attachment.name" />
+                </span>
+                <span v-else class="forum-attachment-file"><el-icon><Document /></el-icon></span>
+                <strong>{{ attachment.name }}</strong>
+                <small>{{ formatFileSize(attachment.size) }}</small>
+                <el-icon class="forum-attachment-action"><Download /></el-icon>
+              </a>
+            </section>
+
             <section class="forum-discussion">
               <header class="forum-discussion-head">
                 <h3>讨论区 <span>（{{ topicComments.length }} 条评论）</span></h3>
@@ -613,8 +829,16 @@ onMounted(loadInitialTopics)
                     <div class="forum-comment-body">
                       <header>
                         <strong>{{ comment.author }}</strong>
+                        <em v-if="statusName(comment.status)" :class="['forum-comment-status', comment.status]">{{ statusName(comment.status) }}</em>
                       </header>
                       <p>{{ comment.content }}</p>
+                      <div v-if="comment.attachments?.length" class="forum-comment-attachments">
+                        <a v-for="attachment in comment.attachments" :key="attachment.id" :href="attachmentUrl(attachment)" target="_blank" rel="noreferrer">
+                          <img v-if="isImageAttachment(attachment)" :src="attachmentUrl(attachment)" :alt="attachment.name" />
+                          <span v-else><el-icon><Document /></el-icon></span>
+                          <em>{{ attachment.name }}</em>
+                        </a>
+                      </div>
                       <footer class="forum-comment-footer">
                         <time>{{ formatCommentTime(comment.created_at) }}</time>
                         <button type="button" @click="replyTo(comment)">
@@ -632,8 +856,16 @@ onMounted(loadInitialTopics)
                         <div class="forum-comment-body">
                           <header>
                             <strong>{{ child.author }}</strong>
+                            <em v-if="statusName(child.status)" :class="['forum-comment-status', child.status]">{{ statusName(child.status) }}</em>
                           </header>
                           <p>{{ child.content }}</p>
+                          <div v-if="child.attachments?.length" class="forum-comment-attachments">
+                            <a v-for="attachment in child.attachments" :key="attachment.id" :href="attachmentUrl(attachment)" target="_blank" rel="noreferrer">
+                              <img v-if="isImageAttachment(attachment)" :src="attachmentUrl(attachment)" :alt="attachment.name" />
+                              <span v-else><el-icon><Document /></el-icon></span>
+                              <em>{{ attachment.name }}</em>
+                            </a>
+                          </div>
                           <footer class="forum-comment-footer">
                             <time>{{ formatCommentTime(child.created_at) }}</time>
                             <button type="button" @click="replyTo(child)">
@@ -678,16 +910,43 @@ onMounted(loadInitialTopics)
                 正在回复 {{ replyTarget.author }}
                 <button type="button" @click="cancelReply">取消</button>
               </div>
+              <label v-if="isPlatformTicket(selectedTopic)" class="forum-status-select">
+                <span>评论状态</span>
+                <select v-model="commentStatus">
+                  <option value="">普通评论</option>
+                  <option value="accepted">已采纳</option>
+                  <option value="resolved">已解决</option>
+                  <option value="rejected">不采纳</option>
+                </select>
+              </label>
               <textarea
                 ref="commentInputRef"
                 v-model="commentText"
                 maxlength="500"
                 placeholder="写下你的观点、建议、经验或提出下一步行动..."
+                @paste="handleCommentPaste"
               ></textarea>
+              <div class="forum-comment-upload-row">
+                <label class="forum-mini-file-button">
+                  <input ref="commentFileInputRef" type="file" multiple :accept="attachmentAccept()" @change="updateCommentFiles" />
+                  <el-icon><Upload /></el-icon>
+                  <span>{{ commentFiles.length ? `已选择 ${commentFiles.length} 个附件` : '添加图片/附件' }}</span>
+                </label>
+                <div v-if="commentFiles.length" class="forum-pending-file-list forum-pending-file-list--compact">
+                  <span v-for="(file, index) in commentFiles" :key="`${file.name}-${index}`">
+                    <el-icon><Document /></el-icon>
+                    <em>{{ file.name }}</em>
+                    <small>{{ formatFileSize(file.size) }}</small>
+                    <button type="button" aria-label="移除附件" @click="removeCommentFile(index)">
+                      <el-icon><Delete /></el-icon>
+                    </button>
+                  </span>
+                </div>
+              </div>
             </div>
             <div class="forum-composer-actions">
               <button class="forum-primary-button" type="button" :disabled="!canSubmitComment" @click="submitComment">
-                发布讨论
+                {{ commentUploadStatus || (loading.comment ? '正在发布' : '发布讨论') }}
               </button>
               <button class="forum-outline-button forum-ai-comment-button" type="button" :disabled="loading.aiComment || loading.detail" @click="submitAiComment">
                 <el-icon><MagicStick /></el-icon>

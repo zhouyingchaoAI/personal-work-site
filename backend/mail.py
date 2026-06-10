@@ -185,12 +185,78 @@ def mailbox_part_url(uid, part_key, download=False):
     return query
 
 
+def mcp_mail_attachment_link_dir():
+    path = USER_DATA_DIR / "_mcp_mail_attachment_links"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def mcp_mail_attachment_token_path(token):
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(token or ""))
+    return mcp_mail_attachment_link_dir() / (safe + ".json")
+
+
+def create_mcp_mail_attachment_link(username, uid, part_key, expires_seconds=3600):
+    token = secrets.token_urlsafe(24)
+    payload = {
+        "username": str(username or ""),
+        "uid": str(uid or ""),
+        "part": str(part_key or ""),
+        "expires_at": time.time() + max(60, int(expires_seconds or 3600)),
+    }
+    mcp_mail_attachment_token_path(token).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return APP_RELATIVE_PATH + "/mcp-mail-attachment?token=" + urllib.parse.quote(token)
+
+
+def absolute_personal_work_url(path):
+    value = str(path or "")
+    if value.startswith(("http://", "https://")):
+        return value
+    if not value.startswith("/"):
+        value = "/" + value
+    return PERSONAL_WORK_SITE_PUBLIC_URL + value
+
+
+def resolve_mcp_mail_attachment_link(token):
+    token = str(token or "").strip()
+    if not token:
+        raise ValueError("缺少下载 token")
+    path = mcp_mail_attachment_token_path(token)
+    if not path.exists() or not path.is_file():
+        raise ValueError("下载链接不存在或已过期")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        raise ValueError("下载链接无效")
+    if time.time() > float(data.get("expires_at", 0) or 0):
+        try:
+            path.unlink()
+        except Exception:
+            pass
+        raise ValueError("下载链接已过期，请重新调用 mailbox.attachment")
+    username = str(data.get("username", "") or "")
+    uid = str(data.get("uid", "") or "")
+    part_key = str(data.get("part", "") or "")
+    attachment_path = get_mail_part(username, uid, part_key)
+    return {"path": attachment_path, "username": username, "uid": uid, "part": part_key}
+
+
 def mail_part_content_type_from_name(name, raw=None):
     ctype, _ = mimetypes.guess_type(str(name or ""))
     if ctype:
         return ctype
     lower = str(name or "").lower()
-    for marker, value in ((".png", "image/png"), (".jpg", "image/jpeg"), (".jpeg", "image/jpeg"), (".gif", "image/gif"), (".webp", "image/webp"), (".pdf", "application/pdf")):
+    for marker, value in (
+        (".png", "image/png"),
+        (".jpg", "image/jpeg"),
+        (".jpeg", "image/jpeg"),
+        (".gif", "image/gif"),
+        (".webp", "image/webp"),
+        (".pdf", "application/pdf"),
+        (".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        (".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        (".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+    ):
         if marker in lower:
             return value
     head = bytes(raw or b"")[:16]
@@ -271,6 +337,128 @@ def write_mail_cache(username, name, data):
     payload["fetched_at"] = time.time()
     mail_cache_path(username, name).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return payload
+
+
+def sent_mail_store_path(username):
+    return mail_cache_path(username, "sent")
+
+
+def load_sent_mail_store(username):
+    path = sent_mail_store_path(username)
+    if not path.exists():
+        return []
+    try:
+        data = read_json_lenient(path)
+        if isinstance(data, dict):
+            messages = data.get("messages", [])
+            return messages if isinstance(messages, list) else []
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def save_sent_mail_store(username, messages):
+    path = sent_mail_store_path(username)
+    payload = {"messages": list(messages or [])[:200], "updated_at": datetime.now().isoformat(timespec="seconds")}
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def sent_mail_preview(body, body_html):
+    text = str(body or "").strip()
+    if not text and body_html:
+        text = re.sub(r"<[^>]+>", " ", str(body_html or ""))
+    return re.sub(r"\s+", " ", text).strip()[:180]
+
+
+def sent_mail_body_html(body, body_html):
+    if body_html:
+        return str(body_html)[:120000]
+    text = html_escape(str(body or "")).replace("\n", "<br>")
+    return f'<div style="white-space:pre-wrap;">{text}</div>' if text else ""
+
+
+def sent_mail_attachment_summaries(payload):
+    items = []
+    if payload.get("attachment"):
+        name = Path(str(payload.get("attachment") or "")).name
+        if name:
+            items.append({"name": name})
+    for idx, item in enumerate(payload.get("attachments", []) or []):
+        if not isinstance(item, dict):
+            continue
+        name = Path(str(item.get("name", "") or f"附件{idx + 1}")).name
+        size = 0
+        content = item.get("content", "") or ""
+        if content:
+            try:
+                size = len(base64.b64decode(content))
+            except Exception:
+                size = 0
+        items.append({"index": idx, "name": name, "size": size, "type": item.get("type", "") or "application/octet-stream"})
+    return items
+
+
+def record_sent_mail(payload, username=None, account="company"):
+    if not username:
+        return None
+    now = datetime.now()
+    uid = "sent-" + now.strftime("%Y%m%d%H%M%S") + "-" + secrets.token_urlsafe(5)
+    settings = smtp_settings_for_account(username, account)
+    body = append_email_signature(payload.get("body", ""), username)
+    body_html = payload.get("body_html", "") or ""
+    if body_html:
+        body_html = append_email_signature_html(body_html, username)
+    message = {
+        "uid": uid,
+        "mailbox": "sent",
+        "subject": str(payload.get("subject", "") or "无主题"),
+        "from": settings.get("from_addr") or settings.get("user", ""),
+        "to": str(payload.get("to", "") or ""),
+        "cc": str(payload.get("cc", "") or ""),
+        "date": now.strftime("%Y-%m-%d %H:%M"),
+        "created_at": now.isoformat(timespec="seconds"),
+        "preview": sent_mail_preview(body, body_html),
+        "body": body[:6000],
+        "body_html": sent_mail_body_html(body, body_html),
+        "has_html": bool(body_html or body),
+        "attachments": sent_mail_attachment_summaries(payload),
+    }
+    messages = [item for item in load_sent_mail_store(username) if item.get("uid") != uid]
+    messages.insert(0, message)
+    save_sent_mail_store(username, messages)
+    return message
+
+
+def sent_mail_public_summary(message):
+    return {
+        "uid": message.get("uid", ""),
+        "subject": message.get("subject", "无主题"),
+        "from": message.get("from", ""),
+        "to": message.get("to", ""),
+        "cc": message.get("cc", ""),
+        "date": message.get("date", ""),
+        "preview": message.get("preview", ""),
+        "attachments": message.get("attachments", []) or [],
+        "mailbox": "sent",
+    }
+
+
+def list_sent_messages(username, limit=20):
+    limit = max(1, min(int(limit or 20), 50))
+    messages = load_sent_mail_store(username)[:limit]
+    return {"ok": True, "messages": [sent_mail_public_summary(item) for item in messages], "cached": False}
+
+
+def get_sent_message(username, uid):
+    uid = str(uid or "").strip()
+    if not uid:
+        raise ValueError("缺少已发邮件 UID")
+    for message in load_sent_mail_store(username):
+        if message.get("uid") == uid:
+            item = dict(message)
+            item["attachments"] = item.get("attachments", []) or []
+            return {"ok": True, "message": item, "cached": False}
+    raise ValueError("已发邮件不存在")
 
 
 def clear_mail_cache(username):
@@ -382,6 +570,9 @@ def mail_summary_from_message(uid, msg, username=None):
             }
             if username and payload:
                 item["download_url"] = mailbox_part_url(uid, part_key, True)
+                item["mcp_tool"] = "mailbox.attachment"
+                item["mcp_arguments"] = {"uid": str(uid), "part": part_key}
+                item["mcp_hint"] = "龙虾/MCP 下载附件请调用 mailbox.attachment，并传入这里的 uid 与 part。"
             attachments.append(item)
     body_html = replace_cid_sources(extract_mail_html(msg), cid_urls)
     return {

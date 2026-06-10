@@ -14,6 +14,7 @@ services:
       PORT: 8765
       OPENCLAW_PLATFORM_INTERNAL_URL: http://host.docker.internal:18080/openclaw
       OPENCLAW_PLATFORM_PUBLIC_URL: https://yfdemo.chencytech.com/openclaw
+      PERSONAL_WORK_SITE_PUBLIC_URL: https://yfdemo.chencytech.com
       OPENCLAW_OFFICE_SSO_SECRET: openclaw-office-sso-dev
     volumes:
       - /etc/localtime:/etc/localtime:ro

@@ -116,7 +116,7 @@ def _save_cache(username, key, filename, data):
 
 # ── 文件内容提取 ──────────────────────────────────────────────
 
-def _extract_pdf_text(path, max_chars=800):
+def _extract_pdf_text(path, max_chars=2500):
     if path.suffix.lower() != '.pdf':
         return ''
     try:
@@ -132,7 +132,7 @@ def _extract_pdf_text(path, max_chars=800):
         return ''
 
 
-def _extract_ofd_text(path, max_chars=800):
+def _extract_ofd_text(path, max_chars=2500):
     if path.suffix.lower() != '.ofd':
         return ''
     try:
@@ -153,7 +153,7 @@ def _extract_ofd_text(path, max_chars=800):
         return ''
 
 
-def _extract_file_text(path, max_chars=800):
+def _extract_file_text(path, max_chars=2500):
     ext = path.suffix.lower()
     if ext == '.pdf':
         return _extract_pdf_text(path, max_chars)
@@ -467,6 +467,193 @@ def _keyword_type(text):
     return '其他'
 
 
+def _invoice_text_for_rules(candidate):
+    return ' '.join([
+        candidate.get('filename') or '',
+        candidate.get('email_subject') or '',
+        candidate.get('_content') or '',
+        candidate.get('_email_body') or '',
+    ])
+
+
+def _format_invoice_amount(value):
+    if value is None:
+        return ''
+    try:
+        return f"¥{float(str(value).replace(',', '')):.2f}"
+    except Exception:
+        return ''
+
+
+def _extract_invoice_date_by_rule(text):
+    text = text or ''
+    for pat in [
+        r'(20\d{2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日',
+        r'(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})',
+    ]:
+        m = re.search(pat, text)
+        if m:
+            y, mo, d = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            try:
+                return datetime(y, mo, d).strftime('%Y-%m-%d')
+            except ValueError:
+                return ''
+    m = re.search(r'(?:Invoice Date|Due Date)\s*[:：]\s*(\d{1,2})/(\d{1,2})/(20\d{2})', text, re.IGNORECASE)
+    if m:
+        d, mo, y = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        try:
+            return datetime(y, mo, d).strftime('%Y-%m-%d')
+        except ValueError:
+            return ''
+    return ''
+
+
+def _amounts_in_text(text):
+    amounts = []
+    for m in re.finditer(r'[¥￥]?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)', text or ''):
+        raw = m.group(1).replace(',', '')
+        try:
+            value = float(raw)
+        except ValueError:
+            continue
+        if 0 < value < 100000:
+            amounts.append(value)
+    return amounts
+
+
+def _currency_amounts_in_text(text):
+    amounts = []
+    for m in re.finditer(r'(?:[¥￥]|CNY\s*)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)', text or '', re.IGNORECASE):
+        raw = m.group(1).replace(',', '')
+        try:
+            value = float(raw)
+        except ValueError:
+            continue
+        if 0 < value < 100000:
+            amounts.append(value)
+    return amounts
+
+
+def _extract_invoice_amount_by_rule(text):
+    text = text or ''
+    for m in re.finditer(r'(?:^|\s)(?:Total|Balance)\s+\$\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*USD', text, re.IGNORECASE):
+        try:
+            value = float(m.group(1).replace(',', ''))
+        except ValueError:
+            continue
+        if 0 < value < 100000:
+            return f"${value:.2f} USD"
+    label_patterns = [
+        (r'价税合计.{0,180}', 'max'),
+        (r'总价.{0,80}', 'first'),
+        (r'总金额.{0,80}', 'first'),
+        (r'合\s*计.{0,120}', 'max'),
+    ]
+    for pat, mode in label_patterns:
+        m = re.search(pat, text, re.DOTALL)
+        if not m:
+            continue
+        values = _currency_amounts_in_text(m.group(0)) or _amounts_in_text(m.group(0))
+        if values:
+            return _format_invoice_amount(values[0] if mode == 'first' else max(values))
+
+    currency_values = []
+    for m in re.finditer(r'(?:[¥￥]|CNY\s*)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)', text, re.IGNORECASE):
+        try:
+            currency_values.append(float(m.group(1).replace(',', '')))
+        except ValueError:
+            pass
+    if currency_values:
+        return _format_invoice_amount(max(currency_values))
+    return ''
+
+
+def _extract_route_by_rule(text):
+    text = text or ''
+    bad = {
+        '出发', '到达', '出发到达', '姓名', '类别', '面价',
+        '客票级别', '客票类别', '网上购票系统', '电子发票通知',
+    }
+    patterns = [
+        r'自[:：]\s*(?:[A-Z]{3}\s*)?([\u4e00-\u9fa5]{2,12})\s+至[:：]\s*(?:[A-Z]{3}\s*)?([\u4e00-\u9fa5]{2,12})',
+        r'([\u4e00-\u9fa5]{2,6})\s+[\u4e00-\u9fa5]{2,6}\s+T\d\s+([\u4e00-\u9fa5]{2,6})\s+[\u4e00-\u9fa5]{2,6}\s+T\d',
+        r'售\s+([\u4e00-\u9fa5]{2,12})\s+[A-Za-z]+\s+([\u4e00-\u9fa5]{2,12})\s+[A-Za-z]+',
+        r'20\d{2}[-年/.]\d{1,2}[-月/.]\d{1,2}[^\n]{0,30}?[A-Z]{2}\d{2,5}\s+([\u4e00-\u9fa5]{2,12})[/→至-]([\u4e00-\u9fa5]{2,12})',
+        r'([\u4e00-\u9fa5]{2,12}(?:机场|站|港)?)[/→至-]([\u4e00-\u9fa5]{2,12}(?:机场|站|港)?)',
+    ]
+    for pat in patterns:
+        matches = list(re.finditer(pat, text))
+        for m in matches:
+            src = m.group(1).strip()
+            dst = m.group(2).strip()
+            if src in bad or dst in bad or len(src) < 2 or len(dst) < 2:
+                continue
+            return src, dst
+    return '', ''
+
+
+def _extract_location_by_rule(text, invoice_type):
+    text = text or ''
+    if invoice_type == '住宿':
+        hotels = re.findall(r'[\u4e00-\u9fa5A-Za-z0-9（）()·]{2,40}(?:酒店|宾馆|旅馆|民宿|公寓)', text)
+        if hotels:
+            return hotels[-1].strip()
+    if invoice_type == '餐饮':
+        restaurants = re.findall(r'[\u4e00-\u9fa5A-Za-z0-9（）()·]{2,40}(?:餐厅|饭店|酒楼|餐饮店|餐饮)', text)
+        if restaurants:
+            return restaurants[-1].strip()
+    return ''
+
+
+def _rule_analyze_candidate(candidate):
+    text = _invoice_text_for_rules(candidate)
+    lowered = text.lower()
+    invoice_type = _keyword_type(lowered)
+    invoice_date = _extract_invoice_date_by_rule(text) or (candidate.get('email_date') or '')
+    invoice_amount = _extract_invoice_amount_by_rule(text)
+    invoice_from = ''
+    invoice_to = ''
+    if invoice_type in ('火车', '机票'):
+        invoice_from, invoice_to = _extract_route_by_rule(text)
+    return {
+        'is_invoice': True,
+        'invoice_type': invoice_type,
+        'invoice_date': invoice_date,
+        'invoice_amount': invoice_amount,
+        'invoice_location': _extract_location_by_rule(text, invoice_type),
+        'invoice_from': invoice_from,
+        'invoice_to': invoice_to,
+    }
+
+
+def _merge_rule_meta(candidate, meta):
+    fallback = _rule_analyze_candidate(candidate)
+    merged = dict(meta or {})
+    if 'is_invoice' in merged:
+        merged['is_invoice'] = bool(merged.get('is_invoice'))
+    else:
+        merged['is_invoice'] = bool(fallback.get('is_invoice', True))
+
+    # 航空/铁路票据的日期、金额、行程字段在票面文本中结构化出现，
+    # 比模型推断更可靠，避免把填开日期或其他票据金额覆盖进来。
+    rule_type = fallback.get('invoice_type')
+    prefer_rule = rule_type in ('机票', '火车')
+
+    for key in ('invoice_type', 'invoice_date', 'invoice_amount',
+                'invoice_location', 'invoice_from', 'invoice_to'):
+        value = merged.get(key)
+        if isinstance(value, str):
+            value = value.strip()
+        fallback_value = fallback.get(key, '')
+        if prefer_rule and fallback_value and key in ('invoice_type', 'invoice_date', 'invoice_amount', 'invoice_from', 'invoice_to'):
+            merged[key] = fallback_value
+        elif not value or (key == 'invoice_type' and value == '其他'):
+            merged[key] = fallback_value or value or ''
+        else:
+            merged[key] = value
+    return merged
+
+
 def _keyword_analyze(candidates):
     result = {}
     for c in candidates:
@@ -476,12 +663,7 @@ def _keyword_analyze(candidates):
         ext = Path(name).suffix
         # 占位行（无附件，仅邮件信息）始终保留，供手动上传
         if c.get('is_stub'):
-            result[c['key']] = {
-                'is_invoice': True,
-                'invoice_type': _keyword_type(subject + ' ' + (c.get('_email_body') or '').lower()),
-                'invoice_date': '', 'invoice_amount': '', 'invoice_location': '',
-                'invoice_from': '', 'invoice_to': '',
-            }
+            result[c['key']] = _rule_analyze_candidate(c)
             continue
         if ext not in _INVOICE_EXTENSIONS:
             continue
@@ -489,15 +671,7 @@ def _keyword_analyze(candidates):
         is_invoice = ext in ('.pdf', '.ofd') or any(kw in text for kw in _INVOICE_KEYWORDS)
         if not is_invoice:
             continue
-        result[c['key']] = {
-            'is_invoice': True,
-            'invoice_type': _keyword_type(text),
-            'invoice_date': '',
-            'invoice_amount': '',
-            'invoice_location': '',
-            'invoice_from': '',
-            'invoice_to': '',
-        }
+        result[c['key']] = _rule_analyze_candidate(c)
     return result
 
 
@@ -599,7 +773,8 @@ def _llm_analyze(candidates):
                     full_key = candidates[idx]['key']
             if not full_key:
                 continue
-            result[full_key] = {
+            candidate = next((c for c in candidates if c['key'] == full_key), {})
+            result[full_key] = _merge_rule_meta(candidate, {
                 'is_invoice':       bool(item.get('is_invoice', True)),
                 'invoice_type':     str(item.get('type') or '其他').strip(),
                 'invoice_date':     str(item.get('date') or '').strip(),
@@ -607,19 +782,11 @@ def _llm_analyze(candidates):
                 'invoice_location': str(item.get('location') or '').strip(),
                 'invoice_from':     str(item.get('from') or '').strip(),
                 'invoice_to':       str(item.get('to') or '').strip(),
-            }
-        # LLM 漏掉的条目：默认保留
+            })
+        # LLM 漏掉的条目：默认保留，并使用规则提取字段。
         for c in candidates:
             if c['key'] not in result:
-                text = (c.get('filename', '') + c.get('email_subject', '') + c.get('_content', '')).lower()
-                result[c['key']] = {
-                    'is_invoice': True,
-                    'invoice_type': _keyword_type(text),
-                    'invoice_date': '',
-                    'invoice_amount': '',
-                    'invoice_from': '',
-                    'invoice_to': '',
-                }
+                result[c['key']] = _rule_analyze_candidate(c)
         return result
     except Exception:
         return _keyword_analyze(candidates)
@@ -836,9 +1003,15 @@ def scan_invoice_attachments(username, start_date, end_date, account="company"):
                     })
 
                 # ── 4. PDF 优先：有 PDF 则丢弃同邮件的 OFD ───
+                # 若 PDF 文本为空，把同邮件 OFD 文本借给 PDF 做字段提取，再保留 PDF 用于合并。
                 real = [c for c in email_candidates if not c.get('is_stub')]
-                has_pdf = any(Path(c['filename'].lower()).suffix == '.pdf' for c in real)
-                if has_pdf:
+                pdf_items = [c for c in real if Path(c['filename'].lower()).suffix == '.pdf']
+                ofd_texts = [c.get('_content') or '' for c in real if Path(c['filename'].lower()).suffix == '.ofd' and c.get('_content')]
+                if pdf_items:
+                    if ofd_texts:
+                        for pdf in pdf_items:
+                            if not (pdf.get('_content') or '').strip():
+                                pdf['_content'] = ofd_texts[0]
                     email_candidates = [
                         c for c in email_candidates
                         if c.get('is_stub') or Path(c['filename'].lower()).suffix != '.ofd'
@@ -1136,45 +1309,169 @@ def fetch_and_save_url(username, url, hint_subject="", hint_body=""):
 
 # ── 合并 PDF ───────────────────────────────────────────────────
 
-def merge_reimbursement_pdf(username, items, output_name):
+def merge_reimbursement_pdf(username, items, output_name, merge_train_tickets=False):
+    import math
     import pypdf
+    from pypdf import Transformation
     from PIL import Image as PILImage
 
     if not items:
         raise ValueError("没有选中任何发票")
 
-    writer      = pypdf.PdfWriter()
-    skipped_ofd = []
+    writer = pypdf.PdfWriter()
+    failed = []
+    train_entries = []
+    normal_entries = []
+    a4_width = 595.28
+    a4_height = 841.89
+    a4_landscape_width = 841.89
+    a4_landscape_height = 595.28
+
+    def display_name(path):
+        return path.name.split("__", 1)[-1] if "__" in path.name else path.name
+
+    def ofd_to_images(path):
+        _ensure_ofd_runtime()
+        import sys, os
+        from easyofd import OFD
+        data = path.read_bytes()
+        _stdout = sys.stdout
+        sink = None
+        try:
+            sink = open(os.devnull, 'w')
+            sys.stdout = sink
+            ofd = OFD()
+            ofd.read(data, fmt='binary')
+            imgs = ofd.to_jpg()
+        finally:
+            sys.stdout = _stdout
+            if sink:
+                try:
+                    sink.close()
+                except Exception:
+                    pass
+        if not imgs:
+            raise ValueError("OFD 渲染为空")
+        return imgs
+
+    def image_to_pdf_page(img):
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, format="PDF")
+        buf.seek(0)
+        return pypdf.PdfReader(buf).pages[0]
+
+    def entry_pages(entry):
+        path = entry['path']
+        ext = path.suffix.lower()
+        if ext == ".pdf":
+            return list(pypdf.PdfReader(str(path)).pages)
+        if ext in _IMAGE_EXTENSIONS:
+            return [image_to_pdf_page(PILImage.open(str(path)))]
+        if ext == ".ofd":
+            return [image_to_pdf_page(img) for img in ofd_to_images(path)]
+        return []
+
+    def add_entry_pages(entry):
+        pages = entry_pages(entry)
+        if not pages:
+            raise ValueError("文件无可用页面")
+        for source in pages:
+            page = pypdf.PageObject.create_blank_page(width=a4_landscape_width, height=a4_landscape_height)
+            merge_page_into_cell(page, source, 0, 0, a4_landscape_width, a4_landscape_height)
+            writer.add_page(page)
+
+    def merge_page_into_cell(target, source, x, y, width, height):
+        source_width = float(source.mediabox.width)
+        source_height = float(source.mediabox.height)
+        if source_width <= 0 or source_height <= 0:
+            return
+        scale = min(width / source_width, height / source_height)
+        draw_width = source_width * scale
+        draw_height = source_height * scale
+        tx = x + (width - draw_width) / 2
+        ty = y + (height - draw_height) / 2
+        target.merge_transformed_page(source, Transformation().scale(scale).translate(tx, ty))
+
+    def add_train_group_page(group):
+        rendered = []
+        for entry in group:
+            try:
+                pages = entry_pages(entry)
+                if pages:
+                    rendered.append((entry, pages[0]))
+                else:
+                    failed.append(entry['name'])
+            except Exception:
+                failed.append(entry['name'])
+        if not rendered:
+            return
+
+        page = pypdf.PageObject.create_blank_page(width=a4_landscape_width, height=a4_landscape_height)
+        margin = 20
+        gap = 12
+        count = len(rendered)
+        if count == 1:
+            cells = [(margin, margin, a4_landscape_width - margin * 2, a4_landscape_height - margin * 2)]
+        elif count == 2:
+            cell_w = (a4_landscape_width - margin * 2 - gap) / 2
+            cells = [
+                (margin, margin, cell_w, a4_landscape_height - margin * 2),
+                (margin + cell_w + gap, margin, cell_w, a4_landscape_height - margin * 2),
+            ]
+        else:
+            cell_w = (a4_landscape_width - margin * 2 - gap) / 2
+            cell_h = (a4_landscape_height - margin * 2 - gap) / 2
+            cells = [
+                (margin, margin + cell_h + gap, cell_w, cell_h),
+                (margin + cell_w + gap, margin + cell_h + gap, cell_w, cell_h),
+                (margin, margin, cell_w, cell_h),
+                (margin + cell_w + gap, margin, cell_w, cell_h),
+            ]
+        for (_, source), cell in zip(rendered, cells):
+            merge_page_into_cell(page, source, *cell)
+        writer.add_page(page)
+
+    def is_train_ticket(item, path):
+        if str(item.get('invoice_type') or '').strip() == '火车':
+            return True
+        filename = display_name(path)
+        text = _extract_file_text(path)
+        if not text:
+            return False
+        meta = _rule_analyze_candidate({
+            'key': item.get('key') or '',
+            'filename': filename,
+            'email_subject': '',
+            '_content': text,
+            '_email_body': '',
+            'email_date': '',
+        })
+        return meta.get('invoice_type') == '火车'
 
     for item in items:
-        key  = str(item.get("key", "")).strip()
+        key = str(item.get("key", "")).strip()
         path = _cache_path_for_key(username, key)
         if not path or not path.exists():
             continue
-        ext = path.suffix.lower()
-        if ext == ".pdf":
-            try:
-                reader = pypdf.PdfReader(str(path))
-                for page in reader.pages:
-                    writer.add_page(page)
-            except Exception:
-                pass
-        elif ext in _IMAGE_EXTENSIONS:
-            try:
-                img = PILImage.open(str(path)).convert("RGB")
-                buf = io.BytesIO()
-                img.save(buf, format="PDF")
-                buf.seek(0)
-                reader = pypdf.PdfReader(buf)
-                for page in reader.pages:
-                    writer.add_page(page)
-            except Exception:
-                pass
-        elif ext == ".ofd":
-            dname = path.name.split("__", 1)[-1] if "__" in path.name else path.name
-            skipped_ofd.append(dname)
+        entry = {'item': item, 'path': path, 'name': display_name(path)}
+        try:
+            if merge_train_tickets and is_train_ticket(item, path):
+                train_entries.append(entry)
+            else:
+                normal_entries.append(entry)
+        except Exception:
+            normal_entries.append(entry)
 
-    if len(writer.pages) == 0 and not skipped_ofd:
+    for i in range(0, len(train_entries), 4):
+        add_train_group_page(train_entries[i:i + 4])
+
+    for entry in normal_entries:
+        try:
+            add_entry_pages(entry)
+        except Exception:
+            failed.append(entry['name'])
+
+    if len(writer.pages) == 0:
         raise ValueError("没有可用的页面，请确认选中的文件有效")
 
     safe_name = re.sub(r'[^\w一-鿿.-]+', '_', output_name or "报销附件")
@@ -1182,17 +1479,15 @@ def merge_reimbursement_pdf(username, items, output_name):
         safe_name += '.pdf'
     output_path = reimbursement_output_dir(username) / safe_name
 
+    with open(str(output_path), 'wb') as f:
+        writer.write(f)
+
     result: dict = {"ok": True, "filename": safe_name, "pages": len(writer.pages)}
-    if skipped_ofd:
-        result["warning"] = f"以下 OFD 文件暂不支持合并，请手动处理：{', '.join(skipped_ofd)}"
-
-    if len(writer.pages) > 0:
-        with open(str(output_path), 'wb') as f:
-            writer.write(f)
-    else:
-        result["ok"]    = False
-        result["error"] = result.pop("warning", "没有可合并的文件")
-
+    if train_entries:
+        result["train_ticket_groups"] = math.ceil(len(train_entries) / 4)
+        result["train_ticket_count"] = len(train_entries)
+    if failed:
+        result["warning"] = f"以下文件合并失败，请手动处理：{', '.join(failed)}"
     return result
 
 

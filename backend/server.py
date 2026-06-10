@@ -123,6 +123,26 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(raw)
             return
+        if parsed.path == "/mcp-mail-attachment":
+            qs = urllib.parse.parse_qs(parsed.query)
+            token = qs.get("token", [""])[0]
+            try:
+                info = resolve_mcp_mail_attachment_link(token)
+                path = info["path"]
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=404)
+                return
+            raw = path.read_bytes()
+            display_name = path.name.split("__", 1)[1] if "__" in path.name else path.name
+            encoded_name = urllib.parse.quote(display_name)
+            self.send_response(200)
+            self.send_header("Content-Type", mail_part_content_type_from_name(display_name, raw))
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "private, max-age=300")
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{encoded_name}")
+            self.end_headers()
+            self.wfile.write(raw)
+            return
         if parsed.path.startswith("/frontend/"):
             relative = Path(urllib.parse.unquote(parsed.path[len("/frontend/"):]))
             if relative.is_absolute() or ".." in relative.parts:
@@ -366,6 +386,22 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, status=400)
             return
+        if parsed.path == "/api/sent-mail":
+            qs = urllib.parse.parse_qs(parsed.query)
+            limit = qs.get("limit", ["20"])[0]
+            try:
+                self.send_json(list_sent_messages(self.current_user().get("username", ""), limit))
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if parsed.path == "/api/sent-mail-detail":
+            qs = urllib.parse.parse_qs(parsed.query)
+            uid = qs.get("uid", [""])[0]
+            try:
+                self.send_json(get_sent_message(self.current_user().get("username", ""), uid))
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            return
         if parsed.path == "/api/mailbox-part":
             qs = urllib.parse.parse_qs(parsed.query)
             uid = qs.get("uid", [""])[0]
@@ -566,6 +602,28 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(raw)
             return
+        if parsed.path.startswith("/forum-attachment/"):
+            if not self.require_user():
+                return
+            parts = [urllib.parse.unquote(part) for part in parsed.path.split("/") if part]
+            attachment_id = parts[1] if len(parts) >= 2 else ""
+            path = forum_attachment_path(attachment_id)
+            if path is None:
+                self.send_json({"error": "附件不存在"}, status=404)
+                return
+            raw = path.read_bytes()
+            ctype, _ = mimetypes.guess_type(str(path))
+            ctype = ctype or "application/octet-stream"
+            display_name = parts[2] if len(parts) >= 3 else path.name
+            disposition = "inline" if ctype.startswith("image/") else "attachment"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "private, max-age=300")
+            self.send_header("Content-Disposition", f"{disposition}; filename*=UTF-8''{urllib.parse.quote(display_name)}")
+            self.end_headers()
+            self.wfile.write(raw)
+            return
         if parsed.path == "/preview-image":
             if not self.require_user():
                 return
@@ -631,6 +689,31 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(raw)
             return
         try:
+            if parsed.path == "/api/forum/attachment" and self.headers.get("Content-Type", "").lower().startswith("multipart/form-data"):
+                if not self.require_user():
+                    return
+                import cgi
+                form = cgi.FieldStorage(
+                    fp=self.rfile,
+                    headers=self.headers,
+                    environ={
+                        "REQUEST_METHOD": "POST",
+                        "CONTENT_TYPE": self.headers.get("Content-Type", ""),
+                        "CONTENT_LENGTH": self.headers.get("Content-Length", "0"),
+                    },
+                )
+                file_item = form["file"] if "file" in form else None
+                if file_item is None or not getattr(file_item, "filename", ""):
+                    raise ValueError("请选择要上传的附件")
+                raw = file_item.file.read()
+                result = forum_upload_attachment_file(
+                    file_item.filename,
+                    getattr(file_item, "type", "") or self.headers.get("Content-Type", ""),
+                    raw,
+                    self.current_user().get("username", ""),
+                )
+                self.send_json(result)
+                return
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
             if parsed.path == "/api/login":
@@ -714,7 +797,7 @@ class Handler(BaseHTTPRequestHandler):
                     payload.get("hint_body", ""),
                 )
             elif parsed.path == "/api/reimbursement/merge":
-                result = merge_reimbursement_pdf(username, payload.get("items", []), payload.get("output_name", "报销附件"))
+                result = merge_reimbursement_pdf(username, payload.get("items", []), payload.get("output_name", "报销附件"), bool(payload.get("merge_train_tickets")))
             elif parsed.path == "/api/mail-config":
                 result = save_user_mail_config(username, payload)
             elif parsed.path == "/api/test-mail-config":
@@ -754,6 +837,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = delete_diary(payload.get("date", ""), username)
             elif parsed.path == "/api/diary/summarize":
                 result = summarize_diaries_for_weekly(payload, username)
+            elif parsed.path == "/api/forum/attachment":
+                result = forum_upload_attachment(payload, username)
             elif parsed.path == "/api/forum/create":
                 result = forum_create_topic(payload, username)
             elif parsed.path == "/api/forum/comment":

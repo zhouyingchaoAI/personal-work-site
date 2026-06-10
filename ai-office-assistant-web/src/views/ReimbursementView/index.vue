@@ -37,7 +37,8 @@ const scanStatus = ref('')
 const merging = ref(false)
 const items = ref<ListItem[]>([])
 const outputName = ref('')
-const mergeResult = ref<{ filename: string; pages: number } | null>(null)
+const mergeResult = ref<{ filename: string; pages: number; train_ticket_groups?: number } | null>(null)
+const mergeTrainTickets = ref(true)
 const fileInput = ref<HTMLInputElement | null>(null)
 const previewItem = ref<ListItem | null>(null)
 const emailModalItem = ref<ListItem | null>(null)
@@ -187,8 +188,9 @@ async function handleMerge() {
     const result = await mergeReimbursementPdf(
       selectedItems.value.map((i) => ({ key: i.key })),
       outputName.value.trim(),
+      mergeTrainTickets.value,
     )
-    mergeResult.value = { filename: result.filename, pages: result.pages }
+    mergeResult.value = { filename: result.filename, pages: result.pages, train_ticket_groups: (result as any).train_ticket_groups }
     if ((result as any).warning) ElMessage.warning((result as any).warning)
     else ElMessage.success(`PDF 已生成，共 ${result.pages} 页`)
   } catch (error) {
@@ -488,7 +490,7 @@ async function handleStubFileSelect(event: Event) {
                     <em v-if="item.email_subject" :title="item.email_subject">{{ item.email_subject }}</em>
                     <div class="file-meta__tags">
                       <span class="size-tag">{{ formatSize(item.size) }}</span>
-                      <span v-if="item.is_ofd" class="ofd-tag">OFD · 不可合并</span>
+                      <span v-if="item.is_ofd" class="ofd-tag">OFD · 可合并</span>
                     </div>
                   </div>
                 </template>
@@ -589,12 +591,16 @@ async function handleStubFileSelect(event: Event) {
           <span>输出文件名</span>
           <input v-model="outputName" placeholder="报销附件" class="merge-name-input" />
         </label>
+        <label class="train-merge-toggle">
+          <input v-model="mergeTrainTickets" type="checkbox" />
+          <span>火车票四张合并</span>
+        </label>
         <button class="reimb-btn reimb-btn--primary" type="button" :disabled="merging || selectedItems.length === 0" @click="handleMerge">
           <el-icon><Plus /></el-icon>
           {{ merging ? '生成中...' : `生成报销 PDF（${selectedItems.length} 张）` }}
         </button>
         <div v-if="mergeResult" class="reimb-result">
-          <span>{{ mergeResult.filename }}（{{ mergeResult.pages }} 页）</span>
+          <span>{{ mergeResult.filename }}（{{ mergeResult.pages }} 页<span v-if="mergeResult.train_ticket_groups">，火车票 {{ mergeResult.train_ticket_groups }} 组</span>）</span>
           <a :href="reimbursementOutputUrl(mergeResult.filename)" class="reimb-btn reimb-btn--primary reimb-btn--sm" download>
             <el-icon><Download /></el-icon>
             下载 PDF
