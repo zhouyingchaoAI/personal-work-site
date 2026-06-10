@@ -25,6 +25,7 @@ import urllib.request
 import zipfile
 import shutil
 import hashlib
+import hmac
 import secrets
 from copy import deepcopy
 from datetime import datetime
@@ -363,6 +364,104 @@ def find_user(username, password=None):
     return None
 
 
+# ---------------------------------------------------------------------------
+# 敏感字段静态加密（邮箱 SMTP/IMAP 授权码）
+# 纯标准库：HMAC-SHA256 计数器模式生成密钥流 + encrypt-then-MAC，避免第三方依赖。
+# 存储格式：enc:v1$<base64(nonce16 || ciphertext || tag16)>。旧明文自动兼容。
+# ---------------------------------------------------------------------------
+_ENC_PREFIX = "enc:v1$"
+_MASTER_KEY_CACHE: dict = {}
+
+
+def _master_secret() -> bytes:
+    env = os.getenv("PWS_SECRET_KEY", "").strip()
+    if env:
+        return hashlib.sha256(("env:" + env).encode("utf-8")).digest()
+    key_path = Path(USER_DATA_DIR) / ".app_secret_key"
+    cache_key = str(key_path)
+    if cache_key in _MASTER_KEY_CACHE:
+        return _MASTER_KEY_CACHE[cache_key]
+    try:
+        if key_path.exists():
+            key = bytes.fromhex(key_path.read_text(encoding="utf-8").strip())
+        else:
+            key = secrets.token_bytes(32)
+            key_path.parent.mkdir(parents=True, exist_ok=True)
+            key_path.write_text(key.hex(), encoding="utf-8")
+            try:
+                os.chmod(key_path, 0o600)
+            except Exception:
+                pass
+    except Exception:
+        # 最后兜底：进程内临时密钥（不持久化，仅避免崩溃）
+        key = hashlib.sha256(b"pws-ephemeral-fallback").digest()
+    _MASTER_KEY_CACHE[cache_key] = key
+    return key
+
+
+def _enc_keys():
+    master = _master_secret()
+    k_enc = hmac.new(master, b"mail-enc", hashlib.sha256).digest()
+    k_mac = hmac.new(master, b"mail-mac", hashlib.sha256).digest()
+    return k_enc, k_mac
+
+
+def _keystream(k_enc: bytes, nonce: bytes, length: int) -> bytes:
+    out = bytearray()
+    counter = 0
+    while len(out) < length:
+        out.extend(hmac.new(k_enc, nonce + counter.to_bytes(8, "big"), hashlib.sha256).digest())
+        counter += 1
+    return bytes(out[:length])
+
+
+def encrypt_secret(plaintext) -> str:
+    plaintext = str(plaintext or "")
+    if not plaintext or plaintext.startswith(_ENC_PREFIX):
+        return plaintext  # 空值或已加密不重复处理
+    k_enc, k_mac = _enc_keys()
+    nonce = secrets.token_bytes(16)
+    pt = plaintext.encode("utf-8")
+    ks = _keystream(k_enc, nonce, len(pt))
+    ct = bytes(a ^ b for a, b in zip(pt, ks))
+    tag = hmac.new(k_mac, nonce + ct, hashlib.sha256).digest()[:16]
+    return _ENC_PREFIX + base64.urlsafe_b64encode(nonce + ct + tag).decode("ascii")
+
+
+def decrypt_secret(stored) -> str:
+    stored = str(stored or "")
+    if not stored.startswith(_ENC_PREFIX):
+        return stored  # 旧明文或空值，原样返回（向后兼容）
+    try:
+        blob = base64.urlsafe_b64decode(stored[len(_ENC_PREFIX):].encode("ascii"))
+        nonce, ct, tag = blob[:16], blob[16:-16], blob[-16:]
+        k_enc, k_mac = _enc_keys()
+        if not hmac.compare_digest(tag, hmac.new(k_mac, nonce + ct, hashlib.sha256).digest()[:16]):
+            return ""  # 校验失败（被篡改或密钥丢失）→ 失败关闭
+        ks = _keystream(k_enc, nonce, len(ct))
+        return bytes(a ^ b for a, b in zip(ct, ks)).decode("utf-8")
+    except Exception:
+        return ""
+
+
+def encrypt_existing_mail_secrets() -> dict:
+    """一次性迁移：把 config.json 里仍是明文的邮箱授权码加密。可手动运行一次。"""
+    config = read_config()
+    fields = ("smtp_password", "imap_password", "personal_smtp_password", "personal_imap_password")
+    changed = 0
+    for _user, settings in (config.get("user_mail_settings") or {}).items():
+        if not isinstance(settings, dict):
+            continue
+        for field in fields:
+            val = settings.get(field)
+            if val and not str(val).startswith(_ENC_PREFIX):
+                settings[field] = encrypt_secret(val)
+                changed += 1
+    if changed:
+        write_config(config)
+    return {"ok": True, "encrypted_fields": changed}
+
+
 def default_email_signature_for_user(username):
     user = find_user(username)
     name = user.get("name") or username if user else username
@@ -404,27 +503,27 @@ def user_mail_config(username):
         "smtp_host": config.get("smtp_host", "smtp.263.net"),
         "smtp_port": int(config.get("smtp_port", 465) or 465),
         "smtp_user": settings.get("smtp_user", ""),
-        "smtp_password": settings.get("smtp_password", ""),
+        "smtp_password": decrypt_secret(settings.get("smtp_password", "")),
         "smtp_from": settings.get("smtp_from", "") or settings.get("user_email", ""),
         "smtp_tls": bool(config.get("smtp_tls", False)),
         "smtp_ssl": bool(config.get("smtp_ssl", True)),
         "imap_host": config.get("imap_host", "imap.263.net"),
         "imap_port": int(config.get("imap_port", 993) or 993),
         "imap_user": settings.get("imap_user", "") or settings.get("smtp_user", ""),
-        "imap_password": settings.get("imap_password", "") or settings.get("smtp_password", ""),
+        "imap_password": decrypt_secret(settings.get("imap_password", "") or settings.get("smtp_password", "")),
         "imap_ssl": bool(config.get("imap_ssl", True)),
         "email_signature": settings.get("email_signature", default_email_signature_for_user(username)),
         "personal_email": settings.get("personal_email", ""),
         "personal_smtp_host": settings.get("personal_smtp_host", ""),
         "personal_smtp_port": int(settings.get("personal_smtp_port") or 587),
         "personal_smtp_user": settings.get("personal_smtp_user", ""),
-        "personal_smtp_password": settings.get("personal_smtp_password", ""),
+        "personal_smtp_password": decrypt_secret(settings.get("personal_smtp_password", "")),
         "personal_smtp_ssl": bool(settings.get("personal_smtp_ssl", False)),
         "personal_smtp_tls": bool(settings.get("personal_smtp_tls", True)),
         "personal_imap_host": settings.get("personal_imap_host", ""),
         "personal_imap_port": int(settings.get("personal_imap_port") or 993),
         "personal_imap_user": settings.get("personal_imap_user", ""),
-        "personal_imap_password": settings.get("personal_imap_password", ""),
+        "personal_imap_password": decrypt_secret(settings.get("personal_imap_password", "")),
         "personal_imap_ssl": bool(settings.get("personal_imap_ssl", True)),
         "reference": reference,
     }
@@ -440,9 +539,9 @@ def save_user_mail_config(username, payload):
         if field in payload:
             settings[field] = str(payload.get(field, "") or "").strip()
     if payload.get("smtp_password"):
-        settings["smtp_password"] = str(payload.get("smtp_password") or "").strip()
+        settings["smtp_password"] = encrypt_secret(str(payload.get("smtp_password") or "").strip())
     if payload.get("imap_password"):
-        settings["imap_password"] = str(payload.get("imap_password") or "").strip()
+        settings["imap_password"] = encrypt_secret(str(payload.get("imap_password") or "").strip())
     if payload.get("email_signature") is not None:
         settings["email_signature"] = str(payload.get("email_signature") or "").strip()
     if settings.get("user_email"):
@@ -465,9 +564,9 @@ def save_user_mail_config(username, payload):
     if "personal_imap_ssl" in payload:
         settings["personal_imap_ssl"] = bool(payload.get("personal_imap_ssl"))
     if payload.get("personal_smtp_password"):
-        settings["personal_smtp_password"] = str(payload.get("personal_smtp_password") or "").strip()
+        settings["personal_smtp_password"] = encrypt_secret(str(payload.get("personal_smtp_password") or "").strip())
     if payload.get("personal_imap_password"):
-        settings["personal_imap_password"] = str(payload.get("personal_imap_password") or "").strip()
+        settings["personal_imap_password"] = encrypt_secret(str(payload.get("personal_imap_password") or "").strip())
     if settings.get("personal_email") and not settings.get("personal_smtp_user"):
         settings["personal_smtp_user"] = settings["personal_email"]
     if settings.get("personal_smtp_user") and not settings.get("personal_imap_user"):
