@@ -1,0 +1,1372 @@
+{
+  "sourceRig": "承希IP形象3D源文件220121/表情包/表情包3d原文件/绑定文件/xn_Rig.mb",
+  "workRig": "work_maya/rig/xn_Rig_runtime.mb",
+  "mayaActionRoot": "exports/maya_actions",
+  "actions": [
+    {
+      "action": "idle",
+      "fbx": "exports/fbx/idle.fbx",
+      "maya": "exports/maya_actions/idle.mb",
+      "frameRange": [
+        1,
+        61
+      ],
+      "namespace": "",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "action": "speaking_idle",
+      "fbx": "exports/fbx/speaking_idle.fbx",
+      "maya": "exports/maya_actions/speaking_idle.mb",
+      "frameRange": [
+        1,
+        91
+      ],
+      "namespace": "",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "action": "speaking_loop",
+      "fbx": "exports/fbx/speaking_loop.fbx",
+      "maya": "exports/maya_actions/speaking_loop.mb",
+      "frameRange": [
+        1,
+        121
+      ],
+      "namespace": "",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "action": "thanks",
+      "fbx": "exports/fbx/thanks.fbx",
+      "maya": "exports/maya_actions/thanks.mb",
+      "frameRange": [
+        1,
+        55
+      ],
+      "namespace": "xn_Rig",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_Rig:xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_Rig:xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_Rig:xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_Rig:xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_Rig:xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xn_Rig:xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "action": "ok",
+      "fbx": "exports/fbx/ok.fbx",
+      "maya": "exports/maya_actions/ok.mb",
+      "frameRange": [
+        1,
+        55
+      ],
+      "namespace": "xn_Rig",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_Rig:xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_Rig:xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_Rig:xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_Rig:xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_Rig:xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xn_Rig:xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "action": "cheer",
+      "fbx": "exports/fbx/cheer.fbx",
+      "maya": "exports/maya_actions/cheer.mb",
+      "frameRange": [
+        1,
+        43
+      ],
+      "namespace": "xn_Rig",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_Rig:xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_Rig:xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_Rig:xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_Rig:xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_Rig:xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xn_Rig:xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "action": "laugh",
+      "fbx": "exports/fbx/laugh.fbx",
+      "maya": "exports/maya_actions/laugh.mb",
+      "frameRange": [
+        1,
+        55
+      ],
+      "namespace": "xn_Rig",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_Rig:xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_Rig:xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_Rig:xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_Rig:xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_Rig:xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xn_Rig:xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "action": "goal",
+      "fbx": "exports/fbx/goal.fbx",
+      "maya": "exports/maya_actions/goal.mb",
+      "frameRange": [
+        1,
+        55
+      ],
+      "namespace": "xn_Rig",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_Rig:xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_Rig:xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_Rig:xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_Rig:xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_Rig:xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xn_Rig:xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "action": "kiss",
+      "fbx": "exports/fbx/kiss.fbx",
+      "maya": "exports/maya_actions/kiss.mb",
+      "frameRange": [
+        1,
+        40
+      ],
+      "namespace": "xn_Rig",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_Rig:xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_Rig:xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_Rig:xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_Rig:xn_mod4",
+          "level": 2,
+          "faces": 33888,
+          "vertices": 34359
+        },
+        {
+          "node": "xn_Rig:xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xn_Rig:xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "action": "received",
+      "fbx": "exports/fbx/received.fbx",
+      "maya": "exports/maya_actions/received.mb",
+      "frameRange": [
+        1,
+        55
+      ],
+      "namespace": "xn_Rig",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_Rig:xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_Rig:xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_Rig:xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_Rig:xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_Rig:xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xn_Rig:xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "action": "hi",
+      "fbx": "exports/fbx/hi.fbx",
+      "maya": "exports/maya_actions/hi.mb",
+      "frameRange": [
+        1,
+        45
+      ],
+      "namespace": "xn_Rig",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_Rig:xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_Rig:xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_Rig:xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_Rig:xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_Rig:xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xn_Rig:xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "action": "welcome",
+      "fbx": "exports/fbx/welcome.fbx",
+      "maya": "exports/maya_actions/welcome.mb",
+      "frameRange": [
+        1,
+        19
+      ],
+      "namespace": "xn_Rig",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_Rig:xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_Rig:xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_Rig:xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_Rig:xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_Rig:xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xn_Rig:xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "action": "awesome",
+      "fbx": "exports/fbx/awesome.fbx",
+      "maya": "exports/maya_actions/awesome.mb",
+      "frameRange": [
+        1,
+        45
+      ],
+      "namespace": "xn_Rig",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_Rig:xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_Rig:xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_Rig:xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_Rig:xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_Rig:xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xn_Rig:xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "action": "goodbye",
+      "fbx": "exports/fbx/goodbye.fbx",
+      "maya": "exports/maya_actions/goodbye.mb",
+      "frameRange": [
+        1,
+        58
+      ],
+      "namespace": "xn_Rig",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_Rig:xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_Rig:xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_Rig:xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_Rig:xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_Rig:xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xn_Rig:xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "action": "work",
+      "fbx": "exports/fbx/work.fbx",
+      "maya": "exports/maya_actions/work.mb",
+      "frameRange": [
+        1,
+        50
+      ],
+      "namespace": "xn_Rig",
+      "exportedNodes": 276,
+      "joints": 268,
+      "smoothMeshes": [
+        {
+          "node": "xn_Rig:xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_Rig:xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_Rig:xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_Rig:xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_Rig:xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xn_Rig:xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    }
+  ],
+  "testScenes": [
+    {
+      "scene": "mouth_viseme_test",
+      "fbx": "exports/fbx/mouth_viseme_test.fbx",
+      "maya": "exports/maya_actions/mouth_viseme_test.mb",
+      "frameRange": [
+        1,
+        146
+      ],
+      "channels": {
+        "Blink_L": [
+          "xn_l_lid_bs01",
+          "xn_lid_bs_mod26"
+        ],
+        "Blink_R": [
+          "xn_r_lid_bs01",
+          "xn_lid_bs_mod11"
+        ],
+        "Mouth_Close": [
+          "xn_total_bs",
+          "xn_head_base_bs_mod"
+        ],
+        "Mouth_A": [
+          "xn_jaw_bs",
+          "xn_jaw_bs_mod2"
+        ],
+        "Mouth_O_R": [
+          "xn_r_lip_bs",
+          "xn_lip_bs_mod8"
+        ],
+        "Mouth_O_L": [
+          "xn_l_lip_bs",
+          "xn_lip_bs_mod14"
+        ],
+        "Mouth_E_R": [
+          "xn_r_lip_bs",
+          "xn_lip_bs_mod5"
+        ],
+        "Mouth_E_L": [
+          "xn_l_lip_bs",
+          "xn_lip_bs_mod13"
+        ],
+        "Mouth_U_R": [
+          "xn_r_lip_bs",
+          "xn_lip_bs_mod1"
+        ],
+        "Mouth_U_L": [
+          "xn_l_lip_bs",
+          "xn_lip_bs_mod12"
+        ]
+      },
+      "smoothMeshes": [
+        {
+          "node": "xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    },
+    {
+      "scene": "talking_preview",
+      "fbx": "exports/fbx/talking_preview.fbx",
+      "maya": "exports/maya_actions/talking_preview.mb",
+      "frameRange": [
+        1,
+        121
+      ],
+      "bodyAction": "speaking_loop",
+      "channels": {
+        "Blink_L": [
+          "xn_l_lid_bs01",
+          "xn_lid_bs_mod26"
+        ],
+        "Blink_R": [
+          "xn_r_lid_bs01",
+          "xn_lid_bs_mod11"
+        ],
+        "Mouth_Close": [
+          "xn_total_bs",
+          "xn_head_base_bs_mod"
+        ],
+        "Mouth_A": [
+          "xn_jaw_bs",
+          "xn_jaw_bs_mod2"
+        ],
+        "Mouth_O_R": [
+          "xn_r_lip_bs",
+          "xn_lip_bs_mod8"
+        ],
+        "Mouth_O_L": [
+          "xn_l_lip_bs",
+          "xn_lip_bs_mod14"
+        ],
+        "Mouth_E_R": [
+          "xn_r_lip_bs",
+          "xn_lip_bs_mod5"
+        ],
+        "Mouth_E_L": [
+          "xn_l_lip_bs",
+          "xn_lip_bs_mod13"
+        ],
+        "Mouth_U_R": [
+          "xn_r_lip_bs",
+          "xn_lip_bs_mod1"
+        ],
+        "Mouth_U_L": [
+          "xn_l_lip_bs",
+          "xn_lip_bs_mod12"
+        ]
+      },
+      "smoothMeshes": [
+        {
+          "node": "xn_mod1",
+          "level": 2,
+          "faces": 31520,
+          "vertices": 31592
+        },
+        {
+          "node": "xn_mod2",
+          "level": 2,
+          "faces": 2368,
+          "vertices": 2385
+        },
+        {
+          "node": "xn_mod3",
+          "level": 2,
+          "faces": 92672,
+          "vertices": 92674
+        },
+        {
+          "node": "xn_mod4",
+          "level": 2,
+          "faces": 40288,
+          "vertices": 40759
+        },
+        {
+          "node": "xn_mod5",
+          "level": 2,
+          "faces": 45120,
+          "vertices": 45530
+        },
+        {
+          "node": "xx_tongue_mod",
+          "level": 2,
+          "faces": 1184,
+          "vertices": 1186
+        },
+        {
+          "node": "cx_l_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        },
+        {
+          "node": "cx_r_eye_runtime",
+          "level": 2,
+          "faces": 6240,
+          "vertices": 6242
+        }
+      ]
+    }
+  ],
+  "morphs": {
+    "fbx": "exports/fbx/morph_targets.fbx",
+    "targets": {
+      "Blink_L": "cx_morph_Blink_L",
+      "Blink_R": "cx_morph_Blink_R",
+      "Mouth_Close": "cx_morph_Mouth_Close",
+      "Mouth_A": "cx_morph_Mouth_A",
+      "Mouth_O": "cx_morph_Mouth_O",
+      "Mouth_E": "cx_morph_Mouth_E",
+      "Mouth_U": "cx_morph_Mouth_U"
+    },
+    "exportedNodes": [
+      "cx_morph_Blink_L",
+      "cx_morph_Blink_R",
+      "cx_morph_Mouth_Close",
+      "cx_morph_Mouth_A",
+      "cx_morph_Mouth_O",
+      "cx_morph_Mouth_E",
+      "cx_morph_Mouth_U"
+    ],
+    "smoothMeshes": []
+  },
+  "textures": {
+    "head": "承希IP形象3D源文件220121/表情包/表情包3d原文件/绑定文件/贴图文件/head_initialShadingGroup_AL.png",
+    "clothes": "承希IP形象3D源文件220121/表情包/表情包3d原文件/绑定文件/贴图文件/yifu_diff01.png",
+    "eye": "承希IP形象3D源文件220121/表情包/表情包3d原文件/绑定文件/贴图文件/eye_diff.png"
+  },
+  "repairedShots": {
+    "shot01_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5334
+    },
+    "shot02_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5481
+    },
+    "shot03_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5481
+    },
+    "shot04_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5481
+    },
+    "shot05_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5515
+    },
+    "shot06_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5481
+    },
+    "shot07_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5481
+    },
+    "shot08_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5463
+    },
+    "shot09_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5481
+    },
+    "shot10_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5565
+    },
+    "shot11_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5474
+    },
+    "shot12_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb",
+        "F:/XN_pro/Rig/xn_Rig.mb{1}",
+        "F:/XN_pro/Rig/xn_Rig.mb{2}",
+        "F:/XN_pro/Rig/xn_Rig.mb{3}"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb",
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb{1}",
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb{2}",
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb{3}"
+      ],
+      "loadedReferences": [
+        "xn_RigRN",
+        "xn_RigRN1",
+        "xn_RigRN2",
+        "xn_RigRN3"
+      ],
+      "animCurves": 7577
+    },
+    "shot13_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5481
+    },
+    "shot14_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5481
+    },
+    "shot15_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5473
+    },
+    "shot16_local": {
+      "before": [
+        "F:/XN_pro/Rig/xn_Rig.mb"
+      ],
+      "after": [
+        "/Users/yilujian/Desktop/MyWork/ChencyTech/数字人测试/work_maya/rig/xn_Rig_runtime.mb"
+      ],
+      "loadedReferences": [
+        "xn_RigRN"
+      ],
+      "animCurves": 5322
+    }
+  }
+}
