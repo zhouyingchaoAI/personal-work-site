@@ -3,12 +3,14 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowRight, Calendar, ChatDotRound, ChatLineSquare, Document, Message, Notebook, Setting } from '@element-plus/icons-vue'
-import DeskPetAssistant from '../../components/DeskPetAssistant/index.vue'
+import DigitalHumanAssistant from '../../components/DigitalHumanAssistant/index.vue'
 import AppLayout from '../../layout/AppLayout/index.vue'
 import DiaryView from '../DiaryView/index.vue'
 import ForumView from '../ForumView/index.vue'
 import LobsterBaseView from '../LobsterBaseView/index.vue'
 import MailAssistantView from '../MailAssistantView/index.vue'
+import MeetingAssistantView from '../MeetingAssistantView/index.vue'
+import KnowledgeBaseView from '../KnowledgeBaseView/index.vue'
 import ReimbursementView from '../ReimbursementView/index.vue'
 import NewsView from '../NewsView/index.vue'
 import SettingsView from '../SettingsView/index.vue'
@@ -33,7 +35,7 @@ import './index.scss'
 const route = useRoute()
 const router = useRouter()
 const focusMinutes = ref(25)
-const deskPetRef = ref<InstanceType<typeof DeskPetAssistant> | null>(null)
+const deskPetRef = ref<InstanceType<typeof DigitalHumanAssistant> | null>(null)
 const currentTime = ref(new Date())
 const recentReports = ref<ReportFile[]>([])
 const recentReportsLoading = ref(false)
@@ -158,6 +160,8 @@ async function handleLogout() {
     <ForumView v-else-if="activeMenu === 'forum'" />
     <NewsView v-else-if="activeMenu === 'news'" />
     <MailAssistantView v-else-if="activeMenu === 'mailassistant'" />
+    <MeetingAssistantView v-else-if="activeMenu === 'meeting'" />
+    <KnowledgeBaseView v-else-if="activeMenu === 'knowledge'" />
     <ReimbursementView v-else-if="activeMenu === 'reimbursement'" />
     <LobsterBaseView v-else-if="activeMenu === 'lobsterbase'" />
     <SettingsView
@@ -289,7 +293,7 @@ async function handleLogout() {
       </section>
     </aside>
 
-    <aside v-else-if="!['weekly', 'trip', 'diary', 'forum', 'news', 'mailassistant', 'reimbursement', 'lobsterbase', 'config', 'mailconfig', 'skills', 'usermanage', 'mcp'].includes(activeMenu)" class="assistant-panel">
+    <aside v-else-if="!['weekly', 'trip', 'diary', 'forum', 'news', 'mailassistant', 'meeting', 'knowledge', 'reimbursement', 'lobsterbase', 'config', 'mailconfig', 'skills', 'usermanage', 'mcp'].includes(activeMenu)" class="assistant-panel">
       <section class="assistant-hero">
         <div class="speech-bubble">
           Hi，{{ user.name || user.username }}！今天想先从哪件事开始呢？
@@ -322,6 +326,6 @@ async function handleLogout() {
       </section>
     </aside>
 
-    <DeskPetAssistant ref="deskPetRef" :active-menu="activeMenu" :user-name="user.name || user.username" />
+    <DigitalHumanAssistant ref="deskPetRef" :user-name="user.name || user.username" />
   </AppLayout>
 </template>

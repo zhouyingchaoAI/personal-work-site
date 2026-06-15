@@ -1029,6 +1029,47 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
   }
 }
 
+.settings-mcp-lobster-main {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.settings-lobster-model-edit {
+  display: flex !important;
+  min-width: 0;
+  align-items: center;
+  gap: 8px !important;
+  flex-wrap: wrap;
+
+  span {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  input,
+  .settings-lobster-model-select {
+    width: min(360px, 100%);
+    min-width: 180px;
+    flex: 1 1 220px;
+  }
+
+  input {
+    height: 32px;
+    border: 1px solid $border;
+    border-radius: 8px;
+    padding: 0 10px;
+    color: $text-strong;
+    background: #fff;
+  }
+
+  .settings-button {
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+}
+
 .settings-mcp-lobster-status {
   color: $text-muted;
   font-size: 13px;
@@ -1345,4 +1386,27 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
   margin-top: 26px;
   padding-top: 22px;
   border-top: 1px solid #edf1f7;
+}
+
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+
+  th,
+  td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #edf1f7;
+    text-align: left;
+  }
+
+  th {
+    color: #69768d;
+    font-weight: 600;
+    background: #f6f8fc;
+  }
+
+  td {
+    color: #273653;
+  }
 }

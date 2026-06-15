@@ -10,3 +10,4 @@ nohup.out
 SCRIPT
 ui_upgrade.py
 user_data/
+qdrant-data/

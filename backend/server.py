@@ -120,6 +120,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             self.wfile.write(raw)
             return
@@ -140,6 +141,41 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(raw)))
             self.send_header("Cache-Control", "private, max-age=300")
             self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{encoded_name}")
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        if parsed.path == "/digital-human":
+            # 数字人页面用相对路径加载模型资源，统一补成带斜杠的目录地址。
+            self.send_response(302)
+            self.send_header("Location", self.path.split("?", 1)[0] + "/")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if parsed.path == "/digital-human/":
+            raw = digital_human_page().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        if parsed.path.startswith("/digital-human/"):
+            if parsed.path.startswith("/digital-human/exports/"):
+                path = digital_human_asset(parsed.path[len("/digital-human/exports/"):])
+            else:
+                path = digital_human_static(parsed.path[len("/digital-human/"):])
+            if path is None:
+                self.send_json({"error": "Not found"}, status=404)
+                return
+            raw = path.read_bytes()
+            ctype, _ = mimetypes.guess_type(str(path))
+            if path.suffix.lower() == ".glb":
+                ctype = "model/gltf-binary"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype or "application/octet-stream")
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "public, max-age=86400")
             self.end_headers()
             self.wfile.write(raw)
             return
@@ -287,6 +323,41 @@ class Handler(BaseHTTPRequestHandler):
             if not self.require_admin():
                 return
             self.send_json(admin_config_payload())
+            return
+        if parsed.path == "/api/tts-config":
+            if not self.require_admin():
+                return
+            self.send_json(digital_human_tts_config_api())
+            return
+        if parsed.path == "/api/meeting-config":
+            if not self.require_admin():
+                return
+            self.send_json(meeting_config_api())
+            return
+        if parsed.path == "/api/knowledge-config":
+            if not self.require_admin():
+                return
+            self.send_json(kb_config_api())
+            return
+        if parsed.path == "/api/xinference-config":
+            if not self.require_admin():
+                return
+            self.send_json(xinference_unified_config())
+            return
+        if parsed.path == "/api/ragflow/status":
+            if not self.require_admin():
+                return
+            self.send_json(kb_ragflow_status())
+            return
+        if parsed.path == "/api/ragflow/sso":
+            # 多租户：每个用户登录自己的 RAGFlow 租户，普通用户也可用。
+            user = self.require_user()
+            if not user:
+                return
+            try:
+                self.send_json(kb_ragflow_sso(user.get("username", "")))
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
             return
         if parsed.path == "/api/mcp-config":
             if not self.require_admin():
@@ -536,6 +607,81 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, status=400)
             return
+        if parsed.path == "/api/knowledge/list":
+            qs = urllib.parse.parse_qs(parsed.query)
+            scope = qs.get("scope", ["mine"])[0]
+            self.send_json(kb_list(scope, self.current_user().get("username", "")))
+            return
+        if parsed.path == "/api/knowledge/kbs":
+            user = self.require_user()
+            if not user:
+                return
+            try:
+                self.send_json(kb_datasets(user.get("username", "")))
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if parsed.path == "/api/digital-human/kb-config":
+            user = self.require_user()
+            if not user:
+                return
+            self.send_json({"ok": True, **get_digital_human_kb(user.get("username", ""))})
+            return
+        if parsed.path == "/api/knowledge/chat-history":
+            user = self.require_user()
+            if not user:
+                return
+            qs = urllib.parse.parse_qs(parsed.query)
+            try:
+                self.send_json(kb_chat_history(user.get("username", ""), qs.get("session_id", [""])[0]))
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if parsed.path == "/api/knowledge/chat-embed":
+            user = self.require_user()
+            if not user:
+                return
+            try:
+                self.send_json(kb_chat_embed(user.get("username", "")))
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if parsed.path == "/api/knowledge/doc-file":
+            user = self.require_user()
+            if not user:
+                return
+            qs = urllib.parse.parse_qs(parsed.query)
+            try:
+                name, raw = kb_doc_file(qs.get("dataset_id", [""])[0], qs.get("doc_id", [""])[0], user.get("username", ""))
+                self.send_response(200)
+                self.send_header("Content-Type", mail_part_content_type_from_name(name, raw))
+                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Content-Disposition", f"inline; filename*=UTF-8''{urllib.parse.quote(name)}")
+                self.end_headers()
+                self.wfile.write(raw)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if parsed.path == "/api/knowledge/doc-chunks":
+            user = self.require_user()
+            if not user:
+                return
+            qs = urllib.parse.parse_qs(parsed.query)
+            try:
+                self.send_json(kb_doc_chunks(qs.get("dataset_id", [""])[0], qs.get("doc_id", [""])[0], user.get("username", "")))
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if parsed.path == "/api/meeting/list":
+            self.send_json(meeting_list(self.current_user().get("username", "")))
+            return
+        if parsed.path == "/api/meeting/get":
+            qs = urllib.parse.parse_qs(parsed.query)
+            try:
+                self.send_json(meeting_get(qs.get("id", [""])[0], self.current_user().get("username", "")))
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=404)
+            return
         if parsed.path == "/api/diary/list":
             qs = urllib.parse.parse_qs(parsed.query)
             payload = {k: v[0] for k, v in qs.items()}
@@ -659,6 +805,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             self.wfile.write(raw)
             return
@@ -687,6 +834,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
                 self.wfile.write(raw)
+            return
+        if parsed.path == "/api/knowledge/ask-stream":
+            user = self.require_user()
+            if not user:
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+            except Exception:
+                payload = {}
+            kb_ask_stream(self, payload, user.get("username", ""))
             return
         try:
             if parsed.path == "/api/forum/attachment" and self.headers.get("Content-Type", "").lower().startswith("multipart/form-data"):
@@ -751,6 +909,78 @@ class Handler(BaseHTTPRequestHandler):
                 result = generate_document(payload, username)
             elif parsed.path == "/api/optimize":
                 result = optimize_text(payload)
+            elif parsed.path == "/api/chat":
+                result = digital_human_chat(payload, username)
+            elif parsed.path == "/api/tts":
+                result = digital_human_tts(payload)
+            elif parsed.path == "/api/tts-config":
+                if not self.require_admin():
+                    return
+                result = save_digital_human_tts_config(payload)
+            elif parsed.path == "/api/tts-voices":
+                if not self.require_admin():
+                    return
+                result = probe_tts_api_voices(payload)
+            elif parsed.path == "/api/meeting-config":
+                if not self.require_admin():
+                    return
+                result = save_meeting_config(payload)
+            elif parsed.path == "/api/meeting-test":
+                if not self.require_admin():
+                    return
+                result = meeting_test_asr(payload)
+            elif parsed.path == "/api/knowledge-config":
+                if not self.require_admin():
+                    return
+                result = save_kb_config(payload)
+            elif parsed.path == "/api/knowledge-test":
+                if not self.require_admin():
+                    return
+                result = kb_test_embedding(payload)
+            elif parsed.path == "/api/xinference-probe":
+                if not self.require_admin():
+                    return
+                result = xinference_probe(payload)
+            elif parsed.path == "/api/xinference-apply":
+                if not self.require_admin():
+                    return
+                result = xinference_apply(payload)
+            elif parsed.path == "/api/knowledge/upload":
+                result = kb_upload(payload, username)
+            elif parsed.path == "/api/knowledge/delete":
+                result = kb_delete(payload, username)
+            elif parsed.path == "/api/knowledge/search":
+                result = kb_search(payload, username)
+            elif parsed.path == "/api/knowledge/ask":
+                result = kb_ask(payload, username)
+            elif parsed.path == "/api/knowledge/reparse":
+                result = kb_reparse(payload, username)
+            elif parsed.path == "/api/knowledge/kbs":
+                result = kb_dataset_manage(payload, username)
+            elif parsed.path == "/api/digital-human/kb-config":
+                result = save_digital_human_kb(payload, username)
+            elif parsed.path == "/api/knowledge/chat-sessions":
+                result = kb_chat_sessions(payload, username)
+            elif parsed.path == "/api/knowledge/chat-clear":
+                result = kb_chat_clear(username, payload.get("session_id", ""))
+            elif parsed.path == "/api/ragflow/bootstrap":
+                if not self.require_admin():
+                    return
+                result = kb_ragflow_bootstrap(payload)
+            elif parsed.path == "/api/ragflow/chunk-config":
+                if not self.require_admin():
+                    return
+                result = kb_ragflow_save_chunk_config(payload)
+            elif parsed.path == "/api/meeting/transcribe":
+                result = meeting_transcribe(payload, username)
+            elif parsed.path == "/api/meeting/translate":
+                result = meeting_translate(payload)
+            elif parsed.path == "/api/meeting/summarize":
+                result = meeting_summarize(payload, username)
+            elif parsed.path == "/api/meeting/save":
+                result = meeting_save(payload, username)
+            elif parsed.path == "/api/meeting/delete":
+                result = meeting_delete(payload, username)
             elif parsed.path == "/api/agent":
                 result = agent_chat(payload, username)
             elif parsed.path == "/api/agent/chat":
@@ -892,6 +1122,45 @@ class Handler(BaseHTTPRequestHandler):
                     result = json.loads(resp.read().decode("utf-8"))
                 if not result.get("ok"):
                     raise ValueError(result.get("detail") or "安装失败")
+            elif parsed.path == "/api/lobster-model-options":
+                user = self.require_user()
+                if not user:
+                    return
+                agent_id = int(payload.get("agent_id", 0))
+                if not agent_id:
+                    raise ValueError("agent_id is required")
+                token = _openclaw_sso_token(public_user(user))
+                target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                req = urllib.request.Request(
+                    f"{target}/api/agents/{agent_id}/model-options",
+                    data=b"{}",
+                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+                    method="POST",
+                )
+                with opener.open(req, timeout=15) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+            elif parsed.path == "/api/update-lobster-model":
+                user = self.require_user()
+                if not user:
+                    return
+                agent_id = int(payload.get("agent_id", 0))
+                model_name = str(payload.get("model_name") or payload.get("model") or "").strip()
+                if not agent_id:
+                    raise ValueError("agent_id is required")
+                if not model_name:
+                    raise ValueError("model_name is required")
+                token = _openclaw_sso_token(public_user(user))
+                target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                req = urllib.request.Request(
+                    f"{target}/api/agents/{agent_id}/model",
+                    data=json.dumps({"model_name": model_name}, ensure_ascii=False).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+                    method="POST",
+                )
+                with opener.open(req, timeout=15) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
             elif parsed.path == "/api/restart-lobster":
                 if not self.require_admin():
                     return

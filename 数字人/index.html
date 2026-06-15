@@ -1,0 +1,1614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>承希 3D 数字人</title>
+    <link rel="icon" href="data:,">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --bg: #111316;
+            --panel: #f8fafc;
+            --text: #111827;
+            --muted: #667085;
+            --line: #d7dde5;
+            --cyan: #14a6c7;
+            --cyan-dark: #087b98;
+            --shadow: 0 22px 70px rgba(0, 0, 0, 0.32);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            overflow: hidden;
+            color: var(--panel);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background:
+                radial-gradient(circle at 50% 22%, rgba(255, 255, 255, 0.14), transparent 25rem),
+                linear-gradient(145deg, #15191e 0%, #0d0f12 54%, #15181c 100%);
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        button {
+            border: 0;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+        }
+
+        .app {
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr) auto;
+            gap: 14px;
+            width: min(1080px, calc(100vw - 36px));
+            height: 100vh;
+            margin: 0 auto;
+            padding: 24px 0;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            min-height: 42px;
+            color: rgba(255, 255, 255, 0.78);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+            font-weight: 700;
+            letter-spacing: 0;
+        }
+
+        .brand-logo {
+            display: block;
+            width: 36px;
+            height: 36px;
+            border-radius: 9px;
+            object-fit: cover;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            min-width: 132px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 99px;
+            background: #24d18d;
+            box-shadow: 0 0 0 5px rgba(36, 209, 141, 0.16);
+        }
+
+        .viewer {
+            position: relative;
+            min-height: 0;
+            overflow: hidden;
+            border-radius: 8px;
+            background:
+                radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.13), transparent 19rem),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0));
+        }
+
+        .viewer canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .viewer-loading {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            color: rgba(255, 255, 255, 0.68);
+            font-size: 14px;
+            pointer-events: none;
+        }
+
+        .viewer.ready .viewer-loading {
+            display: none;
+        }
+
+        .panel {
+            display: grid;
+            gap: 12px;
+            width: min(820px, 100%);
+            margin: 0 auto;
+            padding: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 8px;
+            background: rgba(248, 250, 252, 0.94);
+            box-shadow: var(--shadow);
+            color: var(--text);
+        }
+
+        .chat-log {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            height: 190px;
+            min-height: 0;
+            padding: 10px;
+            overflow-y: auto;
+            border: 1px solid #e1e6ed;
+            border-radius: 10px;
+            background: #fff;
+        }
+
+        .chat-msg {
+            max-width: 86%;
+            padding: 8px 12px;
+            border-radius: 12px;
+            color: #243042;
+            line-height: 1.55;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .chat-msg.assistant {
+            align-self: flex-start;
+            border: 1px solid #e1e6ed;
+            border-bottom-left-radius: 4px;
+            background: #f4f8fb;
+        }
+
+        .chat-msg.user {
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+            background: var(--cyan);
+            color: #fff;
+        }
+
+        .panel-status {
+            min-height: 16px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .action-bar {
+            display: grid;
+            grid-template-columns: repeat(8, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .action-btn {
+            height: 36px;
+            border-radius: 8px;
+            background: #edf4f7;
+            color: #244151;
+            font-size: 14px;
+            transition: transform 120ms ease, background 120ms ease, color 120ms ease;
+        }
+
+        .action-btn:hover {
+            background: #dcecf2;
+        }
+
+        .action-btn:active {
+            transform: translateY(1px) scale(0.98);
+        }
+
+        .action-btn:disabled {
+            color: #98a2b3;
+            background: #eef2f6;
+        }
+
+        /* 输入框独占一行（多行可拉伸），按钮排在下一行。 */
+        .controls {
+            display: grid;
+            grid-template-columns: 44px 44px minmax(0, 1fr);
+            gap: 8px;
+            align-items: center;
+        }
+
+        .input {
+            grid-column: 1 / -1;
+            width: 100%;
+            min-width: 0;
+            min-height: 64px;
+            max-height: 150px;
+            padding: 10px 13px;
+            font: inherit;
+            line-height: 1.5;
+            resize: none;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            outline: none;
+            color: var(--text);
+            background: #fff;
+        }
+
+        .input:focus {
+            border-color: var(--cyan);
+            box-shadow: 0 0 0 3px rgba(20, 166, 199, 0.15);
+        }
+
+        .btn {
+            display: inline-grid;
+            grid-auto-flow: column;
+            place-items: center;
+            gap: 7px;
+            min-width: 44px;
+            height: 44px;
+            padding: 0 14px;
+            border-radius: 8px;
+            background: #e9eef5;
+            color: #243042;
+            transition: transform 120ms ease, background 120ms ease, color 120ms ease;
+        }
+
+        .btn:hover {
+            background: #dce5ee;
+        }
+
+        .btn:active {
+            transform: translateY(1px) scale(0.98);
+        }
+
+        .btn.primary {
+            min-width: 84px;
+            background: var(--cyan);
+            color: #fff;
+            font-weight: 700;
+        }
+
+        .btn.primary:hover {
+            background: var(--cyan-dark);
+        }
+
+        .btn.active {
+            background: #fff2df;
+            color: #9d5a00;
+        }
+
+        .btn svg {
+            width: 18px;
+            height: 18px;
+            stroke: currentColor;
+            stroke-width: 2;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        /* 窄屏/嵌入主站悬浮面板时：舞台改为弹性高度，保证对话框和语音按钮始终可见。 */
+        @media (max-width: 720px) {
+            body {
+                overflow-y: auto;
+            }
+
+            .app {
+                grid-template-rows: auto minmax(170px, 1fr) auto;
+                width: calc(100vw - 24px);
+                height: auto;
+                min-height: 100vh;
+                padding: 12px 0;
+                gap: 10px;
+            }
+
+            .panel {
+                padding: 12px;
+            }
+
+            .chat-log {
+                height: 150px;
+            }
+
+            .action-bar {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 6px;
+            }
+
+            .action-btn {
+                height: 32px;
+                font-size: 13px;
+            }
+
+            .input {
+                min-height: 56px;
+            }
+        }
+
+        /* 嵌在主站 iframe 里：桌宠形态——整体透明，犇犇直接悬浮在页面上，
+           对话区收成一张毛玻璃小卡片。 */
+        body.embedded {
+            background: none;
+        }
+
+        body.embedded .topbar {
+            display: none;
+        }
+
+        /* 嵌入布局：左侧整列聊天面板（完整历史可滚动），右侧犇犇立绘。 */
+        body.embedded .app {
+            grid-template-columns: minmax(0, 1fr) 215px;
+            grid-template-rows: minmax(0, 1fr);
+            align-items: stretch;
+            width: 100%;
+            height: 100vh;
+            padding: 6px 6px 10px;
+            gap: 4px;
+        }
+
+        body.embedded .viewer {
+            grid-row: 1;
+            grid-column: 2;
+            border-radius: 0;
+            background: none;
+        }
+
+        body.embedded .panel {
+            display: flex;
+            flex-direction: column;
+            grid-row: 1;
+            grid-column: 1;
+            gap: 8px;
+            height: 100%;
+            min-height: 0;
+        }
+
+        body.embedded .chat-log {
+            flex: 1;
+            height: auto;
+            min-height: 120px;
+        }
+
+        body.embedded .action-bar {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            padding-bottom: 2px;
+            scrollbar-width: thin;
+        }
+
+        body.embedded .action-btn {
+            flex: 0 0 auto;
+            height: 30px;
+            padding: 0 11px;
+            font-size: 12.5px;
+        }
+
+        body.embedded .viewer-loading {
+            color: rgba(36, 48, 66, 0.65);
+        }
+
+        body.embedded .panel {
+            padding: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.78);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            box-shadow: 0 14px 38px rgba(15, 23, 42, 0.22);
+        }
+
+        /* 嵌入模式专属：隐藏/显示对话框的小圆钮，纯人物桌宠形态。 */
+        .chat-toggle {
+            display: none;
+        }
+
+        body.embedded .chat-toggle {
+            position: fixed;
+            top: 8px;
+            right: 8px;
+            z-index: 20;
+            display: grid;
+            place-items: center;
+            width: 34px;
+            height: 34px;
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.82);
+            color: #244151;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .chat-toggle svg {
+            width: 17px;
+            height: 17px;
+            stroke: currentColor;
+            stroke-width: 2;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        body.embedded.chat-hidden .panel {
+            display: none;
+        }
+
+        body.embedded.chat-hidden .app {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        body.embedded.chat-hidden .viewer {
+            grid-column: 1 / -1;
+        }
+
+        body.embedded .chat-log {
+            background: rgba(255, 255, 255, 0.66);
+        }
+
+        body.embedded .chat-msg.assistant {
+            background: rgba(244, 248, 251, 0.92);
+        }
+
+        body.embedded .action-btn {
+            background: rgba(237, 244, 247, 0.85);
+        }
+
+        body.embedded .input,
+        body.embedded .btn {
+            background: rgba(255, 255, 255, 0.85);
+        }
+
+        body.embedded .btn.primary {
+            background: var(--cyan);
+        }
+
+        body.embedded .btn.active {
+            background: #fff2df;
+        }
+    </style>
+</head>
+<body>
+    <main class="app">
+        <header class="topbar">
+            <div class="brand">
+                <img class="brand-logo" src="./logo_1.png" alt="承希">
+                <span>承希 3D 数字人</span>
+            </div>
+            <div class="status">
+                <span class="status-dot"></span>
+                <span id="statusText">模型加载中</span>
+            </div>
+        </header>
+
+        <section class="viewer" id="viewer" aria-label="3D 数字人舞台">
+            <canvas id="avatarCanvas"></canvas>
+            <div class="viewer-loading" id="viewerLoading">正在加载 3D 模型</div>
+        </section>
+
+        <button class="chat-toggle" id="chatToggleBtn" type="button" title="隐藏对话框" aria-label="隐藏对话框">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.65L3 21l1.8-5.6A8.38 8.38 0 0 1 3.6 11.5a8.5 8.5 0 0 1 8.7-8.35 8.38 8.38 0 0 1 8.7 8.35Z"></path></svg>
+        </button>
+
+        <section class="panel" aria-label="对话控制">
+            <div class="chat-log" id="chatLog" aria-label="对话记录"></div>
+            <div class="action-bar" aria-label="动作控制">
+                <button class="action-btn" type="button" data-action="blink" disabled>眨眼</button>
+                <button class="action-btn" type="button" data-action="talk" disabled>说话测试</button>
+                <button class="action-btn" type="button" data-action="greet" disabled>打招呼</button>
+                <button class="action-btn" type="button" data-action="welcome" disabled>欢迎</button>
+                <button class="action-btn" type="button" data-action="goodbye" disabled>再见</button>
+                <button class="action-btn" type="button" data-action="thanks" disabled>感谢</button>
+                <button class="action-btn" type="button" data-action="ok" disabled>确认</button>
+                <button class="action-btn" type="button" data-action="cheer" disabled>加油</button>
+                <button class="action-btn" type="button" data-action="goal" disabled>小目标</button>
+                <button class="action-btn" type="button" data-action="laugh" disabled>哈哈哈</button>
+                <button class="action-btn" type="button" data-action="kiss" disabled>么么哒</button>
+                <button class="action-btn" type="button" data-action="awesome" disabled>牛掰</button>
+            </div>
+            <div class="panel-status" id="panelStatus"></div>
+            <div class="controls">
+                <textarea class="input" id="userInput" rows="2" placeholder="输入要说的话，Enter 发送，Shift+Enter 换行" autocomplete="off"></textarea>
+                <button class="btn" id="micBtn" type="button" aria-label="语音输入" aria-pressed="false" title="语音输入">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"></path><path d="M19 11a7 7 0 0 1-14 0"></path><path d="M12 18v3"></path><path d="M8 21h8"></path></svg>
+                </button>
+                <button class="btn active" id="voiceBtn" type="button" aria-label="语音朗读" title="语音朗读">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"></path><path d="M16 9.5a4 4 0 0 1 0 5"></path><path d="M19 7a8 8 0 0 1 0 10"></path></svg>
+                </button>
+                <button class="btn primary" id="sendBtn" type="button">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4 20-7Z"></path><path d="M22 2 11 13"></path></svg>
+                    发送
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <script type="module">
+        import * as THREE from "three";
+        import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+        import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+        const MODEL_URL = "./exports/chengxi_runtime.glb?v=20260602_extra_actions_pose3";
+        // 页面可能部署在 /digital-human/ 或 /personal-office-assistant/digital-human/ 下，
+        // 接口统一相对页面所在前缀访问，复用主站登录态。
+        const API_BASE = location.pathname.replace(/\/digital-human\/?($|[^/]*$)/, "");
+        const DEMO_SPEECH_TEXT = "大家好，我是犇犇，承希AI智能助手 ";
+        const ACTION_CLIPS = {
+            greet: "greet",
+            welcome: "welcome",
+            goodbye: "goodbye",
+            thanks: "thanks",
+            ok: "ok",
+            cheer: "cheer",
+            goal: "goal",
+            laugh: "laugh",
+            kiss: "kiss",
+            awesome: "awesome"
+        };
+        const ACTION_SPEECH = {
+            greet: DEMO_SPEECH_TEXT,
+            welcome: "欢迎你，我是犇犇，承希AI智能助手",
+            goodbye: "再见，期待下次见。",
+            thanks: "谢谢你，我会继续努力。",
+            ok: "好的，我已经确认。",
+            cheer: "加油，我们一起完成。",
+            goal: "我们先完成一个小目标。",
+            laugh: "哈哈哈，这个太有意思了。",
+            kiss: "么么哒，给你一点鼓励。",
+            awesome: "牛掰，这个表现很棒。"
+        };
+        const BLINK_MORPHS = ["Blink_L", "Blink_R"];
+        const MOUTH_MORPHS = ["Mouth_A", "Mouth_O", "Mouth_E", "Mouth_U", "Mouth_Close"];
+        const CONTROLLED_MORPHS = [...BLINK_MORPHS, ...MOUTH_MORPHS];
+        const EXPORTED_MORPH_ORDER = ["Blink_L", "Blink_R", "Mouth_Close", "Mouth_A", "Mouth_O", "Mouth_E", "Mouth_U"];
+        const ENABLED_ACTIONS = new Set(["blink", "talk", ...Object.keys(ACTION_CLIPS)]);
+        const BLINK_INTERVAL_MIN_MS = 2600;
+        const BLINK_INTERVAL_RANGE_MS = 2400;
+
+        const IS_EMBEDDED = window.self !== window.top;
+        if (IS_EMBEDDED) {
+            document.body.classList.add("embedded");
+        }
+
+        // 对话框显示/隐藏（纯桌宠形态），偏好落地并同步父页面收窄悬浮区。
+        const CHAT_HIDDEN_KEY = "chengxi-chat-hidden";
+        const chatToggleBtn = document.getElementById("chatToggleBtn");
+
+        function setChatHidden(hidden, persist = true) {
+            document.body.classList.toggle("chat-hidden", hidden);
+            const label = hidden ? "显示对话框" : "隐藏对话框";
+            chatToggleBtn.title = label;
+            chatToggleBtn.setAttribute("aria-label", label);
+            if (persist) {
+                try {
+                    localStorage.setItem(CHAT_HIDDEN_KEY, hidden ? "1" : "0");
+                } catch {
+                    // 存储不可用时偏好仅当次生效。
+                }
+            }
+            if (IS_EMBEDDED) {
+                window.parent.postMessage({ type: "chengxi.layout", chatHidden: hidden }, "*");
+            }
+        }
+
+        chatToggleBtn.addEventListener("click", () => {
+            setChatHidden(!document.body.classList.contains("chat-hidden"));
+        });
+
+        if (IS_EMBEDDED) {
+            let savedHidden = false;
+            try {
+                savedHidden = localStorage.getItem(CHAT_HIDDEN_KEY) === "1";
+            } catch {
+                savedHidden = false;
+            }
+            setChatHidden(savedHidden, false);
+        }
+
+        const viewer = document.getElementById("viewer");
+        const canvas = document.getElementById("avatarCanvas");
+        const viewerLoading = document.getElementById("viewerLoading");
+        const chatLog = document.getElementById("chatLog");
+        // 状态同时写到顶栏和面板里（嵌入模式顶栏是隐藏的）。
+        const statusNodes = [document.getElementById("statusText"), document.getElementById("panelStatus")].filter(Boolean);
+        const statusText = {
+            set textContent(value) {
+                statusNodes.forEach(node => {
+                    node.textContent = value;
+                });
+            },
+            get textContent() {
+                return statusNodes[0] ? statusNodes[0].textContent : "";
+            }
+        };
+        const userInput = document.getElementById("userInput");
+        const sendBtn = document.getElementById("sendBtn");
+        const micBtn = document.getElementById("micBtn");
+        const voiceBtn = document.getElementById("voiceBtn");
+        const actionButtons = document.querySelectorAll(".action-btn");
+
+        const scene = new THREE.Scene();
+        const clock = new THREE.Clock();
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.05;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        const camera = new THREE.PerspectiveCamera(24, 1, 0.1, 100);
+        // 嵌入模式的人物列较窄，相机拉远一点防止大动作出画。
+        camera.position.set(0.12, 1.34, document.body.classList.contains("embedded") ? 7.6 : 6.85);
+
+        const controls = new OrbitControls(camera, canvas);
+        controls.enableDamping = true;
+        controls.enablePan = false;
+        controls.minDistance = 5.0;
+        controls.maxDistance = 9.2;
+        controls.target.set(0, 1.05, 0);
+
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x253142, 2.4));
+        const keyLight = new THREE.DirectionalLight(0xffffff, 3.4);
+        keyLight.position.set(3.2, 5.4, 4.2);
+        keyLight.castShadow = true;
+        keyLight.shadow.mapSize.set(1024, 1024);
+        scene.add(keyLight);
+
+        const floor = new THREE.Mesh(
+            new THREE.CircleGeometry(1.4, 64),
+            new THREE.ShadowMaterial({ color: 0x000000, opacity: 0.24 })
+        );
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -0.02;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        let avatar = null;
+        let mixer = null;
+        let idleAction = null;
+        let currentAction = null;
+        let speakingAction = null;
+        let voiceEnabled = true;
+        let recognizer = null;
+        let micActive = false;
+        let micPausedForReply = false;
+        let listening = false;
+        let speakingUntil = 0;
+        let nextMouthAt = 0;
+        let mouthStepIndex = 0;
+        let mouthSequence = [];
+        let speechText = "";
+        let speechRunId = 0;
+        let activeAudio = null;
+        let audioContext = null;
+        let activeSource = null;
+        let pendingSpeech = null;
+        let blinkStartAt = 0;
+        let blinkHoldMs = 110;
+        let blinkManual = false;
+        let nextBlinkAt = 0;
+        const morphMeshes = new Map();
+        const morphValues = new Map();
+        const morphTargets = new Map();
+        const clips = new Map();
+        const chatHistory = [];
+
+        function setControlsEnabled(enabled) {
+            actionButtons.forEach(button => {
+                button.disabled = !enabled || !ENABLED_ACTIONS.has(button.dataset.action);
+            });
+            sendBtn.disabled = !enabled;
+        }
+
+        let fittedSize = null;
+        let lastFramedAspect = 0;
+
+        // 嵌入模式视口窄长，按宽高比反推相机距离，保证牛角和耳朵完整入画。
+        function updateCameraFraming() {
+            if (!IS_EMBEDDED || !fittedSize) {
+                return;
+            }
+            const halfFov = THREE.MathUtils.degToRad(camera.fov) / 2;
+            const halfHeight = (fittedSize.y / 2) * 1.08;
+            const halfWidth = (fittedSize.x / 2) * 1.18;
+            const distanceForHeight = halfHeight / Math.tan(halfFov);
+            const distanceForWidth = halfWidth / (Math.tan(halfFov) * Math.max(camera.aspect, 0.01));
+            const distance = Math.min(16, Math.max(distanceForHeight, distanceForWidth) + 0.4);
+            controls.maxDistance = Math.max(9.2, distance + 1);
+            camera.position.set(0.12, camera.position.y, distance);
+        }
+
+        function resizeRenderer() {
+            const { width, height } = viewer.getBoundingClientRect();
+            renderer.setSize(width, height, false);
+            camera.aspect = width / Math.max(1, height);
+            camera.updateProjectionMatrix();
+            if (Math.abs(camera.aspect - lastFramedAspect) > 0.001) {
+                lastFramedAspect = camera.aspect;
+                updateCameraFraming();
+            }
+        }
+
+        function collectMorphTargets(root) {
+            root.traverse(node => {
+                if (!node.isMesh && !node.isSkinnedMesh) {
+                    return;
+                }
+                node.castShadow = true;
+                node.frustumCulled = false;
+                if (node.name.toLowerCase().includes("tongue")) {
+                    node.visible = false;
+                    return;
+                }
+                const targetCount = node.morphTargetInfluences?.length ?? node.geometry?.morphAttributes?.position?.length ?? 0;
+                if (!targetCount) {
+                    return;
+                }
+                if (!node.morphTargetInfluences) {
+                    node.morphTargetInfluences = new Array(targetCount).fill(0);
+                }
+                const entries = Object.entries(node.morphTargetDictionary || {});
+                // Blender 导出的 GLB 保留了 targetNames 顺序，Three.js 旧版本可能不会还原 dictionary。
+                const morphEntries = entries.length ? entries : EXPORTED_MORPH_ORDER.slice(0, targetCount).map((name, index) => [name, index]);
+                morphEntries.forEach(([name, index]) => {
+                    if (!morphMeshes.has(name)) {
+                        morphMeshes.set(name, []);
+                    }
+                    morphMeshes.get(name).push({ mesh: node, index });
+                });
+            });
+            CONTROLLED_MORPHS.forEach(name => {
+                morphValues.set(name, 0);
+                morphTargets.set(name, 0);
+            });
+        }
+
+        function setMorphValue(name, value) {
+            const targets = morphMeshes.get(name);
+            if (!targets) {
+                return;
+            }
+            targets.forEach(({ mesh, index }) => {
+                mesh.morphTargetInfluences[index] = value;
+            });
+        }
+
+        function targetMorph(name, value) {
+            morphTargets.set(name, value);
+        }
+
+        // 说话中只调整目标值，避免口型在相邻音节之间硬切回闭合状态。
+        function resetMouthTargets() {
+            MOUTH_MORPHS.forEach(name => targetMorph(name, 0));
+        }
+
+        function closeMouthNow() {
+            MOUTH_MORPHS.forEach(name => {
+                morphTargets.set(name, 0);
+                morphValues.set(name, 0);
+                setMorphValue(name, 0);
+            });
+        }
+
+        function targetBlink(value) {
+            BLINK_MORPHS.forEach(name => targetMorph(name, value));
+        }
+
+        function resetFaceTargets() {
+            closeMouthNow();
+            targetBlink(0);
+        }
+
+        function updateMorphs(delta) {
+            CONTROLLED_MORPHS.forEach(name => {
+                const current = morphValues.get(name) ?? 0;
+                const target = morphTargets.get(name) ?? 0;
+                const value = THREE.MathUtils.damp(current, target, 18, delta);
+                morphValues.set(name, value);
+                setMorphValue(name, value);
+            });
+        }
+
+        function fitAvatar(root) {
+            scene.add(root);
+            root.updateMatrixWorld(true);
+            const box = new THREE.Box3().setFromObject(root);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
+            const scale = 2.15 / Math.max(size.y, 0.1);
+            root.scale.multiplyScalar(scale);
+            root.position.sub(center.multiplyScalar(scale));
+            root.updateMatrixWorld(true);
+            const fittedBox = new THREE.Box3().setFromObject(root);
+            // 根据导出模型包围盒落地，避免不同动作资产造成画面裁切。
+            root.position.y -= fittedBox.min.y;
+            controls.target.set(0, 1.05, 0);
+            fittedSize = fittedBox.getSize(new THREE.Vector3());
+            floor.scale.setScalar(Math.max(1.1, fittedSize.x * 0.44));
+            updateCameraFraming();
+        }
+
+        function playIdle(transitionFrom = null, immediate = false) {
+            if (!mixer) {
+                return;
+            }
+            const previousAction = transitionFrom || (speakingAction && speakingAction.isRunning() ? speakingAction : null);
+            currentAction = null;
+            idleAction = clips.has("idle") ? mixer.clipAction(clips.get("idle")) : null;
+            if (idleAction) {
+                idleAction.reset().setLoop(THREE.LoopRepeat).setEffectiveWeight(1).setEffectiveTimeScale(1).play();
+                if (previousAction && previousAction !== idleAction) {
+                    previousAction.crossFadeTo(idleAction, 0.18, false);
+                } else if (!immediate) {
+                    idleAction.fadeIn(0.2);
+                }
+            }
+            speakingAction = null;
+            setControlsEnabled(true);
+            statusText.textContent = speakingUntil ? "回答中" : "待机中";
+            if (immediate) {
+                mixer.update(0);
+            }
+        }
+
+        // 自动播放策略（尤其 Safari/移动端）要求音频在用户手势内启动；
+        // 用首次手势解锁的 AudioContext 播放 TTS，之后任意时刻都能出声。
+        function ensureAudioContext() {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) {
+                return null;
+            }
+            if (!audioContext) {
+                audioContext = new Ctx();
+            }
+            if (audioContext.state === "suspended") {
+                audioContext.resume().catch(() => {});
+            }
+            return audioContext;
+        }
+
+        // 语音链路日志：用户侧 F12 可见，定位"没有声音"具体卡在哪一级。
+        function audioLog(stage, detail = "") {
+            console.warn("[犇犇语音]", stage, detail);
+        }
+
+        // Safari 旧版不支持 fetch data: URI，统一用 atob 直接解出音频字节。
+        function audioUriToBytes(audioUri) {
+            const comma = audioUri.indexOf(",");
+            const payload = comma >= 0 ? audioUri.slice(comma + 1) : audioUri;
+            const binary = atob(payload);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i += 1) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes;
+        }
+
+        // 老版本 Safari 的 decodeAudioData 只支持回调形式，统一包成 Promise。
+        function decodeAudio(context, raw) {
+            return new Promise((resolve, reject) => {
+                const result = context.decodeAudioData(raw, resolve, reject);
+                if (result && typeof result.then === "function") {
+                    result.then(resolve, reject);
+                }
+            });
+        }
+
+        function flushPendingSpeech() {
+            const context = ensureAudioContext();
+            if (!context || !pendingSpeech) {
+                return;
+            }
+            const pending = pendingSpeech;
+            pendingSpeech = null;
+            if (pending.runId !== speechRunId) {
+                return;
+            }
+            // 在点击手势内补播：同样优先媒体元素通道。
+            playHtmlAudio(pending.audio, pending.text, pending.runId, pending.action).catch(() => {
+                Promise.resolve(context.resume ? context.resume() : null).then(() => {
+                    if (pending.runId === speechRunId && context.state === "running") {
+                        playWebAudio(pending.audio, pending.text, pending.runId, pending.action).catch(() => {});
+                    }
+                }).catch(() => {});
+            });
+        }
+
+        ["pointerdown", "keydown", "touchstart"].forEach(type => {
+            window.addEventListener(type, flushPendingSpeech, { capture: true, passive: true });
+        });
+
+        function stopSpeech() {
+            speechRunId += 1;
+            speakingUntil = 0;
+            pendingSpeech = null;
+            closeMouthNow();
+            if (activeSource) {
+                activeSource.onended = null;
+                try {
+                    activeSource.stop();
+                } catch {
+                    // 已经播完的 source 重复 stop 会抛错，忽略即可。
+                }
+                activeSource = null;
+            }
+            if (activeAudio) {
+                activeAudio.pause();
+                if (activeAudio.src.startsWith("blob:")) {
+                    URL.revokeObjectURL(activeAudio.src);
+                }
+                activeAudio.src = "";
+                activeAudio = null;
+            }
+            if ("speechSynthesis" in window) {
+                speechSynthesis.cancel();
+            }
+            if (!currentAction && speakingAction) {
+                playIdle(speakingAction);
+            }
+        }
+
+        function enterSpeakingState(transitionFrom = null) {
+            if (mixer && !currentAction) {
+                const clip = clips.get("speaking_loop");
+                if (clip) {
+                    const previousAction = transitionFrom || (idleAction && idleAction.isRunning() ? idleAction : null);
+                    speakingAction = mixer.clipAction(clip);
+                    speakingAction.reset().setLoop(THREE.LoopRepeat).play();
+                    if (previousAction && previousAction !== speakingAction) {
+                        previousAction.crossFadeTo(speakingAction, 0.18, false);
+                    }
+                }
+            }
+            setControlsEnabled(true);
+            statusText.textContent = "回答中";
+        }
+
+        function handleActionFinished(event) {
+            const finishedAction = event.action;
+            if (event.action === currentAction) {
+                currentAction = null;
+            }
+            if (speakingUntil) {
+                enterSpeakingState(finishedAction);
+                return;
+            }
+            playIdle(finishedAction);
+            resumeMicIfNeeded();
+        }
+
+        function playAction(name, interruptSpeech = true) {
+            const clipName = ACTION_CLIPS[name];
+            const clip = clips.get(clipName);
+            if (!mixer || !clip) {
+                return;
+            }
+            if (interruptSpeech) {
+                stopSpeech();
+                resetFaceTargets();
+            }
+            if (currentAction) {
+                currentAction.stop();
+            }
+            if (idleAction) {
+                idleAction.stop();
+            }
+            if (speakingAction) {
+                speakingAction.stop();
+            }
+            speakingAction = null;
+            currentAction = mixer.clipAction(clip);
+            currentAction.reset();
+            currentAction.setLoop(THREE.LoopOnce, 1);
+            currentAction.clampWhenFinished = true;
+            currentAction.play();
+            setControlsEnabled(false);
+            statusText.textContent = interruptSpeech ? "动作中" : "回答中";
+        }
+
+        function scheduleNextBlink(now = performance.now()) {
+            // 随机间隔让眨眼保持自然节奏，不跟动作时间轴锁死。
+            nextBlinkAt = now + BLINK_INTERVAL_MIN_MS + Math.random() * BLINK_INTERVAL_RANGE_MS;
+        }
+
+        function triggerBlink(manual = false, now = performance.now()) {
+            blinkStartAt = now;
+            blinkHoldMs = 110;
+            blinkManual = manual;
+            scheduleNextBlink(now);
+            if (manual) {
+                statusText.textContent = "眨眼";
+            }
+        }
+
+        function updateAutoBlink(now) {
+            if (!avatar || blinkStartAt) {
+                return;
+            }
+            if (!nextBlinkAt) {
+                scheduleNextBlink(now);
+                return;
+            }
+            if (now >= nextBlinkAt) {
+                triggerBlink(false, now);
+            }
+        }
+
+        function updateBlink(now) {
+            if (!blinkStartAt) {
+                return;
+            }
+            const elapsed = now - blinkStartAt;
+            const openStart = 80 + blinkHoldMs;
+            const endAt = openStart + 120;
+            if (elapsed < 80) {
+                targetBlink(elapsed / 80);
+            } else if (elapsed < openStart) {
+                targetBlink(1);
+            } else if (elapsed < endAt) {
+                targetBlink(1 - (elapsed - openStart) / 120);
+            } else {
+                const wasManual = blinkManual;
+                blinkStartAt = 0;
+                blinkManual = false;
+                targetBlink(0);
+                if (wasManual && !speakingUntil && !currentAction) {
+                    statusText.textContent = "待机中";
+                }
+            }
+        }
+
+        function pickMouthMorph(char, index) {
+            if ("，。！？、,.!?;；：: ".includes(char)) {
+                return null;
+            }
+            if ("aA啊哈呀啦吗吧大他那发好话家".includes(char)) {
+                return { name: "Mouth_A", value: 0.46 };
+            }
+            if ("哦喔我说多过罗口手".includes(char)) {
+                return { name: "Mouth_O", value: 0.42 };
+            }
+            if ("乌无不出如主".includes(char)) {
+                return { name: "Mouth_U", value: 0.38 };
+            }
+            if ("一你希细其七起是智iI".includes(char)) {
+                return { name: "Mouth_E", value: 0.34 };
+            }
+            if ("嗯恩很真承能犇".includes(char)) {
+                return { name: "Mouth_Close", value: 0.28 };
+            }
+            const names = ["Mouth_A", "Mouth_O", "Mouth_E"];
+            return { name: names[(char.charCodeAt(0) + index) % names.length], value: 0.38 };
+        }
+
+        // 每个音节加入轻收口状态，让口型有张合节奏而不是停在单一形状。
+        function buildMouthSequence(text) {
+            const sequence = [];
+            [...text].forEach((char, index) => {
+                const morph = pickMouthMorph(char, index);
+                if (!morph) {
+                    sequence.push({ duration: 120 });
+                    return;
+                }
+                sequence.push({ ...morph, duration: 170 });
+                sequence.push({ name: morph.name, value: morph.value * 0.28, duration: 55 });
+            });
+            return sequence.length ? sequence : [{ name: "Mouth_A", value: 0.18, duration: 180 }, { duration: 55 }];
+        }
+
+        function startMouth(text, duration) {
+            speechText = text;
+            mouthStepIndex = 0;
+            mouthSequence = buildMouthSequence(text);
+            speakingUntil = performance.now() + duration;
+            nextMouthAt = 0;
+            statusText.textContent = "回答中";
+            resetMouthTargets();
+            enterSpeakingState();
+            const step = mouthSequence[0];
+            if (step.name && step.value) {
+                targetMorph(step.name, step.value);
+                mouthStepIndex = 1;
+                nextMouthAt = performance.now() + step.duration;
+            }
+        }
+
+        function finishSpeech(runId) {
+            if (runId !== speechRunId) {
+                return;
+            }
+            activeAudio = null;
+            speakingUntil = 0;
+            mouthSequence = [];
+            closeMouthNow();
+            micPausedForReply = false;
+            if (!currentAction) {
+                playIdle(speakingAction);
+            } else {
+                statusText.textContent = "动作中";
+            }
+            resumeMicIfNeeded();
+        }
+
+        function updateMouth(now) {
+            if (!speakingUntil) {
+                return;
+            }
+            if (now >= speakingUntil) {
+                finishSpeech(speechRunId);
+                return;
+            }
+            if (now < nextMouthAt) {
+                return;
+            }
+            resetMouthTargets();
+            const step = mouthSequence[mouthStepIndex % mouthSequence.length];
+            if (step.name && step.value) {
+                targetMorph(step.name, step.value);
+            }
+            mouthStepIndex += 1;
+            nextMouthAt = now + step.duration;
+        }
+
+        function pushHistory(role, content) {
+            chatHistory.push({ role, content });
+            // 只保留短上下文，避免实时对话请求持续变慢。
+            while (chatHistory.length > 8) {
+                chatHistory.shift();
+            }
+        }
+
+        // 完整对话记录展示（与发给模型的短上下文分离），最近 80 条落地 localStorage。
+        const CHAT_LOG_KEY = "chengxi-chat-log";
+
+        function renderChatMessage(role, content) {
+            const node = document.createElement("div");
+            node.className = "chat-msg " + (role === "user" ? "user" : "assistant");
+            node.textContent = content;
+            chatLog.appendChild(node);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        function appendChat(role, content) {
+            const text = String(content || "").trim();
+            if (!text) {
+                return;
+            }
+            renderChatMessage(role, text);
+            try {
+                const saved = JSON.parse(localStorage.getItem(CHAT_LOG_KEY) || "[]");
+                saved.push({ role, content: text });
+                localStorage.setItem(CHAT_LOG_KEY, JSON.stringify(saved.slice(-80)));
+            } catch {
+                // 存储不可用时仅影响刷新后的历史，不影响当前对话。
+            }
+        }
+
+        function restoreChatLog() {
+            let saved = [];
+            try {
+                saved = JSON.parse(localStorage.getItem(CHAT_LOG_KEY) || "[]");
+            } catch {
+                saved = [];
+            }
+            if (!Array.isArray(saved) || !saved.length) {
+                renderChatMessage("assistant", DEMO_SPEECH_TEXT.trim());
+                return;
+            }
+            saved.slice(-80).forEach(item => {
+                if (item && (item.role === "user" || item.role === "assistant") && item.content) {
+                    renderChatMessage(item.role, String(item.content));
+                }
+            });
+        }
+
+        async function requestModelReply(message) {
+            const response = await fetch(API_BASE + "/api/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message, history: chatHistory })
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || "chat_failed");
+            }
+            return {
+                text: String(data.text || "我听到了。").trim(),
+                action: ACTION_CLIPS[data.action] ? data.action : null
+            };
+        }
+
+        async function requestSpeechAudio(text) {
+            const response = await fetch(API_BASE + "/api/tts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text })
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || "tts_failed");
+            }
+            return data.audio;
+        }
+
+        function playBrowserSpeech(text, runId, action = null) {
+            if (!voiceEnabled || !("speechSynthesis" in window)) {
+                startMouth(text, Math.max(4200, text.length * 230));
+                if (action) {
+                    playAction(action, false);
+                }
+                return;
+            }
+            startMouth(text, Number.POSITIVE_INFINITY);
+            if (action) {
+                playAction(action, false);
+            }
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = "zh-CN";
+            utterance.rate = 1.08;
+            utterance.pitch = 1.45;
+            utterance.volume = 1;
+            // 口型以真实朗读结束为准，避免声音停了嘴还继续动。
+            utterance.onend = () => finishSpeech(runId);
+            utterance.onerror = event => {
+                audioLog("浏览器朗读失败", event?.error || "");
+                if (runId === speechRunId) {
+                    statusText.textContent = "语音播放失败（浏览器朗读不可用）";
+                }
+                finishSpeech(runId);
+            };
+            speechSynthesis.speak(utterance);
+        }
+
+        async function playWebAudio(audioUri, text, runId, action) {
+            const context = ensureAudioContext();
+            if (!context) {
+                return false;
+            }
+            const raw = audioUriToBytes(audioUri).buffer;
+            const buffer = await decodeAudio(context, raw);
+            if (!buffer) {
+                audioLog("WebAudio 解码结果为空");
+                return false;
+            }
+            if (runId !== speechRunId) {
+                return true;
+            }
+            if (context.state !== "running") {
+                await context.resume().catch(() => {});
+            }
+            if (context.state !== "running") {
+                audioLog("AudioContext 未解锁", context.state);
+                return false;
+            }
+            const source = context.createBufferSource();
+            source.buffer = buffer;
+            // TTS 音量普遍偏小，加一级增益（峰值 35% 左右，1.8 倍不会削波）。
+            const gain = context.createGain();
+            gain.gain.value = 1.8;
+            source.connect(gain);
+            gain.connect(context.destination);
+            source.onended = () => finishSpeech(runId);
+            activeSource = source;
+            startMouth(text, Number.POSITIVE_INFINITY);
+            if (action) {
+                playAction(action, false);
+            }
+            source.start();
+            audioLog("WebAudio 播放中", `时长 ${buffer.duration.toFixed(1)}s`);
+            return true;
+        }
+
+        async function playHtmlAudio(audioUri, text, runId, action) {
+            // Blob URL 比超长 data: src 更稳，播完即回收。
+            const blob = new Blob([audioUriToBytes(audioUri)], { type: "audio/mpeg" });
+            const blobUrl = URL.createObjectURL(blob);
+            const release = () => URL.revokeObjectURL(blobUrl);
+            activeAudio = new Audio(blobUrl);
+            activeAudio.onplay = () => {
+                startMouth(text, Number.POSITIVE_INFINITY);
+                if (action) {
+                    playAction(action, false);
+                }
+            };
+            activeAudio.onended = () => {
+                release();
+                finishSpeech(runId);
+            };
+            activeAudio.onerror = event => {
+                audioLog("Audio 元素播放出错", event?.message || "");
+                release();
+                finishSpeech(runId);
+            };
+            try {
+                await activeAudio.play();
+                audioLog("Audio 元素播放中");
+            } catch (error) {
+                release();
+                throw error;
+            }
+        }
+
+        async function speak(text, action = null) {
+            stopSpeech();
+            const runId = ++speechRunId;
+            if (!voiceEnabled) {
+                playBrowserSpeech(text, runId, action);
+                return;
+            }
+            try {
+                const audio = await requestSpeechAudio(text);
+                if (runId !== speechRunId) {
+                    return;
+                }
+                // 优先用媒体元素播放（与视频网站同一条输出通道，规避 Safari 的
+                // AudioContext 采样率假播放 bug）；被自动播放策略拦下再走 WebAudio。
+                try {
+                    await playHtmlAudio(audio, text, runId, action);
+                    return;
+                } catch (error) {
+                    audioLog("Audio 元素播放被拒绝", error?.name || String(error));
+                }
+                if (runId !== speechRunId) {
+                    return;
+                }
+                let played = false;
+                try {
+                    played = await playWebAudio(audio, text, runId, action);
+                } catch (error) {
+                    audioLog("WebAudio 播放失败", error?.name || String(error));
+                    played = false;
+                }
+                if (!played && runId === speechRunId) {
+                    // 两条通道都被拦：排队等下一次点击补播，并给出可见提示。
+                    pendingSpeech = { audio, text, action, runId };
+                    statusText.textContent = "点击页面任意位置播放语音";
+                }
+            } catch (error) {
+                audioLog("语音合成接口失败", error?.message || String(error));
+                if (runId === speechRunId) {
+                    statusText.textContent = "语音合成失败，改用浏览器朗读";
+                    playBrowserSpeech(text, runId, action);
+                }
+            }
+        }
+
+        function speakWithGesture(text, action) {
+            appendChat("assistant", text);
+            speak(text, action);
+        }
+
+        // 输入内容增多时让输入框自动长高（封顶 150px 后内部滚动）。
+        function autoGrowInput() {
+            userInput.style.height = "auto";
+            userInput.style.height = Math.min(userInput.scrollHeight, 150) + "px";
+        }
+
+        async function sendMessage() {
+            const text = userInput.value.trim();
+            if (!text) {
+                userInput.focus();
+                return;
+            }
+            userInput.value = "";
+            autoGrowInput();
+            appendChat("user", text);
+            statusText.textContent = "思考中";
+            setControlsEnabled(false);
+            try {
+                const answer = await requestModelReply(text);
+                pushHistory("user", text);
+                pushHistory("assistant", answer.text);
+                speakWithGesture(answer.text, answer.action);
+            } catch {
+                speakWithGesture("对话服务暂时不可用，请稍后再试。", null);
+            }
+        }
+
+        function setupRecognizer() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                micBtn.disabled = true;
+                micBtn.title = "当前浏览器不支持语音输入";
+                return;
+            }
+            recognizer = new SpeechRecognition();
+            recognizer.lang = "zh-CN";
+            recognizer.continuous = false;
+            recognizer.interimResults = false;
+            recognizer.onresult = event => {
+                if (!micActive) {
+                    return;
+                }
+                const transcript = event.results[event.results.length - 1][0].transcript.trim();
+                if (!transcript) {
+                    return;
+                }
+                micPausedForReply = true;
+                userInput.value = transcript;
+                sendMessage();
+            };
+            recognizer.onend = () => {
+                listening = false;
+                resumeMicIfNeeded();
+            };
+            recognizer.onerror = () => {
+                listening = false;
+                resumeMicIfNeeded();
+            };
+        }
+
+        function startMicListening() {
+            if (!recognizer || !micActive || micPausedForReply || listening || speakingUntil || currentAction) {
+                return;
+            }
+            try {
+                listening = true;
+                statusText.textContent = "聆听中";
+                recognizer.start();
+            } catch {
+                listening = false;
+            }
+        }
+
+        function resumeMicIfNeeded() {
+            if (!micActive || micPausedForReply || speakingUntil || currentAction) {
+                return;
+            }
+            window.setTimeout(startMicListening, 180);
+        }
+
+        function setMicActive(active) {
+            micActive = active;
+            micPausedForReply = false;
+            micBtn.classList.toggle("active", active);
+            micBtn.setAttribute("aria-pressed", active ? "true" : "false");
+            micBtn.title = active ? "关闭语音输入" : "语音输入";
+            micBtn.setAttribute("aria-label", active ? "关闭语音输入" : "语音输入");
+            if (active) {
+                startMicListening();
+                return;
+            }
+            if (recognizer && listening) {
+                recognizer.abort();
+            }
+            listening = false;
+            if (!speakingUntil && !currentAction) {
+                statusText.textContent = "待机中";
+            }
+        }
+
+        function loadAvatar() {
+            setControlsEnabled(false);
+            new GLTFLoader().load(
+                MODEL_URL,
+                gltf => {
+                    avatar = gltf.scene;
+                    avatar.visible = false;
+                    mixer = new THREE.AnimationMixer(avatar);
+                    gltf.animations.forEach(clip => clips.set(clip.name, clip));
+                    mixer.addEventListener("finished", handleActionFinished);
+                    collectMorphTargets(avatar);
+                    fitAvatar(avatar);
+                    resetFaceTargets();
+                    scheduleNextBlink();
+                    playIdle(null, true);
+                    avatar.visible = true;
+                    viewer.classList.add("ready");
+                    viewerLoading.textContent = "";
+                },
+                undefined,
+                () => {
+                    statusText.textContent = "模型加载失败";
+                    viewerLoading.textContent = "模型加载失败";
+                }
+            );
+        }
+
+        window.chengxiAvatar = {
+            blink: () => triggerBlink(true),
+            talk: (text = DEMO_SPEECH_TEXT, action = null) => speakWithGesture(text, action),
+            playAction
+        };
+
+        // 主站把数字人嵌在 iframe 里，通过 postMessage 转发首页快捷提问。
+        window.addEventListener("message", event => {
+            const data = event.data;
+            if (!data || data.type !== "chengxi.ask" || typeof data.text !== "string") {
+                return;
+            }
+            const text = data.text.trim();
+            if (!text) {
+                return;
+            }
+            // 父页面发来提问时若对话框处于隐藏状态，自动展开以便看到回答。
+            if (document.body.classList.contains("chat-hidden")) {
+                setChatHidden(false);
+            }
+            userInput.value = text;
+            sendMessage();
+        });
+
+        function render() {
+            requestAnimationFrame(render);
+            const delta = clock.getDelta();
+            const now = performance.now();
+            resizeRenderer();
+            controls.update();
+            if (mixer) {
+                mixer.update(delta);
+            }
+            updateAutoBlink(now);
+            updateBlink(now);
+            updateMouth(now);
+            updateMorphs(delta);
+            renderer.render(scene, camera);
+        }
+
+        actionButtons.forEach(button => {
+            button.addEventListener("click", () => {
+                const action = button.dataset.action;
+                if (action === "blink") {
+                    triggerBlink(true);
+                    return;
+                }
+                if (action === "talk") {
+                    speakWithGesture(DEMO_SPEECH_TEXT, "greet");
+                    return;
+                }
+                speakWithGesture(ACTION_SPEECH[action], action);
+            });
+        });
+
+        sendBtn.addEventListener("click", sendMessage);
+        userInput.addEventListener("keydown", event => {
+            // Enter 发送，Shift+Enter 换行。
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        });
+        userInput.addEventListener("input", autoGrowInput);
+
+        voiceBtn.addEventListener("click", () => {
+            voiceEnabled = !voiceEnabled;
+            voiceBtn.classList.toggle("active", voiceEnabled);
+            if (!voiceEnabled) {
+                stopSpeech();
+                return;
+            }
+            // 在点击手势内解锁音频并立即试播，方便确认扬声器链路。
+            ensureAudioContext();
+            speak("语音已开启。");
+        });
+
+        micBtn.addEventListener("click", () => {
+            if (!recognizer) {
+                return;
+            }
+            setMicActive(!micActive);
+        });
+
+        restoreChatLog();
+        setupRecognizer();
+        loadAvatar();
+        render();
+    </script>
+</body>
+</html>

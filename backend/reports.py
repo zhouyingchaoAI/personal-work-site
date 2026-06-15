@@ -362,7 +362,7 @@ def format_weekly_body(path):
 
         def find_row(label, fallback):
             for r in range(1, ws.max_row + 1):
-                if label in get(r, 2):
+                if label in get(r, 1):
                     return r
             return fallback
 
@@ -381,18 +381,18 @@ def format_weekly_body(path):
 
         # ===== 纯文本版本 =====
         lines = []
-        title = get(2, 2)
+        title = get(2, 1)
         if title:
             lines.append(title)
             lines.append("")
 
-        # 一、本周工作总结: B=工作分类 C=工作内容 E=完成情况 F=后续计划
+        # 一、本周工作总结: A=工作分类 B=工作内容 D=完成情况 E=后续计划
         lines.append("一、本周工作总结")
         for row in summary_range:
-            cat = get(row, 2)
-            content = get(row, 3)
-            status = get(row, 5)
-            plan = get(row, 6)
+            cat = get(row, 1)
+            content = get(row, 2)
+            status = get(row, 4)
+            plan = get(row, 5)
             if not valid_data_row(cat, content):
                 continue
             if cat:
@@ -408,13 +408,13 @@ def format_weekly_body(path):
                 lines.append(f"  后续计划：{plan}")
             lines.append("")
 
-        # 二、重点工作跟进: B=工作分类 C=工作内容 D=当前进展 F=困难与求助
+        # 二、重点工作跟进: A=工作分类 B=工作内容 C=当前进展 E=困难与求助
         lines.append("二、重点工作跟进")
         for row in follow_range:
-            cat = get(row, 2)
-            content = get(row, 3)
-            progress = get(row, 4)
-            difficulty = get(row, 6)
+            cat = get(row, 1)
+            content = get(row, 2)
+            progress = get(row, 3)
+            difficulty = get(row, 5)
             if not valid_data_row(cat, content):
                 continue
             if cat:
@@ -430,12 +430,12 @@ def format_weekly_body(path):
                 lines.append(f"  困难与求助：{difficulty}")
             lines.append("")
 
-        # 三、下周工作计划: B=工作分类 C=工作内容 F=困难与求助
+        # 三、下周工作计划: A=工作分类 B=工作内容 E=困难与求助
         lines.append("三、下周工作计划")
         for row in next_range:
-            cat = get(row, 2)
-            content = get(row, 3)
-            difficulty = get(row, 6)
+            cat = get(row, 1)
+            content = get(row, 2)
+            difficulty = get(row, 5)
             if not valid_data_row(cat, content):
                 continue
             if cat:
@@ -481,10 +481,10 @@ def format_weekly_body(path):
         h.append('<p style="font-size:14px;font-weight:bold;margin:12px 0 6px 0;">一、本周工作总结</p>')
         summary_rows = []
         for row in summary_range:
-            cat = get(row, 2)
-            content = get(row, 3)
-            status = get(row, 5)
-            plan = get(row, 6)
+            cat = get(row, 1)
+            content = get(row, 2)
+            status = get(row, 4)
+            plan = get(row, 5)
             if valid_data_row(cat, content):
                 summary_rows.append([cat, content, status, plan])
         h.append(make_table(["工作分类", "工作内容", "完成情况", "后续计划"], summary_rows))
@@ -493,10 +493,10 @@ def format_weekly_body(path):
         h.append('<p style="font-size:14px;font-weight:bold;margin:12px 0 6px 0;">二、重点工作跟进</p>')
         follow_rows = []
         for row in follow_range:
-            cat = get(row, 2)
-            content = get(row, 3)
-            progress = get(row, 4)
-            difficulty = get(row, 6)
+            cat = get(row, 1)
+            content = get(row, 2)
+            progress = get(row, 3)
+            difficulty = get(row, 5)
             if valid_data_row(cat, content):
                 follow_rows.append([cat, content, progress, difficulty])
         h.append(make_table(["工作分类", "工作内容", "当前进展", "困难与求助"], follow_rows))
@@ -505,9 +505,9 @@ def format_weekly_body(path):
         h.append('<p style="font-size:14px;font-weight:bold;margin:12px 0 6px 0;">三、下周工作计划</p>')
         next_rows = []
         for row in next_range:
-            cat = get(row, 2)
-            content = get(row, 3)
-            difficulty = get(row, 6)
+            cat = get(row, 1)
+            content = get(row, 2)
+            difficulty = get(row, 5)
             if valid_data_row(cat, content):
                 next_rows.append([cat, content, difficulty])
         h.append(make_table(["工作分类", "工作内容", "困难与求助"], next_rows))

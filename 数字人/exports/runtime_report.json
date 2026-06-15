@@ -1,0 +1,27 @@
+{
+  "glb": "exports/chengxi_runtime.glb",
+  "actions": [
+    "idle",
+    "speaking_loop",
+    "greet",
+    "welcome",
+    "goodbye",
+    "thanks",
+    "ok",
+    "cheer",
+    "laugh",
+    "goal",
+    "kiss",
+    "awesome"
+  ],
+  "morphs": [
+    "Blink_L",
+    "Blink_R",
+    "Mouth_Close",
+    "Mouth_A",
+    "Mouth_O",
+    "Mouth_E",
+    "Mouth_U"
+  ],
+  "headMorphTargets": 7
+}

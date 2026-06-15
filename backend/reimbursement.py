@@ -212,6 +212,62 @@ def _extract_zip_invoices(data, max_files=20):
 
 # ── 链接提取与下载 ────────────────────────────────────────────
 
+def _imap_utf7_decode(name):
+    """IMAP UTF-7（RFC 3501 修改版）文件夹名解码，失败时原样返回。"""
+    out, i = [], 0
+    try:
+        while i < len(name):
+            ch = name[i]
+            if ch == '&':
+                j = name.find('-', i)
+                if j == -1:
+                    out.append(name[i:])
+                    break
+                seg = name[i + 1:j]
+                if not seg:
+                    out.append('&')
+                else:
+                    pad = '=' * ((4 - len(seg) % 4) % 4)
+                    out.append(base64.b64decode((seg + pad).replace(',', '/')).decode('utf-16-be'))
+                i = j + 1
+            else:
+                out.append(ch)
+                i += 1
+        return ''.join(out)
+    except Exception:
+        return name
+
+
+# 不参与发票扫描的文件夹（自己发的/废弃的邮件）
+_SCAN_SKIP_FOLDERS = ['已发送', '草稿', '垃圾', '病毒', '已删除', '广告',
+                      'sent', 'draft', 'trash', 'junk', 'spam', 'deleted']
+
+
+def _scan_folders(box):
+    """返回参与扫描的 (原始名, 解码名) 文件夹列表，INBOX 优先。"""
+    folders = [("INBOX", "INBOX")]
+    try:
+        status, listing = box.list()
+        if status != "OK":
+            return folders
+        for item in listing or []:
+            line = item.decode("utf-8", "ignore") if isinstance(item, bytes) else str(item)
+            m = re.search(r'"([^"]+)"\s*$', line) or re.search(r'\s(\S+)$', line)
+            if not m:
+                continue
+            raw = m.group(1)
+            if raw.upper() == "INBOX":
+                continue
+            decoded = _imap_utf7_decode(raw)
+            lowered = decoded.lower()
+            if any(skip in lowered for skip in _SCAN_SKIP_FOLDERS):
+                continue
+            folders.append((raw, decoded))
+    except Exception:
+        pass
+    return folders
+
+
 def _is_invoice_email(subject, from_addr):
     """
     判断这封邮件是否是发票通知邮件。
@@ -833,46 +889,48 @@ def scan_invoice_attachments(username, start_date, end_date, account="company"):
         }
 
     try:
-        status, _ = box.select("INBOX")
-        if status != "OK":
-            raise ValueError("无法打开收件箱，请检查邮箱配置")
-
-        status, data = box.uid("search", None, f'SINCE {since} BEFORE {before}')
-        if status != "OK":
-            raise ValueError("搜索邮件失败")
-        uids = data[0].split()
-        total_scanned = len(uids)
-        if not uids:
-            return {"ok": True, "items": [], "total_scanned": 0}
+        # 发票通知常被 263 等邮箱的收件规则分进子文件夹，必须遍历全部文件夹扫描。
+        folders = _scan_folders(box)
+        total_scanned = 0
 
         # ══ 阶段 1：只拉头部，快速筛出发票候选邮件 ══════════════════
         # 大多数邮件不是发票，仅对发票邮件才下载全文，大幅减少数据量和耗时
         HEADER_FIELDS = "(BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE)])"
-        invoice_uids = []   # 确认是发票邮件的 UID
-        header_info  = {}   # uid -> (subject, from_addr, date_str)
+        invoice_by_folder = {}   # folder_raw -> [uid bytes]
+        header_info = {}         # 复合键 "folder||uid"（INBOX 用纯 uid）-> (subject, from, date)
 
         BATCH_H = 50
-        for i in range(0, len(uids), BATCH_H):
-            batch   = uids[i:i + BATCH_H]
-            uid_set = b",".join(batch)
-            st, fetched = box.uid("fetch", uid_set, HEADER_FIELDS)
-            if st != "OK" or not fetched:
+        for folder_raw, _folder_name in folders:
+            st, _ = box.select(f'"{folder_raw}"')
+            if st != "OK":
                 continue
-            for raw_item in fetched:
-                if not isinstance(raw_item, tuple) or not raw_item[1]:
+            st, data = box.uid("search", None, f'SINCE {since} BEFORE {before}')
+            if st != "OK":
+                continue
+            uids = data[0].split()
+            total_scanned += len(uids)
+            for i in range(0, len(uids), BATCH_H):
+                batch   = uids[i:i + BATCH_H]
+                uid_set = b",".join(batch)
+                st, fetched = box.uid("fetch", uid_set, HEADER_FIELDS)
+                if st != "OK" or not fetched:
                     continue
-                meta_str = raw_item[0].decode("utf-8", errors="ignore")
-                m = re.search(r"UID\s+(\d+)", meta_str)
-                uid = m.group(1) if m else ""
-                if not uid:
-                    continue
-                hdr = email.message_from_bytes(raw_item[1])
-                subject   = decode_mime_value(hdr.get("Subject", "")) or ""
-                from_addr = decode_mime_value(hdr.get("From", "")) or ""
-                date_str  = normalize_mail_date(hdr.get("Date", ""))
-                header_info[uid] = (subject, from_addr, date_str)
-                if _is_invoice_email(subject, from_addr):
-                    invoice_uids.append(uid.encode() if isinstance(uid, str) else uid)
+                for raw_item in fetched:
+                    if not isinstance(raw_item, tuple) or not raw_item[1]:
+                        continue
+                    meta_str = raw_item[0].decode("utf-8", errors="ignore")
+                    m = re.search(r"UID\s+(\d+)", meta_str)
+                    uid = m.group(1) if m else ""
+                    if not uid:
+                        continue
+                    hdr = email.message_from_bytes(raw_item[1])
+                    subject   = decode_mime_value(hdr.get("Subject", "")) or ""
+                    from_addr = decode_mime_value(hdr.get("From", "")) or ""
+                    date_str  = normalize_mail_date(hdr.get("Date", ""))
+                    composite = uid if folder_raw == "INBOX" else f"{folder_raw}||{uid}"
+                    header_info[composite] = (subject, from_addr, date_str)
+                    if _is_invoice_email(subject, from_addr):
+                        invoice_by_folder.setdefault(folder_raw, []).append(uid.encode())
 
         # ══ 阶段 2：只对发票候选邮件下载全文并提取附件/链接 ═══════════
         import time as _time
@@ -883,7 +941,11 @@ def scan_invoice_attachments(username, start_date, end_date, account="company"):
         link_deadline = _time.time() + LINK_BUDGET_SEC
 
         BATCH = 20
-        for i in range(0, len(invoice_uids), BATCH):
+        for folder_raw, invoice_uids in invoice_by_folder.items():
+          st, _ = box.select(f'"{folder_raw}"')
+          if st != "OK":
+              continue
+          for i in range(0, len(invoice_uids), BATCH):
             batch   = invoice_uids[i:i + BATCH]
             uid_set = b",".join(batch)
             status, fetched = box.uid("fetch", uid_set, "(BODY.PEEK[])")
@@ -898,6 +960,8 @@ def scan_invoice_attachments(username, start_date, end_date, account="company"):
                 uid   = match.group(1) if match else ""
                 if not uid:
                     continue
+                # 复合标识：非 INBOX 带上文件夹，查看原邮件时按此定位
+                uid = uid if folder_raw == "INBOX" else f"{folder_raw}||{uid}"
 
                 subject, from_addr, date_str = header_info.get(uid, ("", "", ""))
                 msg        = email.message_from_bytes(raw_item[1])
@@ -1196,9 +1260,14 @@ def get_reimbursement_email_html(username, account, uid):
     settings = imap_settings_for_account(username, account)
     box = _imap_connect_safe(settings)
     try:
-        status, _ = box.select("INBOX")
+        # 复合标识 "文件夹||uid"：发票可能被收件规则分进子文件夹。
+        folder = "INBOX"
+        uid = str(uid)
+        if "||" in uid:
+            folder, uid = uid.rsplit("||", 1)
+        status, _ = box.select(f'"{folder}"')
         if status != "OK":
-            return {"ok": False, "error": "无法打开收件箱"}
+            return {"ok": False, "error": "无法打开邮件所在文件夹"}
         st, fetched = box.uid("fetch", str(uid), "(BODY.PEEK[])")
         if st != "OK" or not fetched or not fetched[0]:
             return {"ok": False, "error": "未找到该邮件（可能已被删除或不在收件箱）"}

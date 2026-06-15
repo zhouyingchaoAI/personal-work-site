@@ -292,8 +292,8 @@ def build_weekly_prefill(max_row, read_cell, source_name):
     next_start = next_section + 2 if next_section else 18
     next_end = next_section_row(next_section) - 1 if next_section else min(max_row, 26)
     for row in range(next_start, min(max_row, next_end) + 1):
-        category = str(read_cell(row, 2) or "").strip()
-        content = normalize_numbered_text(read_cell(row, 3))
+        category = str(read_cell(row, 1) or "").strip()
+        content = normalize_numbered_text(read_cell(row, 2))
         if category in {"工作分类", "三、下周工作计划"} or content == "工作内容":
             continue
         if category or content:
@@ -305,10 +305,10 @@ def build_weekly_prefill(max_row, read_cell, source_name):
     follow_start = follow_section + 2 if follow_section else 11
     follow_end = next_section - 1 if next_section else min(max_row, 15)
     for row in range(follow_start, min(max_row, follow_end) + 1):
-        category = str(read_cell(row, 2) or "").strip()
-        content = normalize_numbered_text(read_cell(row, 3))
-        progress = normalize_numbered_text(read_cell(row, 4))
-        difficulty = normalize_numbered_text(read_cell(row, 6))
+        category = str(read_cell(row, 1) or "").strip()
+        content = normalize_numbered_text(read_cell(row, 2))
+        progress = normalize_numbered_text(read_cell(row, 3))
+        difficulty = normalize_numbered_text(read_cell(row, 5))
         if category in {"工作分类", "二、重点工作跟进", "三、下周工作计划"} or content == "工作内容":
             continue
         if category or content or progress or difficulty:

@@ -1,6 +1,8 @@
 import type { Component } from 'vue'
 import {
   Calendar,
+  Collection,
+  Microphone,
   Connection,
   HomeFilled,
   Message,
@@ -24,6 +26,8 @@ export type MenuId =
   | 'forum'
   | 'news'
   | 'mailassistant'
+  | 'meeting'
+  | 'knowledge'
   | 'reimbursement'
   | 'lobsterbase'
   | 'help'
@@ -56,6 +60,8 @@ export const sidebarMenuItems: SidebarMenuItem[] = [
   { id: 'forum', label: '金点子论坛', icon: Opportunity, iconTone: 'orange', group: 'main', roles: ['member', 'admin', 'superadmin'] },
   { id: 'news', label: '每日资讯', icon: Reading, iconTone: 'deep-blue', group: 'main', roles: ['member', 'admin', 'superadmin'] },
   { id: 'mailassistant', label: '邮件助手', icon: Message, iconTone: 'blue', group: 'main', roles: ['member', 'admin', 'superadmin'] },
+  { id: 'meeting', label: '会议助手', icon: Microphone, iconTone: 'purple', group: 'main', roles: ['member', 'admin', 'superadmin'] },
+  { id: 'knowledge', label: '知识库', icon: Collection, iconTone: 'deep-blue', group: 'main', roles: ['member', 'admin', 'superadmin'] },
   { id: 'reimbursement', label: '报销助手', icon: Tickets, iconTone: 'orange', group: 'main', roles: ['member', 'admin', 'superadmin'] },
   { id: 'lobsterbase', label: '龙虾基地', icon: Ship, iconTone: 'green', group: 'main', roles: ['member', 'admin', 'superadmin'] },
   { id: 'config', label: '设置', icon: Setting, iconTone: 'line', group: 'footer', roles: ['member', 'admin', 'superadmin'] },

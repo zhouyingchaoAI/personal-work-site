@@ -477,6 +477,36 @@ export interface AdminConfig {
 
 export interface AdminConfigResponse extends AdminConfig {}
 
+export interface TtsVoiceOption {
+  id: string
+  label: string
+}
+
+export interface TtsConfig {
+  ok: boolean
+  voices: TtsVoiceOption[]
+  provider: 'edge' | 'api'
+  voice: string
+  rate: string
+  pitch: string
+  api_url: string
+  api_model: string
+  api_voice: string
+  api_key_masked?: string
+}
+
+export interface TtsConfigPayload {
+  provider: 'edge' | 'api'
+  voice: string
+  rate: string
+  pitch: string
+  api_url?: string
+  api_key?: string
+  api_model?: string
+  api_voice?: string
+  api_key_clear?: boolean
+}
+
 export interface AdminConfigSaveResponse {
   ok: boolean
   config: AdminConfig
@@ -639,6 +669,27 @@ export interface McpLobsterInstallResponse {
   detail?: string
 }
 
+export interface LobsterModelOption {
+  id: string
+  owned_by?: string
+  chat?: boolean
+}
+
+export interface LobsterModelOptionsResponse {
+  models: LobsterModelOption[]
+  count?: number
+  api_base?: string
+  error?: string
+}
+
+export interface LobsterModelUpdateResponse {
+  ok: boolean
+  restart_required?: boolean
+  agent?: LobsterAgent
+  error?: string
+  detail?: string
+}
+
 export type AgentKind = 'weekly' | 'trip' | 'diary' | 'mailassistant' | 'news' | 'forum' | 'dashboard'
 
 export interface ReimbursementItem {
@@ -686,8 +737,11 @@ export interface ReimbursementUploadResponse extends ReimbursementItem {
 }
 
 const backendUrl = import.meta.env.VITE_PERSONAL_WORK_BACKEND_URL?.replace(/\/$/, '') || ''
-const backendOrigin = backendUrl ? new URL(backendUrl).origin : ''
-const backendBasePath = backendUrl ? new URL(backendUrl).pathname.replace(/\/$/, '') : ''
+// 支持相对路径（如 /personal-office-assistant）：API 跟随当前访问域名（同源），
+// office.chencytech.com / yfdemo / LAN IP 任一入口都不会跨域。
+const backendUrlIsAbsolute = /^https?:\/\//i.test(backendUrl)
+const backendOrigin = backendUrlIsAbsolute ? new URL(backendUrl).origin : ''
+const backendBasePath = backendUrl ? new URL(backendUrl, 'http://relative-base').pathname.replace(/\/$/, '') : ''
 const defaultBackendBasePath = '/personal-office-assistant'
 const passthroughResourcePattern = /^(https?:|\/\/|data:|blob:|mailto:|tel:|cid:|#)/i
 const sessionFreePaths = new Set(['/login', '/logout', '/session'])
@@ -932,6 +986,341 @@ export function saveAdminConfig(payload: Partial<AdminConfig>) {
   return post<AdminConfigSaveResponse>('/admin-config', payload)
 }
 
+export function getTtsConfig() {
+  return request<TtsConfig>('/tts-config')
+}
+
+export function saveTtsConfig(payload: TtsConfigPayload) {
+  return post<TtsConfig>('/tts-config', payload)
+}
+
+export function previewTts(text: string, payload: TtsConfigPayload) {
+  return post<{ ok: boolean; audio: string }>('/tts', { text, ...payload })
+}
+
+export function probeTtsVoices(payload: { api_url?: string; api_key?: string; api_model?: string }) {
+  return post<{ ok: boolean; voices: string[]; source: string }>('/tts-voices', payload)
+}
+
+export interface KnowledgeConfig {
+  ok: boolean
+  provider: 'builtin' | 'ragflow'
+  api_url: string
+  model: string
+  vector_store: 'local' | 'qdrant'
+  qdrant_url: string
+  rerank_model: string
+  ragflow_url: string
+  ragflow_public_url?: string
+  api_key_masked?: string
+  ragflow_api_key_masked?: string
+}
+
+export interface KnowledgeConfigPayload {
+  provider?: string
+  api_url: string
+  api_key: string
+  model: string
+  vector_store?: string
+  qdrant_url?: string
+  rerank_model?: string
+  ragflow_url?: string
+  ragflow_public_url?: string
+  ragflow_api_key?: string
+  api_key_clear?: boolean
+  ragflow_api_key_clear?: boolean
+}
+
+export interface KnowledgeDoc {
+  id: string
+  name: string
+  uploaded_by: string
+  created_at: string
+  chars: number
+  chunk_count: number
+  embedding_model: string
+  status?: string
+  progress?: number
+  progress_msg?: string
+}
+
+export interface KnowledgeSearchResult {
+  doc_id: string
+  dataset_id?: string
+  doc_name: string
+  chunk_index: number
+  text: string
+  score: number
+  page?: number
+}
+
+export interface KnowledgeAskSource {
+  index: number
+  doc_id?: string
+  dataset_id?: string
+  doc_name: string
+  score: number
+  text: string
+  page?: number
+}
+
+export function getKnowledgeChatEmbed() {
+  return request<{ ok: boolean; url: string; empty?: boolean; hint?: string }>('/knowledge/chat-embed')
+}
+
+export interface KnowledgeChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  sources?: KnowledgeAskSource[]
+  failed?: boolean
+}
+
+export interface KnowledgeChatSession {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+  message_count: number
+}
+
+export function getKnowledgeChatHistory(sessionId?: string) {
+  const suffix = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''
+  return request<{ ok: boolean; session?: KnowledgeChatSession; messages: KnowledgeChatMessage[] }>(`/knowledge/chat-history${suffix}`)
+}
+
+export function listKnowledgeChatSessions() {
+  return post<{ ok: boolean; sessions: KnowledgeChatSession[] }>('/knowledge/chat-sessions', { action: 'list' })
+}
+
+export function createKnowledgeChatSession(title?: string) {
+  return post<{ ok: boolean; session: KnowledgeChatSession }>('/knowledge/chat-sessions', { action: 'create', title })
+}
+
+export function getKnowledgeChatSession(sessionId: string) {
+  return post<{ ok: boolean; session: KnowledgeChatSession; messages: KnowledgeChatMessage[] }>('/knowledge/chat-sessions', { action: 'get', session_id: sessionId })
+}
+
+export function clearKnowledgeChat(sessionId?: string) {
+  return post<{ ok: boolean }>('/knowledge/chat-clear', { session_id: sessionId })
+}
+
+// SSE 流式问答（直接 fetch，不走统一 request 封装）
+export function knowledgeAskStreamUrl() {
+  const base = backendUrl ? `${backendUrl}/api` : '/personal-work-api'
+  return `${base}/knowledge/ask-stream`
+}
+
+export function knowledgeDocFileUrl(datasetId: string, docId: string) {
+  const base = backendUrl ? `${backendUrl}/api` : '/personal-work-api'
+  return `${base}/knowledge/doc-file?dataset_id=${encodeURIComponent(datasetId)}&doc_id=${encodeURIComponent(docId)}`
+}
+
+export function getKnowledgeDocChunks(datasetId: string, docId: string) {
+  return request<{ ok: boolean; name: string; total: number; chunks: string[] }>(
+    `/knowledge/doc-chunks?dataset_id=${encodeURIComponent(datasetId)}&doc_id=${encodeURIComponent(docId)}`,
+  )
+}
+
+export function getKnowledgeConfig() {
+  return request<KnowledgeConfig>('/knowledge-config')
+}
+
+export function saveKnowledgeConfig(payload: KnowledgeConfigPayload) {
+  return post<KnowledgeConfig>('/knowledge-config', payload)
+}
+
+export function testKnowledgeEmbedding(payload: Partial<KnowledgeConfigPayload>) {
+  return post<{ ok: boolean; model: string; dimensions: number; qdrant?: string; rerank?: string; ragflow?: string }>('/knowledge-test', payload)
+}
+
+export function uploadKnowledgeDoc(filename: string, data: string, scope = 'mine') {
+  return post<{ ok: boolean; doc: KnowledgeDoc }>('/knowledge/upload', { filename, data, scope })
+}
+
+export interface KnowledgeKb {
+  id: string
+  name: string
+  shared: boolean
+  default: boolean
+  document_count: number
+  chunk_count: number
+}
+
+export function getDigitalHumanKbConfig() {
+  return request<{ ok: boolean; enabled: boolean; kb_ids: string[] }>('/digital-human/kb-config')
+}
+
+export function saveDigitalHumanKbConfig(payload: { enabled: boolean; kb_ids: string[] }) {
+  return post<{ ok: boolean; enabled: boolean; kb_ids: string[] }>('/digital-human/kb-config', payload)
+}
+
+export function listKnowledgeKbs() {
+  return request<{ ok: boolean; provider: string; kbs: KnowledgeKb[] }>('/knowledge/kbs')
+}
+
+export function manageKnowledgeKb(payload: { action: 'create' | 'delete'; name?: string; id?: string }) {
+  return post<{ ok: boolean; id?: string; name?: string }>('/knowledge/kbs', payload)
+}
+
+export function listKnowledgeDocs(scope = 'mine') {
+  return request<{ ok: boolean; docs: KnowledgeDoc[]; embedding_model: string; stale_docs: string[]; can_manage?: boolean; provider?: string }>(`/knowledge/list?scope=${scope}`)
+}
+
+export function deleteKnowledgeDoc(id: string, scope = 'mine') {
+  return post<{ ok: boolean }>('/knowledge/delete', { id, scope })
+}
+
+export function reparseKnowledgeDoc(id: string, scope = 'mine') {
+  return post<{ ok: boolean }>('/knowledge/reparse', { id, scope })
+}
+
+export interface RagflowDatasetOverview {
+  id: string
+  name: string
+  document_count: number
+  chunk_count: number
+  chunk_method: string
+}
+
+export interface RagflowStatus {
+  ok: boolean
+  configured: boolean
+  reachable: boolean
+  version?: string
+  error?: string
+  datasets: RagflowDatasetOverview[]
+  chunk_methods: { id: string; label: string }[]
+  chunk_method: string
+  chunk_token_num: number
+  layout_recognize?: string
+  admin_email?: string
+  sso_available?: boolean
+}
+
+export function getRagflowStatus() {
+  return request<RagflowStatus>('/ragflow/status')
+}
+
+export interface XinferenceConfig {
+  ok: boolean
+  api_url: string
+  asr_model: string
+  tts_model: string
+  embedding_model: string
+  current: {
+    meeting: { api_url: string; model: string }
+    tts: { provider: string; api_url: string; model: string }
+    kb: { provider: string; api_url: string; model: string }
+  }
+}
+
+export function getXinferenceConfig() {
+  return request<XinferenceConfig>('/xinference-config')
+}
+
+export function probeXinference(apiUrl: string) {
+  return post<{ ok: boolean; api_url: string; embedding: string[]; asr: string[]; tts: string[]; chat: string[] }>('/xinference-probe', { api_url: apiUrl })
+}
+
+export function applyXinference(payload: { api_url: string; asr_model?: string; tts_model?: string; embedding_model?: string }) {
+  return post<{ ok: boolean; steps: string[]; warning?: string }>('/xinference-apply', payload)
+}
+
+export function getRagflowSso() {
+  return request<{ ok: boolean; auth: string; email: string; url: string }>('/ragflow/sso')
+}
+
+export function bootstrapRagflow(payload: { email?: string; password?: string } = {}) {
+  return post<{ ok: boolean; steps: string[] }>('/ragflow/bootstrap', payload)
+}
+
+export function saveRagflowChunkConfig(payload: { chunk_method: string; chunk_token_num: number; layout_recognize?: string }) {
+  return post<{ ok: boolean; updated: string[]; warning?: string; hint?: string }>('/ragflow/chunk-config', payload)
+}
+
+export function searchKnowledge(query: string, topK = 5) {
+  return post<{ ok: boolean; results: KnowledgeSearchResult[]; warning?: string }>('/knowledge/search', { query, top_k: topK })
+}
+
+export function askKnowledge(question: string, topK = 5) {
+  return post<{ ok: boolean; answer: string; sources: KnowledgeAskSource[]; warning?: string }>('/knowledge/ask', { question, top_k: topK })
+}
+
+export interface MeetingConfig {
+  ok: boolean
+  api_url: string
+  model: string
+  api_key_masked?: string
+}
+
+export interface MeetingSegment {
+  time: string
+  text: string
+  translation: string
+}
+
+export interface MeetingRecord {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+  duration: number
+  language: string
+  translate_target: string
+  segments: MeetingSegment[]
+  summary: string
+}
+
+export interface MeetingListItem {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+  duration: number
+  segment_count: number
+  has_summary: boolean
+}
+
+export function getMeetingConfig() {
+  return request<MeetingConfig>('/meeting-config')
+}
+
+export function testMeetingAsr(payload: { api_url?: string; api_key?: string; model?: string }) {
+  return post<{ ok: boolean; model: string; text: string }>('/meeting-test', payload)
+}
+
+export function saveMeetingConfig(payload: { api_url: string; api_key: string; model: string; api_key_clear?: boolean }) {
+  return post<MeetingConfig>('/meeting-config', payload)
+}
+
+export function transcribeMeetingAudio(audio: string, language: string) {
+  return post<{ ok: boolean; text: string }>('/meeting/transcribe', { audio, language })
+}
+
+export function translateMeetingText(text: string, target: string) {
+  return post<{ ok: boolean; text: string }>('/meeting/translate', { text, target })
+}
+
+export function summarizeMeeting(transcript: string, title: string) {
+  return post<{ ok: boolean; summary: string }>('/meeting/summarize', { transcript, title })
+}
+
+export function saveMeeting(payload: Partial<MeetingRecord>) {
+  return post<{ ok: boolean; id: string; meeting: MeetingRecord }>('/meeting/save', payload)
+}
+
+export function listMeetings() {
+  return request<{ ok: boolean; meetings: MeetingListItem[] }>('/meeting/list')
+}
+
+export function getMeeting(id: string) {
+  return request<{ ok: boolean; meeting: MeetingRecord }>(`/meeting/get?id=${encodeURIComponent(id)}`)
+}
+
+export function deleteMeeting(id: string) {
+  return post<{ ok: boolean }>('/meeting/delete', { id })
+}
+
 export function saveServerConfig(payload: Partial<AdminConfig>) {
   return post<AdminConfigSaveResponse>('/server-config', payload)
 }
@@ -1006,6 +1395,14 @@ export function listMyLobsters() {
 
 export function installMcpToLobster(agentId: number) {
   return post<McpLobsterInstallResponse>('/install-mcp-to-lobster', { agent_id: agentId })
+}
+
+export function listLobsterModelOptions(agentId: number) {
+  return post<LobsterModelOptionsResponse>('/lobster-model-options', { agent_id: agentId })
+}
+
+export function updateLobsterModel(agentId: number, modelName: string) {
+  return post<LobsterModelUpdateResponse>('/update-lobster-model', { agent_id: agentId, model_name: modelName })
 }
 
 export interface BoundLobster {

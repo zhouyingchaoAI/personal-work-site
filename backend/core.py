@@ -808,18 +808,55 @@ def request_json(url, api_key, body=None, method="GET", timeout=20):
         return json.loads(response.read().decode("utf-8"))
 
 
+
+def _collect_model_ids(value, output):
+    if value is None:
+        return
+    if isinstance(value, str):
+        model_id = value.strip()
+        if model_id:
+            output.append(model_id)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _collect_model_ids(item, output)
+        return
+    if isinstance(value, dict):
+        model_id = str(value.get('id') or value.get('model') or value.get('name') or value.get('model_name') or '').strip()
+        if model_id:
+            output.append(model_id)
+            return
+        for key, meta in value.items():
+            if isinstance(meta, dict):
+                nested_id = str(meta.get('id') or meta.get('model') or meta.get('name') or key).strip()
+                if nested_id:
+                    output.append(nested_id)
+            elif isinstance(meta, str) and meta.strip() and meta != key:
+                output.append(meta.strip())
+            elif str(key).strip():
+                output.append(str(key).strip())
+
+
+def extract_model_ids(data):
+    models = []
+    if isinstance(data, dict):
+        for key in ('data', 'models', 'available_models', 'availableModels', 'supported_models', 'support_models'):
+            if key in data:
+                _collect_model_ids(data.get(key), models)
+        if not models:
+            _collect_model_ids(data, models)
+    else:
+        _collect_model_ids(data, models)
+    return sorted(set(models))
+
+
 def list_admin_models(payload):
     settings = merged_assistant_config(payload)
     if not settings["url"] or not settings["key"]:
         raise ValueError("请先填写 NewAPI 地址和 API Key")
     try:
-        data = request_json(settings["url"] + "/v1/models", settings["key"], method="GET", timeout=15)
-        models = []
-        for item in data.get("data", []):
-            model_id = item.get("id") if isinstance(item, dict) else str(item)
-            if model_id:
-                models.append(model_id)
-        models = sorted(set(models))
+        data = request_json(settings["url"].rstrip("/") + "/v1/models", settings["key"], method="GET", timeout=20)
+        models = extract_model_ids(data)
         if models:
             return {"ok": True, "mode": "api", "models": models}
     except Exception as exc:

@@ -30,6 +30,7 @@ import {
   listAdminModels,
   listAdminUsers,
   listMyLobsters,
+  listLobsterModelOptions,
   listSkills,
   mcpEndpointUrl,
   resourceUrl,
@@ -42,10 +43,29 @@ import {
   testAdminModel,
   testMailConfig,
   updateAdminUser,
+  updateLobsterModel,
   installMcpToLobster,
   restartLobster,
   getAssistantLobster,
   saveAssistantLobster,
+  getTtsConfig,
+  saveTtsConfig,
+  previewTts,
+  probeTtsVoices,
+  getMeetingConfig,
+  saveMeetingConfig,
+  testMeetingAsr,
+  getKnowledgeConfig,
+  saveKnowledgeConfig,
+  testKnowledgeEmbedding,
+  getRagflowStatus,
+  bootstrapRagflow,
+  saveRagflowChunkConfig,
+  getXinferenceConfig,
+  probeXinference,
+  applyXinference,
+  type RagflowStatus,
+  type TtsVoiceOption,
   type AdminConfig,
   type AgentConfig,
   type LobsterAgent,
@@ -88,6 +108,21 @@ const loading = reactive({
   models: false,
   testModel: false,
   saveServer: false,
+  ttsConfig: false,
+  saveTts: false,
+  previewTts: false,
+  meetingConfig: false,
+  saveMeeting: false,
+  testMeeting: false,
+  ttsVoiceProbe: false,
+  kbConfig: false,
+  saveKb: false,
+  testKb: false,
+  ragflowStatus: false,
+  ragflowBootstrap: false,
+  ragflowChunk: false,
+  xfProbe: false,
+  xfApply: false,
   skills: false,
   orchestration: false,
   agentConfig: false,
@@ -160,6 +195,59 @@ const serverForm = reactive({
 const apiKeyStatus = ref('')
 const modelOptions = ref<string[]>([])
 
+const xfForm = reactive({ api_url: '', asr_model: '', tts_model: '', embedding_model: '' })
+const xfModels = reactive({ embedding: [] as string[], asr: [] as string[], tts: [] as string[] })
+const xfCurrent = ref({ meeting: '', tts: '', kb: '' })
+
+const ttsForm = reactive({
+  provider: 'edge' as 'edge' | 'api',
+  voice: 'zh-CN-XiaoyiNeural',
+  rate: '+0%',
+  pitch: '+0Hz',
+  api_url: '',
+  api_key: '',
+  api_model: 'tts-1',
+  api_voice: 'alloy',
+})
+const ttsApiKeyStatus = ref('未配置')
+const ttsVoices = ref<TtsVoiceOption[]>([])
+// API 模式音色候选：默认常见值，可点"获取音色列表"从服务实测拉取。
+const ttsApiVoices = ref<string[]>(['中文女', '中文男', '粤语女', '日语男', '英文女', '英文男', '韩语女', 'alloy', 'nova'])
+
+const meetingForm = reactive({
+  api_url: '',
+  api_key: '',
+  model: 'whisper-1',
+})
+const meetingApiKeyStatus = ref('未配置')
+
+const kbForm = reactive({
+  provider: 'builtin' as 'builtin' | 'ragflow',
+  api_url: '',
+  api_key: '',
+  model: 'bge-m3',
+  vector_store: 'local' as 'local' | 'qdrant',
+  qdrant_url: 'http://qdrant:6333',
+  rerank_model: '',
+  ragflow_url: '',
+  ragflow_api_key: '',
+})
+const kbRagflowKeyStatus = ref('未配置')
+const kbApiKeyStatus = ref('未配置')
+const ragflowStatus = ref<RagflowStatus | null>(null)
+const ragflowChunkForm = reactive({ chunk_method: 'naive', chunk_token_num: 512, layout_recognize: 'DeepDOC' })
+const ttsRateOptions = [
+  { value: '-20%', label: '慢' },
+  { value: '+0%', label: '正常' },
+  { value: '+15%', label: '稍快' },
+  { value: '+30%', label: '快' },
+]
+const ttsPitchOptions = [
+  { value: '-20Hz', label: '低沉' },
+  { value: '+0Hz', label: '正常' },
+  { value: '+20Hz', label: '明亮' },
+]
+
 const skills = ref<SkillDefinition[]>([])
 const skillSearch = ref('')
 const skillModule = ref('all')
@@ -198,6 +286,10 @@ const mcpNewSecret = ref('')
 const mcpStatus = ref('')
 const lobsters = ref<LobsterAgent[]>([])
 const lobsterStatus = ref('')
+const lobsterModelOptions = ref<Record<number, Array<{ id: string; owned_by?: string }>>>({})
+const lobsterModelDrafts = ref<Record<number, string>>({})
+const loadingLobsterModels = ref<number | null>(null)
+const savingLobsterModel = ref<number | null>(null)
 const installingLobsterId = ref<number | null>(null)
 // 悬浮助手绑定龙虾
 const boundLobsterId = ref<number | null>(null)
@@ -475,6 +567,324 @@ async function loadAdminConfig() {
     ElMessage.error(errorMessage(error))
   } finally {
     loading.adminConfig = false
+  }
+  void loadTtsConfig()
+  void loadMeetingConfig()
+  void loadKbConfig()
+  void loadRagflowStatus()
+  void loadXinferenceConfig()
+}
+
+async function loadXinferenceConfig() {
+  if (!user.value?.is_admin) return
+  try {
+    const config = await getXinferenceConfig()
+    xfForm.api_url = config.api_url
+    xfForm.asr_model = config.asr_model
+    xfForm.tts_model = config.tts_model
+    xfForm.embedding_model = config.embedding_model
+    xfCurrent.value = {
+      meeting: config.current.meeting.model ? `${config.current.meeting.model}（${config.current.meeting.api_url || '复用大模型地址'}）` : '',
+      tts: config.current.tts.provider === 'api' ? `${config.current.tts.model}（${config.current.tts.api_url}）` : 'Edge-TTS 内置引擎',
+      kb: config.current.kb.model ? `${config.current.kb.model}（${config.current.kb.provider === 'ragflow' ? 'RAGFlow 引擎' : '内置引擎'}）` : '',
+    }
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  }
+}
+
+async function handleProbeXinference() {
+  loading.xfProbe = true
+  try {
+    const result = await probeXinference(xfForm.api_url)
+    xfModels.embedding = result.embedding
+    xfModels.asr = result.asr
+    xfModels.tts = result.tts
+    // 各类只发现一个模型时自动填充，省得手选。
+    if (!xfForm.asr_model && result.asr.length === 1) xfForm.asr_model = result.asr[0]
+    if (!xfForm.tts_model && result.tts.length === 1) xfForm.tts_model = result.tts[0]
+    if (!xfForm.embedding_model && result.embedding.length === 1) xfForm.embedding_model = result.embedding[0]
+    ElMessage.success(`发现模型：识别 ${result.asr.length} 个、合成 ${result.tts.length} 个、嵌入 ${result.embedding.length} 个`)
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.xfProbe = false
+  }
+}
+
+async function handleApplyXinference() {
+  loading.xfApply = true
+  try {
+    const result = await applyXinference({ ...xfForm })
+    ElMessage.success(result.steps.join('；') || '没有需要应用的模型')
+    if (result.warning) ElMessage({ type: 'warning', message: result.warning, duration: 12000, showClose: true })
+    await Promise.all([loadTtsConfig(), loadMeetingConfig(), loadKbConfig(), loadXinferenceConfig()])
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.xfApply = false
+  }
+}
+
+function applyKbConfig(config: Awaited<ReturnType<typeof getKnowledgeConfig>>) {
+  kbForm.provider = config.provider || 'builtin'
+  kbForm.api_url = config.api_url || ''
+  kbForm.api_key = ''
+  kbForm.model = config.model || 'bge-m3'
+  kbForm.vector_store = config.vector_store || 'local'
+  kbForm.qdrant_url = config.qdrant_url || 'http://qdrant:6333'
+  kbForm.rerank_model = config.rerank_model || ''
+  kbForm.ragflow_url = config.ragflow_url || ''
+  kbForm.ragflow_api_key = ''
+  kbApiKeyStatus.value = config.api_key_masked || '未配置'
+  kbRagflowKeyStatus.value = config.ragflow_api_key_masked || '未配置'
+}
+
+async function loadKbConfig() {
+  if (!user.value?.is_admin) return
+  loading.kbConfig = true
+  try {
+    const config = await getKnowledgeConfig()
+    applyKbConfig(config)
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.kbConfig = false
+  }
+}
+
+async function handleSaveKbConfig() {
+  loading.saveKb = true
+  try {
+    const config = await saveKnowledgeConfig({ ...kbForm })
+    applyKbConfig(config)
+    ElMessage.success('知识库嵌入模型配置已保存')
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.saveKb = false
+  }
+}
+
+async function handleClearKbKey() {
+  loading.saveKb = true
+  try {
+    const config = await saveKnowledgeConfig({ ...kbForm, api_key: '', api_key_clear: true })
+    kbForm.api_key = ''
+    kbApiKeyStatus.value = config.api_key_masked || '未配置'
+    ElMessage.success('已清除嵌入 API Key（无鉴权模式）')
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.saveKb = false
+  }
+}
+
+async function loadRagflowStatus() {
+  loading.ragflowStatus = true
+  try {
+    const status = await getRagflowStatus()
+    ragflowStatus.value = status
+    ragflowChunkForm.chunk_method = status.chunk_method || 'naive'
+    ragflowChunkForm.chunk_token_num = status.chunk_token_num || 512
+    ragflowChunkForm.layout_recognize = status.layout_recognize || 'DeepDOC'
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.ragflowStatus = false
+  }
+}
+
+async function handleRagflowBootstrap() {
+  loading.ragflowBootstrap = true
+  try {
+    const result = await bootstrapRagflow()
+    ElMessage.success(result.steps.join('；'))
+    await Promise.all([loadKbConfig(), loadRagflowStatus()])
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.ragflowBootstrap = false
+  }
+}
+
+async function handleSaveRagflowChunk() {
+  loading.ragflowChunk = true
+  try {
+    const result = await saveRagflowChunkConfig({ ...ragflowChunkForm })
+    ElMessage.success(`解析配置已应用到 ${result.updated.length} 个知识库。${result.hint || ''}`)
+    if (result.warning) ElMessage.warning(result.warning)
+    void loadRagflowStatus()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.ragflowChunk = false
+  }
+}
+
+async function handleTestKbEmbedding() {
+  loading.testKb = true
+  try {
+    const result = await testKnowledgeEmbedding({ ...kbForm })
+    if (kbForm.provider === 'ragflow') {
+      ElMessage.success(`RAGFlow ${result.ragflow || '连接正常'}`)
+    } else {
+      const extras = [result.qdrant ? `Qdrant ${result.qdrant}` : '', result.rerank ? `重排 ${result.rerank}` : ''].filter(Boolean).join('；')
+      ElMessage.success(`嵌入连接成功：${result.model}（${result.dimensions} 维）${extras ? '；' + extras : ''}`)
+    }
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.testKb = false
+  }
+}
+
+async function loadMeetingConfig() {
+  if (!user.value?.is_admin) return
+  loading.meetingConfig = true
+  try {
+    const config = await getMeetingConfig()
+    meetingForm.api_url = config.api_url || ''
+    meetingForm.api_key = ''
+    meetingForm.model = config.model || 'whisper-1'
+    meetingApiKeyStatus.value = config.api_key_masked || '未配置'
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.meetingConfig = false
+  }
+}
+
+async function handleClearMeetingKey() {
+  loading.saveMeeting = true
+  try {
+    const config = await saveMeetingConfig({ api_url: meetingForm.api_url, api_key: '', model: meetingForm.model, api_key_clear: true })
+    meetingForm.api_key = ''
+    meetingApiKeyStatus.value = config.api_key_masked || '未配置'
+    ElMessage.success('已清除识别 API Key（无鉴权模式）')
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.saveMeeting = false
+  }
+}
+
+async function handleTestMeetingAsr() {
+  loading.testMeeting = true
+  try {
+    const result = await testMeetingAsr({ api_url: meetingForm.api_url, api_key: meetingForm.api_key, model: meetingForm.model })
+    ElMessage.success(`识别成功（${result.model}）：${result.text || '（空文本）'}`)
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.testMeeting = false
+  }
+}
+
+async function handleSaveMeetingConfig() {
+  loading.saveMeeting = true
+  try {
+    const config = await saveMeetingConfig({ api_url: meetingForm.api_url, api_key: meetingForm.api_key, model: meetingForm.model })
+    meetingForm.api_url = config.api_url || ''
+    meetingForm.api_key = ''
+    meetingForm.model = config.model || 'whisper-1'
+    meetingApiKeyStatus.value = config.api_key_masked || '未配置'
+    ElMessage.success('会议语音识别配置已保存')
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.saveMeeting = false
+  }
+}
+
+function applyTtsConfig(config: Awaited<ReturnType<typeof getTtsConfig>>) {
+  ttsVoices.value = config.voices || []
+  ttsForm.provider = config.provider || 'edge'
+  ttsForm.voice = config.voice || 'zh-CN-XiaoyiNeural'
+  ttsForm.rate = config.rate || '+0%'
+  ttsForm.pitch = config.pitch || '+0Hz'
+  ttsForm.api_url = config.api_url || ''
+  ttsForm.api_key = ''
+  ttsForm.api_model = config.api_model || 'tts-1'
+  ttsForm.api_voice = config.api_voice || 'alloy'
+  ttsApiKeyStatus.value = config.api_key_masked || '未配置'
+}
+
+function ttsConfigPayload() {
+  return {
+    provider: ttsForm.provider,
+    voice: ttsForm.voice,
+    rate: ttsForm.rate,
+    pitch: ttsForm.pitch,
+    api_url: ttsForm.api_url,
+    api_key: ttsForm.api_key,
+    api_model: ttsForm.api_model,
+    api_voice: ttsForm.api_voice,
+  }
+}
+
+async function loadTtsConfig() {
+  if (!user.value?.is_admin) return
+  loading.ttsConfig = true
+  try {
+    applyTtsConfig(await getTtsConfig())
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.ttsConfig = false
+  }
+}
+
+async function handleSaveTtsConfig() {
+  loading.saveTts = true
+  try {
+    applyTtsConfig(await saveTtsConfig(ttsConfigPayload()))
+    ElMessage.success('数字人语音配置已保存')
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.saveTts = false
+  }
+}
+
+async function handleClearTtsKey() {
+  loading.saveTts = true
+  try {
+    applyTtsConfig(await saveTtsConfig({ ...ttsConfigPayload(), api_key: '', api_key_clear: true }))
+    ElMessage.success('已清除语音 API Key（无鉴权模式）')
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.saveTts = false
+  }
+}
+
+async function handleProbeTtsVoices() {
+  loading.ttsVoiceProbe = true
+  try {
+    const result = await probeTtsVoices({ api_url: ttsForm.api_url, api_key: ttsForm.api_key, api_model: ttsForm.api_model })
+    ttsApiVoices.value = result.voices
+    if (result.voices.length && !result.voices.includes(ttsForm.api_voice)) {
+      ttsForm.api_voice = result.voices[0]
+    }
+    if (result.source === 'service') ElMessage.success(`已从语音服务获取 ${result.voices.length} 个音色`)
+    else ElMessage.warning('服务未返回音色清单，已展示常见候选')
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.ttsVoiceProbe = false
+  }
+}
+
+async function handlePreviewTts() {
+  loading.previewTts = true
+  try {
+    const result = await previewTts('你好，我是犇犇，这是当前语音的试听效果。', ttsConfigPayload())
+    await new Audio(result.audio).play()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.previewTts = false
   }
 }
 
@@ -788,6 +1198,43 @@ async function loadLobsters() {
     lobsterStatus.value = errorMessage(error)
   } finally {
     loading.lobsters = false
+  }
+}
+
+async function handleLoadLobsterModels(agent: LobsterAgent) {
+  loadingLobsterModels.value = agent.agent_id
+  lobsterStatus.value = `正在加载「${agent.agent_name}」的可用模型...`
+  try {
+    const result = await listLobsterModelOptions(agent.agent_id)
+    lobsterModelOptions.value = { ...lobsterModelOptions.value, [agent.agent_id]: result.models || [] }
+    lobsterModelDrafts.value = {
+      ...lobsterModelDrafts.value,
+      [agent.agent_id]: lobsterModelDrafts.value[agent.agent_id] || agent.model || result.models?.[0]?.id || '',
+    }
+    lobsterStatus.value = `已加载 ${result.models?.length || 0} 个模型。`
+  } catch (error) {
+    lobsterStatus.value = errorMessage(error)
+  } finally {
+    loadingLobsterModels.value = null
+  }
+}
+
+async function handleSaveLobsterModel(agent: LobsterAgent) {
+  const modelName = (lobsterModelDrafts.value[agent.agent_id] || agent.model || '').trim()
+  if (!modelName) {
+    ElMessage.warning('请选择或输入模型')
+    return
+  }
+  savingLobsterModel.value = agent.agent_id
+  lobsterStatus.value = `正在保存「${agent.agent_name}」模型...`
+  try {
+    const result = await updateLobsterModel(agent.agent_id, modelName)
+    lobsterStatus.value = result.restart_required ? '模型已保存，重启龙虾后生效。' : '模型已保存。'
+    await loadLobsters()
+  } catch (error) {
+    lobsterStatus.value = errorMessage(error)
+  } finally {
+    savingLobsterModel.value = null
   }
 }
 
@@ -1251,6 +1698,220 @@ onMounted(() => {
           <button class="settings-button settings-button--primary" type="button" :disabled="loading.saveAdmin" @click="handleSaveAdminConfig">保存系统配置</button>
         </div>
 
+        <h4 class="settings-subtitle">统一模型服务（Xinference）</h4>
+        <p class="settings-hint">本地 Xinference 同时提供语音识别 / 语音合成 / 向量嵌入。在这里一处配置，「一键应用」会同步到会议助手、数字人与知识库（含 RAGFlow 全部用户租户）。</p>
+        <div class="settings-grid">
+          <label>
+            <span>Xinference 地址</span>
+            <input v-model="xfForm.api_url" placeholder="http://10.1.6.230:9997" />
+          </label>
+          <label>
+            <span>语音识别模型（ASR）</span>
+            <el-select v-model="xfForm.asr_model" class="settings-select" filterable allow-create clearable placeholder="点「检测模型」自动发现">
+              <el-option v-for="m in xfModels.asr" :key="m" :label="m" :value="m" />
+            </el-select>
+            <em>应用到会议助手 · 当前：{{ xfCurrent.meeting || '未配置' }}</em>
+          </label>
+          <label>
+            <span>语音合成模型（TTS）</span>
+            <el-select v-model="xfForm.tts_model" class="settings-select" filterable allow-create clearable placeholder="点「检测模型」自动发现">
+              <el-option v-for="m in xfModels.tts" :key="m" :label="m" :value="m" />
+            </el-select>
+            <em>应用到数字人 · 当前：{{ xfCurrent.tts || '未配置' }}</em>
+          </label>
+          <label>
+            <span>向量嵌入模型</span>
+            <el-select v-model="xfForm.embedding_model" class="settings-select" filterable allow-create clearable placeholder="点「检测模型」自动发现">
+              <el-option v-for="m in xfModels.embedding" :key="m" :label="m" :value="m" />
+            </el-select>
+            <em>应用到知识库与 RAGFlow 全部租户 · 当前：{{ xfCurrent.kb || '未配置' }}</em>
+          </label>
+        </div>
+        <div class="settings-actions">
+          <button class="settings-button settings-button--ghost" type="button" :disabled="loading.xfProbe" @click="handleProbeXinference">{{ loading.xfProbe ? '检测中…' : '检测模型' }}</button>
+          <button class="settings-button settings-button--primary" type="button" :disabled="loading.xfApply" @click="handleApplyXinference">{{ loading.xfApply ? '应用中…' : '一键应用到三大功能' }}</button>
+        </div>
+
+        <h4 class="settings-subtitle">数字人语音（TTS）</h4>
+        <div class="settings-grid">
+          <label>
+            <span>语音引擎</span>
+            <el-select v-model="ttsForm.provider" class="settings-select" :loading="loading.ttsConfig">
+              <el-option label="内置 Edge-TTS（免费在线合成）" value="edge" />
+              <el-option label="API 接口（OpenAI 兼容 / 本地 Xinference）" value="api" />
+            </el-select>
+          </label>
+          <template v-if="ttsForm.provider === 'edge'">
+            <label>
+              <span>音色</span>
+              <el-select v-model="ttsForm.voice" class="settings-select" placeholder="请选择音色" filterable allow-create default-first-option>
+                <el-option v-for="voice in ttsVoices" :key="voice.id" :label="voice.label" :value="voice.id" />
+              </el-select>
+              <em>支持手动输入其他 edge-tts 音色名（如 en-US-AriaNeural）</em>
+            </label>
+            <label>
+              <span>语调</span>
+              <el-select v-model="ttsForm.pitch" class="settings-select">
+                <el-option v-for="item in ttsPitchOptions" :key="item.value" :label="`${item.label}（${item.value}）`" :value="item.value" />
+              </el-select>
+            </label>
+          </template>
+          <template v-else>
+            <label>
+              <span>语音 API 地址</span>
+              <input v-model="ttsForm.api_url" placeholder="留空复用大模型地址；本地 Xinference 填 http://主机:9997" />
+            </label>
+            <label>
+              <span>语音 API Key</span>
+              <input v-model="ttsForm.api_key" type="password" placeholder="Xinference 无鉴权可留空；留空保持原 Key" />
+              <em>状态：{{ ttsApiKeyStatus }} <a v-if="ttsApiKeyStatus === '已配置'" href="javascript:;" @click="handleClearTtsKey">清除已存 Key</a></em>
+            </label>
+            <label>
+              <span>语音模型名称</span>
+              <input v-model="ttsForm.api_model" placeholder="tts-1 / CosyVoice-300M-SFT / ChatTTS 等" />
+            </label>
+            <label>
+              <span>音色名称</span>
+              <el-select v-model="ttsForm.api_voice" class="settings-select" filterable allow-create default-first-option :loading="loading.ttsVoiceProbe" placeholder="选择或输入音色">
+                <el-option v-for="voice in ttsApiVoices" :key="voice" :label="voice" :value="voice" />
+              </el-select>
+              <em><a href="javascript:;" @click="handleProbeTtsVoices">从语音服务获取音色列表</a>（CosyVoice 用 中文女 / 中文男 等）</em>
+            </label>
+          </template>
+          <label>
+            <span>语速</span>
+            <el-select v-model="ttsForm.rate" class="settings-select">
+              <el-option v-for="item in ttsRateOptions" :key="item.value" :label="`${item.label}（${item.value}）`" :value="item.value" />
+            </el-select>
+          </label>
+        </div>
+        <div class="settings-actions">
+          <button class="settings-button settings-button--ghost" type="button" :disabled="loading.previewTts" @click="handlePreviewTts">{{ loading.previewTts ? '合成中…' : '试听' }}</button>
+          <button class="settings-button settings-button--primary" type="button" :disabled="loading.saveTts" @click="handleSaveTtsConfig">保存语音配置</button>
+        </div>
+
+        <h4 class="settings-subtitle">会议助手语音识别（ASR）</h4>
+        <div class="settings-grid">
+          <label>
+            <span>识别 API 地址</span>
+            <input v-model="meetingForm.api_url" placeholder="留空复用大模型地址；本地 Xinference 填 http://主机:9997" />
+          </label>
+          <label>
+            <span>识别 API Key</span>
+            <input v-model="meetingForm.api_key" type="password" placeholder="Xinference 无鉴权可留空；留空保持原 Key" />
+            <em>状态：{{ meetingApiKeyStatus }} <a v-if="meetingApiKeyStatus === '已配置'" href="javascript:;" @click="handleClearMeetingKey">清除已存 Key</a></em>
+          </label>
+          <label>
+            <span>识别模型名称</span>
+            <input v-model="meetingForm.model" placeholder="whisper-1 / SenseVoiceSmall / whisper-large-v3" />
+            <em>会议助手的"浏览器实时识别"引擎无需此配置</em>
+          </label>
+        </div>
+        <div class="settings-actions">
+          <button class="settings-button settings-button--ghost" type="button" :disabled="loading.testMeeting" @click="handleTestMeetingAsr">{{ loading.testMeeting ? '识别中…' : '测试识别' }}</button>
+          <button class="settings-button settings-button--primary" type="button" :disabled="loading.saveMeeting" @click="handleSaveMeetingConfig">保存识别配置</button>
+        </div>
+
+        <h4 class="settings-subtitle">知识库（RAG）</h4>
+        <div class="settings-grid">
+          <label>
+            <span>知识库引擎</span>
+            <el-select v-model="kbForm.provider" class="settings-select" :loading="loading.kbConfig">
+              <el-option label="RAGFlow（推荐：DeepDoc 解析 + 混合检索 + 引用问答）" value="ragflow" />
+              <el-option label="内置引擎（嵌入 + Qdrant/本地向量）" value="builtin" />
+            </el-select>
+          </label>
+          <template v-if="kbForm.provider === 'ragflow'">
+            <label>
+              <span>RAGFlow API 地址</span>
+              <input v-model="kbForm.ragflow_url" placeholder="http://主机:9380" />
+            </label>
+            <label>
+              <span>RAGFlow API Key</span>
+              <input v-model="kbForm.ragflow_api_key" type="password" placeholder="留空保持原值；点下方「一键初始化」自动生成" />
+              <em>状态：{{ kbRagflowKeyStatus }}</em>
+            </label>
+            <label>
+              <span>解析分块模板</span>
+              <el-select v-model="ragflowChunkForm.chunk_method" class="settings-select" :loading="loading.ragflowStatus">
+                <el-option v-for="item in ragflowStatus?.chunk_methods || []" :key="item.id" :label="item.label" :value="item.id" />
+              </el-select>
+              <em>制度文件选"法规制度"、报表选"表格"，调整后旧文档需重新解析</em>
+            </label>
+            <label>
+              <span>分块大小（token）</span>
+              <input v-model.number="ragflowChunkForm.chunk_token_num" type="number" min="64" max="2048" placeholder="512" />
+            </label>
+            <label>
+              <span>版面识别（解析速度）</span>
+              <el-select v-model="ragflowChunkForm.layout_recognize" class="settings-select">
+                <el-option label="DeepDOC（OCR+版面分析，扫描件/复杂排版）" value="DeepDOC" />
+                <el-option label="Plain Text（快速：直接抽取文本层）" value="Plain Text" />
+              </el-select>
+              <em>制度文件、系统导出的 PDF/Word 选 Plain Text 可快一到两个数量级</em>
+            </label>
+          </template>
+          <label v-if="kbForm.provider === 'builtin'">
+            <span>嵌入 API 地址</span>
+            <input v-model="kbForm.api_url" placeholder="留空复用大模型地址；本地 Xinference 填 http://主机:9997" />
+          </label>
+          <label v-if="kbForm.provider === 'builtin'">
+            <span>嵌入 API Key</span>
+            <input v-model="kbForm.api_key" type="password" placeholder="Xinference 无鉴权可留空；留空保持原 Key" />
+            <em>状态：{{ kbApiKeyStatus }} <a v-if="kbApiKeyStatus === '已配置'" href="javascript:;" @click="handleClearKbKey">清除已存 Key</a></em>
+          </label>
+          <label v-if="kbForm.provider === 'builtin'">
+            <span>嵌入模型名称</span>
+            <input v-model="kbForm.model" placeholder="bge-m3 / bge-large-zh-v1.5 / text-embedding-3-small" />
+            <em>更换模型后已入库文档需删除重新上传</em>
+          </label>
+          <label v-if="kbForm.provider === 'builtin'">
+            <span>向量存储</span>
+            <el-select v-model="kbForm.vector_store" class="settings-select">
+              <el-option label="本地文件（零依赖，小规模）" value="local" />
+              <el-option label="Qdrant 向量库（推荐，compose 启动）" value="qdrant" />
+            </el-select>
+          </label>
+          <label v-if="kbForm.provider === 'builtin' && kbForm.vector_store === 'qdrant'">
+            <span>Qdrant 地址</span>
+            <input v-model="kbForm.qdrant_url" placeholder="容器内 http://qdrant:6333" />
+          </label>
+          <label v-if="kbForm.provider === 'builtin'">
+            <span>重排模型（可选）</span>
+            <input v-model="kbForm.rerank_model" placeholder="留空关闭；如 bge-reranker-v2-m3（复用嵌入 API 地址）" />
+            <em>启用后先向量粗排再精排，显著提升检索准确率</em>
+          </label>
+        </div>
+        <div class="settings-actions">
+          <button class="settings-button settings-button--ghost" type="button" :disabled="loading.testKb" @click="handleTestKbEmbedding">{{ loading.testKb ? '测试中…' : '测试连接' }}</button>
+          <template v-if="kbForm.provider === 'ragflow'">
+            <button class="settings-button settings-button--ghost" type="button" :disabled="loading.ragflowBootstrap" @click="handleRagflowBootstrap">{{ loading.ragflowBootstrap ? '初始化中…' : '一键初始化/同步模型' }}</button>
+            <button class="settings-button settings-button--ghost" type="button" :disabled="loading.ragflowChunk" @click="handleSaveRagflowChunk">{{ loading.ragflowChunk ? '应用中…' : '应用解析配置' }}</button>
+          </template>
+          <button class="settings-button settings-button--primary" type="button" :disabled="loading.saveKb" @click="handleSaveKbConfig">保存知识库配置</button>
+        </div>
+
+        <template v-if="kbForm.provider === 'ragflow' && ragflowStatus">
+          <h4 class="settings-subtitle">RAGFlow 服务总览
+            <em style="font-weight:400;margin-left:8px;">{{ ragflowStatus.reachable ? `运行中 v${ragflowStatus.version || '?'}` : '不可达' }} · {{ ragflowStatus.configured ? 'Key 已配置' : '未初始化' }}
+              <a href="javascript:;" style="margin-left:6px;" @click="loadRagflowStatus">刷新</a>
+            </em>
+          </h4>
+          <p v-if="ragflowStatus.error" class="settings-hint" style="color:#b88230;">{{ ragflowStatus.error }}</p>
+          <table v-if="ragflowStatus.datasets.length" class="settings-table">
+            <thead><tr><th>知识库</th><th>文档数</th><th>分块数</th><th>解析模板</th></tr></thead>
+            <tbody>
+              <tr v-for="ds in ragflowStatus.datasets" :key="ds.id">
+                <td>{{ ds.name }}</td>
+                <td>{{ ds.document_count }}</td>
+                <td>{{ ds.chunk_count }}</td>
+                <td>{{ ds.chunk_method }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="settings-hint">还没有任何知识库数据集。</p>
+        </template>
+
         <template v-if="user?.is_superadmin">
           <h4 class="settings-subtitle">邮件服务器（全局）</h4>
           <div class="settings-grid">
@@ -1560,9 +2221,45 @@ X-MCP-Username: &lt;username&gt;           ← 使用哪个账号的数据空间
           <div v-else-if="!lobsters.length" class="settings-empty">暂无龙虾，请先在龙虾基地创建一个龙虾智能体。</div>
           <div v-else class="settings-mcp-lobster-list">
             <article v-for="agent in lobsters" :key="agent.agent_id" class="settings-mcp-lobster-row">
-              <div>
+              <div class="settings-mcp-lobster-main">
                 <strong>{{ agent.agent_name }}</strong>
                 <span>{{ agent.provider || '-' }} / {{ agent.model || '-' }} · {{ agent.status || '-' }}</span>
+                <div class="settings-lobster-model-edit">
+                  <span>{{ agent.provider || '-' }} /</span>
+                  <el-select
+                    v-if="lobsterModelOptions[agent.agent_id]?.length"
+                    v-model="lobsterModelDrafts[agent.agent_id]"
+                    class="settings-lobster-model-select"
+                    filterable
+                    allow-create
+                    default-first-option
+                    placeholder="选择模型"
+                  >
+                    <el-option
+                      v-for="model in lobsterModelOptions[agent.agent_id]"
+                      :key="model.id"
+                      :label="model.owned_by ? `${model.id} · ${model.owned_by}` : model.id"
+                      :value="model.id"
+                    />
+                  </el-select>
+                  <input v-else v-model="lobsterModelDrafts[agent.agent_id]" :placeholder="agent.model || '输入模型名'" />
+                  <button
+                    class="settings-button settings-button--ghost"
+                    type="button"
+                    :disabled="loadingLobsterModels === agent.agent_id"
+                    @click="handleLoadLobsterModels(agent)"
+                  >
+                    {{ loadingLobsterModels === agent.agent_id ? '加载中' : '加载模型' }}
+                  </button>
+                  <button
+                    class="settings-button settings-button--ghost"
+                    type="button"
+                    :disabled="savingLobsterModel === agent.agent_id"
+                    @click="handleSaveLobsterModel(agent)"
+                  >
+                    {{ savingLobsterModel === agent.agent_id ? '保存中' : '保存模型' }}
+                  </button>
+                </div>
               </div>
               <em :class="{ installed: isMcpInstalled(agent) }">{{ isMcpInstalled(agent) ? '已安装' : '未安装' }}</em>
               <button

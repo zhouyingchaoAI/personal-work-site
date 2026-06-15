@@ -28,6 +28,9 @@ MODULES = [
     "workflows.py",
     "mcp.py",
     "reimbursement.py",
+    "digital_human.py",
+    "meeting.py",
+    "knowledge.py",
     "server.py",
 ]
 

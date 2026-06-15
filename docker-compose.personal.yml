@@ -13,8 +13,8 @@ services:
       HOST: 0.0.0.0
       PORT: 8765
       OPENCLAW_PLATFORM_INTERNAL_URL: http://host.docker.internal:18080/openclaw
-      OPENCLAW_PLATFORM_PUBLIC_URL: https://yfdemo.chencytech.com/openclaw
-      PERSONAL_WORK_SITE_PUBLIC_URL: https://yfdemo.chencytech.com
+      OPENCLAW_PLATFORM_PUBLIC_URL: https://openclaw.chencytech.com/openclaw
+      PERSONAL_WORK_SITE_PUBLIC_URL: https://office.chencytech.com
       OPENCLAW_OFFICE_SSO_SECRET: openclaw-office-sso-dev
     volumes:
       - /etc/localtime:/etc/localtime:ro
@@ -25,3 +25,50 @@ services:
       - ./app.py:/app/app.py
       - ./config.json:/app/config.json
       - ./user_data:/app/user_data
+      - ./数字人:/app/数字人
+
+  # 知识库向量数据库（成熟 RAG 方案：Qdrant 存储 + 语义检索 + 可选重排）。
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: personal-work-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./qdrant-data:/qdrant/storage
+
+  # 语音/嵌入模型服务（数字人 TTS、会议 ASR、知识库 Embedding 共用）。
+  # 启动后自动拉起 CosyVoice2-0.5B（语音合成）和 bge-m3（知识库嵌入）。
+  # 切换到 compose 管理前先停掉手工启动的旧容器：docker rm -f xinference-gpu
+  xinference:
+    image: xinference-cosyvoice-patched:local
+    container_name: xinference-gpu
+    restart: unless-stopped
+    ports:
+      - "9997:9997"
+    environment:
+      CUDA_VISIBLE_DEVICES: 0,1,2,3
+      XINFERENCE_MODEL_SRC: modelscope
+      HF_HUB_DISABLE_XET: 1
+      http_proxy: http://10.1.33.14:7890
+      https_proxy: http://10.1.33.14:7890
+      no_proxy: 127.0.0.1,localhost,0.0.0.0
+    volumes:
+      - /home/chency/zyc/xinference:/root/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command:
+      - bash
+      - -c
+      - |
+        xinference --host 0.0.0.0 --port 9997 &
+        XPID=$$!
+        until curl -sf http://127.0.0.1:9997/v1/models > /dev/null 2>&1; do sleep 3; done
+        xinference launch --model-name CosyVoice2-0.5B --model-type audio -e http://127.0.0.1:9997 || true
+        xinference launch --model-name bge-m3 --model-type embedding -e http://127.0.0.1:9997 || true
+        wait $$XPID

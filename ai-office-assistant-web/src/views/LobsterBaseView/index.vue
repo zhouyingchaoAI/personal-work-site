@@ -11,14 +11,13 @@ function errorMessage(error: unknown) {
 }
 
 function normalizeOpenClawUrl(url: string) {
+  // 统一使用绝对地址（OpenClaw 独立域名，来自后端 OPENCLAW_PLATFORM_PUBLIC_URL）。
+  // 登录态经 #token= 传递，OpenClaw 的 initialToken() 会把它写进自己源下的
+  // localStorage/cookie，不依赖第三方 cookie，任何入口域名下都可用。
   const value = openclawPlatformUrl(url || '/openclaw/')
   const parsed = new URL(value, window.location.href)
-  // OpenClaw 网页端依赖同源 cookie，嵌入页必须走当前站点的 /openclaw 代理路径。
-  if (parsed.pathname.includes('/openclaw')) {
-    const path = parsed.pathname.endsWith('/') ? parsed.pathname : `${parsed.pathname}/`
-    return `${path}${parsed.search}`
-  }
-  return value.replace(/\/$/, '/')
+  if (!parsed.pathname.endsWith('/')) parsed.pathname += '/'
+  return parsed.href
 }
 
 async function loadOpenClawBase() {
