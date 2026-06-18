@@ -99,8 +99,8 @@ export const homeCapabilities: HomeCapabilityItem[] = [
   },
   {
     id: 'news',
-    title: '资讯配置受权限保护',
-    description: '普通用户只看每日资讯，只有超级管理员能配置来源和立即生成。',
+    title: '公共资讯与个人资讯',
+    description: '公共资讯仅超级管理员配置、全站共享；个人资讯每个账号配置自己的来源并定期自动推送，两者分开展示。',
     icon: 'news',
   },
   {

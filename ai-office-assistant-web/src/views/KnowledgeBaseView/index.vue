@@ -35,7 +35,7 @@ import {
   type RagflowStatus,
 } from '../../services/personalWorkApi'
 import { authState, ensureSession } from '../../services/authSession'
-import { renderMarkdown } from '../../utils/markdown'
+import { htmlToText, renderChunk, renderMarkdown } from '../../utils/markdown'
 import './index.scss'
 
 const kbs = ref<KnowledgeKb[]>([])
@@ -196,23 +196,50 @@ async function clearChat() {
   await deleteChatSession(currentSessionId.value)
 }
 
-// 引用角标浮层
+// 引用角标浮层：鼠标悬浮在角标上即预览对应片段（含表格渲染）；要看完整文档再点「预览原文」进抽屉。
 const cite = reactive({ visible: false, x: 0, y: 0, source: null as KnowledgeAskSource | null })
+// 移出角标后延时关闭，留出时间让鼠标移到浮层上操作（点「预览原文」等）。
+let citeCloseTimer: number | undefined
 
-function handleChatClick(event: MouseEvent, msg: ChatMessage) {
-  const target = event.target as HTMLElement
-  if (!target.classList.contains('kb-cite')) return
+function showCite(target: HTMLElement, msg: ChatMessage) {
   const source = (msg.sources || [])[Number(target.dataset.cite || 0)]
   if (!source) return
   const rect = target.getBoundingClientRect()
   cite.source = source
-  cite.x = Math.min(rect.left, window.innerWidth - 380)
-  cite.y = Math.min(rect.bottom + 8, window.innerHeight - 280)
+  cite.x = Math.min(rect.left, window.innerWidth - 620)
+  cite.y = Math.min(rect.bottom + 8, window.innerHeight - 480)
   cite.visible = true
-  event.stopPropagation()
+}
+
+function handleCiteHover(event: MouseEvent, msg: ChatMessage) {
+  const target = event.target as HTMLElement
+  if (!target.classList.contains('kb-cite')) return
+  cancelCloseCite()
+  showCite(target, msg)
+}
+
+function handleCiteLeave(event: MouseEvent) {
+  const target = event.target as HTMLElement
+  if (!target.classList?.contains('kb-cite')) return
+  scheduleCloseCite()
+}
+
+function scheduleCloseCite() {
+  cancelCloseCite()
+  citeCloseTimer = window.setTimeout(() => {
+    cite.visible = false
+  }, 220)
+}
+
+function cancelCloseCite() {
+  if (citeCloseTimer) {
+    window.clearTimeout(citeCloseTimer)
+    citeCloseTimer = undefined
+  }
 }
 
 function closeCite() {
+  cancelCloseCite()
   cite.visible = false
 }
 
@@ -866,13 +893,13 @@ onUnmounted(() => {
     </section>
 
     <Teleport to="body">
-      <div v-if="cite.visible && cite.source" class="kb-cite-pop" :style="{ left: cite.x + 'px', top: cite.y + 'px' }" @click.stop>
+      <div v-if="cite.visible && cite.source" class="kb-cite-pop" :style="{ left: cite.x + 'px', top: cite.y + 'px' }" @click.stop @mouseenter="cancelCloseCite" @mouseleave="scheduleCloseCite">
         <header>
           <el-icon><Document /></el-icon>
           <strong :title="cite.source.doc_name">{{ cite.source.doc_name }}</strong>
           <span>{{ (cite.source.score * 100).toFixed(1) }}%</span>
         </header>
-        <p>{{ cite.source.text }}</p>
+        <div class="kb-cite-text kb-markdown" v-html="renderChunk(cite.source.text)"></div>
         <footer>
           <button v-if="cite.source.doc_id && cite.source.dataset_id" type="button" @click="openPreview(cite.source!)">预览原文</button>
           <button type="button" @click="closeCite">关闭</button>
@@ -887,7 +914,7 @@ onUnmounted(() => {
         <p v-else-if="!preview.chunks.length" class="kb-empty">该文档暂无可展示的解析内容</p>
         <article v-for="(chunk, i) in preview.chunks" :id="`kb-chunk-${i}`" :key="i" :class="{ highlight: i === preview.highlight }">
           <span>{{ i === preview.highlight ? '★ 引用片段' : `#${i + 1}` }}</span>
-          <p>{{ chunk }}</p>
+          <div class="kb-chunk-body kb-markdown" v-html="renderChunk(chunk)"></div>
         </article>
       </div>
     </el-drawer>
@@ -947,7 +974,7 @@ onUnmounted(() => {
         <div ref="chatBodyRef" class="kb-chat">
           <p v-if="!chat.length && !searchResults.length" class="kb-empty kb-chat-empty">
             你好！我是企业知识库助手，回答会标注引用来源——<br />
-            点击角标查看原文片段，点击文档名预览原文。<br />
+            悬浮角标查看原文片段，点击文档名预览原文。<br />
             问答覆盖你的全部个人知识库与全员共享知识库。
           </p>
 
@@ -955,10 +982,11 @@ onUnmounted(() => {
             <div v-if="msg.role === 'user'" class="kb-bubble kb-bubble--user">{{ msg.content }}</div>
             <div v-else :class="['kb-bubble', 'kb-bubble--assistant', { failed: msg.failed }]">
               <div v-if="!msg.content && asking && i === chat.length - 1" class="kb-typing"><span></span><span></span><span></span></div>
-              <div v-else class="kb-markdown" v-html="renderAnswer(msg)" @click="handleChatClick($event, msg)"></div>
+              <div v-else class="kb-markdown" v-html="renderAnswer(msg)" @mouseover="handleCiteHover($event, msg)" @mouseout="handleCiteLeave($event)"></div>
               <div v-if="msg.sources?.length" class="kb-refs">
-                <span class="kb-refs-label">引用 {{ msg.sources.length }} 篇：</span>
-                <button v-for="source in msg.sources" :key="source.index" type="button" class="kb-ref-chip" :title="source.text" @click="openPreview(source)">
+                <span class="kb-refs-label">引用 {{ msg.sources.length }} 篇</span>
+                <button v-for="(source, idx) in msg.sources" :key="source.index" type="button" class="kb-ref-chip" :title="htmlToText(source.text)" @click="openPreview(source)">
+                  <span class="kb-ref-idx">{{ idx + 1 }}</span>
                   <el-icon><Document /></el-icon>
                   <span class="kb-ref-name">{{ source.doc_name }}</span>
                   <em>{{ (source.score * 100).toFixed(0) }}%</em>
@@ -976,7 +1004,7 @@ onUnmounted(() => {
                 <button v-if="item.dataset_id" type="button" class="kb-result-preview" @click="openPreview(item)">预览</button>
                 <span>相关度 {{ (item.score * 100).toFixed(1) }}%</span>
               </header>
-              <p>{{ item.text }}</p>
+              <div class="kb-result-text kb-markdown" v-html="renderChunk(item.text)"></div>
             </article>
           </section>
         </div>

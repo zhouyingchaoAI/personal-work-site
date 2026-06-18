@@ -535,27 +535,29 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
   }
 }
 
-// 引用文档 chips
+// 引用文档 chips：横向紧凑排列，自动换行，不再每个文件独占一行
 .kb-refs {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
   align-items: center;
-  margin-top: 10px;
-  padding-top: 8px;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
   border-top: 1px dashed #d3e0f0;
 }
 
 .kb-refs-label {
+  margin-right: 2px;
   color: $text-muted;
   font-size: 12px;
+  font-weight: 600;
 }
 
 .kb-ref-chip {
   display: inline-flex;
-  gap: 5px;
+  gap: 6px;
   align-items: center;
-  max-width: 240px;
+  max-width: 220px;
   padding: 4px 10px;
   border: 1px solid #d3e0f0;
   border-radius: 14px;
@@ -563,20 +565,46 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
   color: $text-main;
   font: inherit;
   font-size: 12px;
+  text-align: left;
   cursor: pointer;
+  transition: all 0.15s;
 
   &:hover {
     border-color: $primary;
     color: $primary;
+    background: #f5f9ff;
+  }
+
+  .kb-ref-idx {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #eef2fb;
+    color: $primary;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .el-icon {
+    flex: none;
+    color: $text-muted;
+    font-size: 14px;
   }
 
   .kb-ref-name {
+    flex: 0 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   em {
+    flex: none;
     color: $text-muted;
     font-style: normal;
   }
@@ -586,7 +614,7 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
 .kb-cite-pop {
   position: fixed;
   z-index: 3000;
-  width: 360px;
+  width: min(600px, 92vw);
   padding: 12px 14px;
   border: 1px solid #d3e0f0;
   border-radius: 10px;
@@ -614,14 +642,13 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
     }
   }
 
-  p {
-    max-height: 180px;
+  .kb-cite-text {
+    max-height: min(440px, 60vh);
     margin: 8px 0;
-    overflow-y: auto;
+    overflow: auto;
     color: $text-main;
     font-size: 12.5px;
     line-height: 1.7;
-    white-space: pre-wrap;
   }
 
   footer {
@@ -866,6 +893,15 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
     font-size: 13px;
     line-height: 1.7;
     word-break: break-word;
+  }
+
+  .kb-result-text {
+    margin-top: 6px;
+    color: $text-main;
+    font-size: 13px;
+    line-height: 1.7;
+    word-break: break-word;
+    overflow-x: auto;
   }
 }
 

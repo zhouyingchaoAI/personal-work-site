@@ -351,3 +351,27 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
     max-height: 220px;
   }
 }
+
+.meeting-tuning {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.meeting-tuning-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4b5563;
+  white-space: nowrap;
+}
+
+.meeting-gain-slider {
+  width: 200px;
+}
+
+.meeting-tuning-hint {
+  font-size: 12px;
+  color: #9ca3af;
+}

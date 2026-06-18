@@ -296,6 +296,7 @@ export interface NewsItem {
   url: string
   impact: string
   action: string
+  fav_count?: number
 }
 
 export interface NewsIssue {
@@ -326,6 +327,29 @@ export interface NewsConfig {
   auto_search: boolean
   auto_push: boolean
   push_time: string
+  updated_at?: string
+}
+
+export interface NewsFavorite {
+  id: string
+  title: string
+  source: string
+  url: string
+  impact: string
+  action: string
+  scope?: string
+  issue_date?: string
+  issue_title?: string
+  saved_at: string
+  fav_count?: number
+}
+
+export interface NewsFavoritesResponse {
+  ok: boolean
+  favorites: NewsFavorite[]
+  already?: boolean
+  removed?: number
+  fav_count?: number
 }
 
 export interface NewsLatestResponse {
@@ -927,6 +951,39 @@ export function saveNewsConfig(payload: NewsConfig) {
 
 export function generateNewsIssue(searchQuery: string, autoSearch: boolean) {
   return post<NewsGenerateResponse>('/news/generate', { search_query: searchQuery, auto_search: autoSearch })
+}
+
+export function fetchPersonalNews() {
+  return request<NewsLatestResponse>('/news/personal/latest')
+}
+
+export function fetchPersonalNewsHistory(date?: string, limit = 200) {
+  const query = new URLSearchParams()
+  if (date) query.set('date', date)
+  if (limit) query.set('limit', String(limit))
+  const suffix = query.toString()
+  return request<NewsHistoryResponse>(`/news/personal/history${suffix ? `?${suffix}` : ''}`)
+}
+
+export function savePersonalNewsConfig(payload: NewsConfig) {
+  return post<NewsConfigResponse>('/news/personal/config', payload)
+}
+
+export function generatePersonalNewsIssue(searchQuery: string, autoSearch: boolean) {
+  return post<NewsGenerateResponse>('/news/personal/generate', { search_query: searchQuery, auto_search: autoSearch })
+}
+
+export function fetchNewsFavorites(query?: string) {
+  const suffix = query ? `?q=${encodeURIComponent(query)}` : ''
+  return request<NewsFavoritesResponse>(`/news/favorites${suffix}`)
+}
+
+export function addNewsFavorite(item: Record<string, unknown>) {
+  return post<NewsFavoritesResponse>('/news/favorites', item)
+}
+
+export function removeNewsFavorite(payload: { id?: string; url?: string; title?: string }) {
+  return post<NewsFavoritesResponse>('/news/favorites/delete', payload)
 }
 
 export function sendMail(payload: SendMailPayload) {

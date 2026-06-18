@@ -714,6 +714,22 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.send_json({"ok": True, "config": news_config_payload()})
             return
+        if parsed.path == "/api/news/personal/latest":
+            self.send_json(personal_news_latest(self.current_user().get("username", "")))
+            return
+        if parsed.path == "/api/news/personal/history":
+            qs = urllib.parse.parse_qs(parsed.query)
+            payload = {k: v[0] for k, v in qs.items()}
+            self.send_json(personal_news_history_api(payload, self.current_user().get("username", "")))
+            return
+        if parsed.path == "/api/news/personal/config":
+            self.send_json({"ok": True, "config": personal_news_config_payload(self.current_user().get("username", ""))})
+            return
+        if parsed.path == "/api/news/favorites":
+            qs = urllib.parse.parse_qs(parsed.query)
+            payload = {k: v[0] for k, v in qs.items()}
+            self.send_json(news_favorites_api(payload, self.current_user().get("username", "")))
+            return
         if parsed.path == "/download":
             qs = urllib.parse.parse_qs(parsed.query)
             file_name = qs.get("file", [""])[0]
@@ -1087,6 +1103,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not self.require_superadmin():
                     return
                 result = generate_news_issue(payload, username)
+            elif parsed.path == "/api/news/personal/config":
+                result = save_personal_news_config(username, payload)
+            elif parsed.path == "/api/news/personal/generate":
+                result = generate_personal_news_issue(payload, username)
+            elif parsed.path == "/api/news/favorites":
+                result = add_news_favorite(payload, username)
+            elif parsed.path == "/api/news/favorites/delete":
+                result = remove_news_favorite(payload, username)
             elif parsed.path == "/api/mcp-config":
                 if not self.require_admin():
                     return

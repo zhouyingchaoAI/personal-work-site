@@ -10,5 +10,6 @@ user_data
 backend/generated
 backend/drafts
 frontend/node_modules
+ai-office-assistant-web/node_modules
 SCRIPT
 ui_upgrade.py

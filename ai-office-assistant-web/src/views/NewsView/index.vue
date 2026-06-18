@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   ArrowRight,
@@ -11,34 +11,72 @@ import {
   Plus,
   Reading,
   Refresh,
+  Search,
   Setting,
+  Star,
+  StarFilled,
+  User,
   WarningFilled,
 } from '@element-plus/icons-vue'
 import { authState } from '../../services/authSession'
 import {
+  addNewsFavorite,
   fetchLatestNews,
+  fetchNewsFavorites,
   fetchNewsHistory,
+  fetchPersonalNews,
+  fetchPersonalNewsHistory,
   generateNewsIssue,
+  generatePersonalNewsIssue,
+  removeNewsFavorite,
   saveNewsConfig,
+  savePersonalNewsConfig,
   type NewsConfig,
+  type NewsFavorite,
   type NewsHistoryItem,
   type NewsIssue,
+  type NewsItem,
   type NewsSource,
 } from '../../services/personalWorkApi'
 import './index.scss'
 
-const issue = ref<NewsIssue | null>(null)
-const history = ref<NewsHistoryItem[]>([])
-const activeDate = ref('')
+type Scope = 'public' | 'personal' | 'favorites'
+
+interface ScopeState {
+  issue: NewsIssue | null
+  history: NewsHistoryItem[]
+  activeDate: string
+  config: NewsConfig
+  configLoaded: boolean
+  loaded: boolean
+}
+
+function emptyConfig(): NewsConfig {
+  return {
+    sources: [{ name: '', url: '' }],
+    search_query: '',
+    auto_search: true,
+    auto_push: true,
+    push_time: '08:30',
+  }
+}
+
+function createState(autoPushDefault: boolean): ScopeState {
+  return {
+    issue: null,
+    history: [],
+    activeDate: '',
+    config: { ...emptyConfig(), auto_push: autoPushDefault },
+    configLoaded: false,
+    loaded: false,
+  }
+}
+
+const scope = ref<Scope>('public')
 const activePanel = ref<'reader' | 'config'>('reader')
-const configLoaded = ref(false)
-const config = reactive<NewsConfig>({
-  sources: [{ name: '', url: '' }],
-  search_query: '',
-  auto_search: true,
-  auto_push: true,
-  push_time: '08:30',
-})
+const pub = reactive<ScopeState>(createState(true))
+const per = reactive<ScopeState>(createState(false))
+
 const loading = reactive({
   latest: false,
   history: false,
@@ -48,16 +86,50 @@ const loading = reactive({
 
 const user = computed(() => authState.user)
 const isSuperadmin = computed(() => !!user.value?.is_superadmin)
+// 公共资讯仅超级管理员可配置；个人资讯所有账号都能配置自己的来源；收藏夹无配置。
+const canConfig = computed(() => scope.value === 'personal' || (scope.value === 'public' && isSuperadmin.value))
+
+const state = computed<ScopeState>(() => (scope.value === 'personal' ? per : pub))
+const config = computed(() => state.value.config)
+
+// 个人收藏夹：跨公共/个人资讯，看到感兴趣的条目可收藏，支持搜索。
+const favorites = ref<NewsFavorite[]>([])
+const favoriteKeys = ref<Set<string>>(new Set())
+const favoriteSearch = ref('')
+const favoritesLoaded = ref(false)
+const loadingFav = reactive({ list: false, mutate: false })
+
+function favoriteKey(item: { url?: string; title?: string }) {
+  // 与后端一致：标题+链接组合，避免同源不同条的资讯撞键。
+  const title = (item.title || '').trim().toLowerCase()
+  const url = (item.url || '').trim().toLowerCase()
+  return `${title}|${url}`
+}
+
+function isFavorited(item: { url?: string; title?: string }) {
+  return favoriteKeys.value.has(favoriteKey(item))
+}
+
+function syncFavoriteKeys(list: NewsFavorite[]) {
+  favoriteKeys.value = new Set(list.map((item) => favoriteKey(item)))
+}
+
+const issue = computed(() => state.value.issue)
+const history = computed(() => state.value.history)
+const activeDate = computed(() => state.value.activeDate)
 const issueItems = computed(() => issue.value?.items || [])
 const issueKeywords = computed(() => issue.value?.keywords || [])
 const issueErrors = computed(() => issue.value?.errors || [])
-const issueTitle = computed(() => issue.value?.title || '暂无每日资讯')
+const issueTitle = computed(() => issue.value?.title || (scope.value === 'public' ? '暂无每日资讯' : '暂无个人资讯'))
 const issueSummary = computed(() => issue.value?.summary || '暂无摘要。')
 const issueMeta = computed(() => {
-  if (!issue.value) return isSuperadmin.value ? '配置资讯源后生成今日简报。' : '暂无今日简报，请稍后刷新。'
+  if (!issue.value) return canConfig.value ? '配置资讯源后生成简报。' : '暂无今日简报，请稍后刷新。'
   return [issue.value.date, formatDateTime(issue.value.generated_at), issue.value.generated_by].filter(Boolean).join(' · ')
 })
-const historyMeta = computed(() => (history.value.length ? `已保存 ${history.value.length} 期每日资讯` : '暂无历史资讯'))
+const historyMeta = computed(() => (history.value.length ? `已保存 ${history.value.length} 期资讯` : '暂无历史资讯'))
+const emptyHint = computed(() =>
+  canConfig.value ? '可以配置资讯源后生成简报。' : '暂无今日简报，请稍后刷新。',
+)
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : '操作失败'
@@ -83,28 +155,42 @@ function normalizeSources(sources: NewsSource[]) {
   return normalized.length ? normalized : [{ name: '', url: '' }]
 }
 
-function applyConfig(payload?: NewsConfig) {
+function applyConfig(target: ScopeState, payload?: NewsConfig) {
   if (!payload) return
-  config.sources = normalizeSources(payload.sources || [])
-  config.search_query = payload.search_query || ''
-  config.auto_search = !!payload.auto_search
-  config.auto_push = !!payload.auto_push
-  config.push_time = payload.push_time || '08:30'
-  configLoaded.value = true
+  target.config = {
+    sources: normalizeSources(payload.sources || []),
+    search_query: payload.search_query || '',
+    auto_search: !!payload.auto_search,
+    auto_push: !!payload.auto_push,
+    push_time: payload.push_time || '08:30',
+  }
+  target.configLoaded = true
 }
 
 function configPayload(): NewsConfig {
+  const current = state.value.config
   return {
-    sources: config.sources
+    sources: current.sources
       .map((source) => ({
         name: source.name.trim(),
         url: source.url.trim(),
       }))
       .filter((source) => source.url),
-    search_query: config.search_query.trim(),
-    auto_search: config.auto_search,
-    auto_push: config.auto_push,
-    push_time: config.push_time || '08:30',
+    search_query: current.search_query.trim(),
+    auto_search: current.auto_search,
+    auto_push: current.auto_push,
+    push_time: current.push_time || '08:30',
+  }
+}
+
+function switchScope(next: Scope) {
+  if (scope.value === next) return
+  scope.value = next
+  if (!canConfig.value) activePanel.value = 'reader'
+  if (next === 'favorites') {
+    loadFavorites()
+  } else if (!state.value.loaded) {
+    loadLatestNews()
   }
 }
 
@@ -113,12 +199,13 @@ function switchPanel(panel: 'reader' | 'config') {
 }
 
 function addSource() {
-  config.sources.push({ name: '', url: '' })
+  state.value.config.sources.push({ name: '', url: '' })
 }
 
 function removeSource(index: number) {
-  config.sources.splice(index, 1)
-  if (!config.sources.length) addSource()
+  const sources = state.value.config.sources
+  sources.splice(index, 1)
+  if (!sources.length) addSource()
 }
 
 function openSource(url: string) {
@@ -126,15 +213,104 @@ function openSource(url: string) {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
+async function loadFavorites(keepKeys = false) {
+  if (loadingFav.list) return
+  loadingFav.list = true
+  try {
+    const result = await fetchNewsFavorites(favoriteSearch.value.trim())
+    favorites.value = result.favorites || []
+    // 仅在未筛选时同步「是否已收藏」的全量键，避免搜索结果污染星标状态。
+    if (!keepKeys && !favoriteSearch.value.trim()) syncFavoriteKeys(favorites.value)
+    favoritesLoaded.value = true
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loadingFav.list = false
+  }
+}
+
+function searchFavorites() {
+  loadFavorites(true)
+}
+
+function clearFavoriteSearch() {
+  if (!favoriteSearch.value) return
+  favoriteSearch.value = ''
+  loadFavorites()
+}
+
+async function toggleFavorite(item: NewsItem) {
+  if (loadingFav.mutate) return
+  loadingFav.mutate = true
+  try {
+    if (isFavorited(item)) {
+      const result = await removeNewsFavorite({ url: item.url, title: item.title })
+      favorites.value = result.favorites || []
+      syncFavoriteKeys(favorites.value)
+      item.fav_count = result.fav_count ?? Math.max(0, (item.fav_count || 1) - 1)
+      ElMessage.success('已移出收藏夹')
+    } else {
+      const result = await addNewsFavorite({
+        title: item.title,
+        source: item.source,
+        url: item.url,
+        impact: item.impact,
+        action: item.action,
+        scope: scope.value,
+        issue_date: issue.value?.date || '',
+        issue_title: issue.value?.title || '',
+      })
+      favorites.value = result.favorites || favorites.value
+      syncFavoriteKeys(favorites.value)
+      item.fav_count = result.fav_count ?? (item.fav_count || 0) + (result.already ? 0 : 1)
+      ElMessage.success(result.already ? '该资讯已在收藏夹中' : '已加入收藏夹')
+    }
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loadingFav.mutate = false
+  }
+}
+
+async function removeFavorite(fav: NewsFavorite) {
+  if (loadingFav.mutate) return
+  loadingFav.mutate = true
+  try {
+    const result = await removeNewsFavorite({ id: fav.id, url: fav.url, title: fav.title })
+    syncFavoriteKeys(result.favorites || [])
+    // 若正在搜索，保留筛选结果（直接从当前列表移除该项），否则展示全量。
+    if (favoriteSearch.value.trim()) {
+      favorites.value = favorites.value.filter((item) => item.id !== fav.id)
+    } else {
+      favorites.value = result.favorites || []
+    }
+    ElMessage.success('已移出收藏夹')
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loadingFav.mutate = false
+  }
+}
+
 async function loadLatestNews() {
   if (loading.latest) return
   loading.latest = true
+  const target = state.value
   try {
-    const result = await fetchLatestNews()
-    issue.value = result.issue
-    history.value = result.history || []
-    activeDate.value = result.issue?.date || ''
-    if (isSuperadmin.value) applyConfig(result.config)
+    if (scope.value === 'public') {
+      const result = await fetchLatestNews()
+      target.issue = result.issue
+      target.history = result.history || []
+      target.activeDate = result.issue?.date || ''
+      if (isSuperadmin.value) applyConfig(target, result.config)
+    } else {
+      const result = await fetchPersonalNews()
+      target.issue = result.issue
+      target.history = result.history || []
+      target.activeDate = result.issue?.date || ''
+      applyConfig(target, result.config)
+    }
+    target.loaded = true
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
@@ -145,11 +321,13 @@ async function loadLatestNews() {
 async function loadNewsByDate(date: string) {
   if (!date || loading.history) return
   loading.history = true
+  const target = state.value
   try {
-    const result = await fetchNewsHistory(date)
-    issue.value = result.issue || null
-    history.value = result.history || []
-    activeDate.value = result.issue?.date || date
+    const result =
+      scope.value === 'public' ? await fetchNewsHistory(date) : await fetchPersonalNewsHistory(date)
+    target.issue = result.issue || null
+    target.history = result.history || []
+    target.activeDate = result.issue?.date || date
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
@@ -158,11 +336,14 @@ async function loadNewsByDate(date: string) {
 }
 
 async function handleSaveConfig() {
-  if (!isSuperadmin.value || loading.saveConfig) return
+  if (!canConfig.value || loading.saveConfig) return
   loading.saveConfig = true
+  const target = state.value
   try {
-    const result = await saveNewsConfig(configPayload())
-    applyConfig(result.config)
+    const payload = configPayload()
+    const result =
+      scope.value === 'public' ? await saveNewsConfig(payload) : await savePersonalNewsConfig(payload)
+    applyConfig(target, result.config)
     ElMessage.success('资讯配置已保存')
   } catch (error) {
     ElMessage.error(errorMessage(error))
@@ -172,15 +353,20 @@ async function handleSaveConfig() {
 }
 
 async function handleGenerateNews() {
-  if (!isSuperadmin.value || loading.generate) return
+  if (!canConfig.value || loading.generate) return
   loading.generate = true
+  const target = state.value
   try {
-    const result = await generateNewsIssue(config.search_query, config.auto_search)
-    issue.value = result.issue
-    activeDate.value = result.issue.date
-    const latest = await fetchNewsHistory()
-    history.value = latest.history || []
-    ElMessage.success('今日资讯已生成')
+    const result =
+      scope.value === 'public'
+        ? await generateNewsIssue(target.config.search_query, target.config.auto_search)
+        : await generatePersonalNewsIssue(target.config.search_query, target.config.auto_search)
+    target.issue = result.issue
+    target.activeDate = result.issue.date
+    const latest =
+      scope.value === 'public' ? await fetchNewsHistory() : await fetchPersonalNewsHistory()
+    target.history = latest.history || []
+    ElMessage.success(scope.value === 'public' ? '今日资讯已生成' : '个人资讯已生成')
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
@@ -188,7 +374,15 @@ async function handleGenerateNews() {
   }
 }
 
-onMounted(loadLatestNews)
+watch(canConfig, (value) => {
+  if (!value) activePanel.value = 'reader'
+})
+
+onMounted(() => {
+  loadLatestNews()
+  // 预加载收藏键，使简报里的星标状态从一开始就正确。
+  loadFavorites()
+})
 </script>
 
 <template>
@@ -196,19 +390,34 @@ onMounted(loadLatestNews)
     <header class="news-page-head">
       <div class="news-title-block">
         <h1>每日资讯助手</h1>
-        <p>查看轨道交通关键资讯，支持 AI 生成、配置来源与历史简报回看。</p>
+        <p>公共资讯由管理员统一配置，个人资讯由每个账号配置自己的来源并定期自动推送；看到感兴趣的可加入「我的收藏」。</p>
       </div>
       <div class="news-page-actions">
-        <div v-if="isSuperadmin" class="news-page-tabs" role="tablist" aria-label="每日资讯页面">
+        <div class="news-page-tabs" role="tablist" aria-label="资讯范围">
+          <button :class="{ active: scope === 'public' }" type="button" @click="switchScope('public')">公共资讯</button>
+          <button :class="{ active: scope === 'personal' }" type="button" @click="switchScope('personal')">个人资讯</button>
+          <button :class="{ active: scope === 'favorites' }" type="button" @click="switchScope('favorites')">我的收藏</button>
+        </div>
+        <div v-if="canConfig" class="news-page-tabs" role="tablist" aria-label="资讯视图">
           <button :class="{ active: activePanel === 'reader' }" type="button" @click="switchPanel('reader')">资讯简报</button>
           <button :class="{ active: activePanel === 'config' }" type="button" @click="switchPanel('config')">资讯配置</button>
         </div>
-        <button class="news-button news-button--ghost" type="button" :disabled="loading.latest" @click="loadLatestNews">
+        <button
+          v-if="scope === 'favorites'"
+          class="news-button news-button--ghost"
+          type="button"
+          :disabled="loadingFav.list"
+          @click="loadFavorites()"
+        >
+          <el-icon><Refresh /></el-icon>
+          {{ loadingFav.list ? '刷新中' : '刷新' }}
+        </button>
+        <button v-else class="news-button news-button--ghost" type="button" :disabled="loading.latest" @click="loadLatestNews">
           <el-icon><Refresh /></el-icon>
           {{ loading.latest ? '刷新中' : '刷新' }}
         </button>
         <button
-          v-if="isSuperadmin"
+          v-if="canConfig"
           class="news-button news-button--primary"
           type="button"
           :disabled="loading.generate"
@@ -222,11 +431,25 @@ onMounted(loadLatestNews)
 
     <div class="news-workspace">
       <aside class="news-history-column">
-        <section class="news-card news-history-card">
+        <section v-if="scope === 'favorites'" class="news-card news-history-card">
+          <div class="news-card-head">
+            <span class="news-card-icon"><el-icon><Star /></el-icon></span>
+            <div>
+              <h2>我的收藏夹</h2>
+              <p>{{ favorites.length ? `共 ${favorites.length} 条收藏` : '暂无收藏' }}</p>
+            </div>
+          </div>
+          <div class="news-side-empty">
+            <el-icon><Star /></el-icon>
+            <strong>收藏你关心的资讯</strong>
+            <span>在公共/个人简报里点击星标即可收藏，支持关键词搜索。</span>
+          </div>
+        </section>
+        <section v-else class="news-card news-history-card">
           <div class="news-card-head">
             <span class="news-card-icon"><el-icon><Reading /></el-icon></span>
             <div>
-              <h2>历史资讯</h2>
+              <h2>{{ scope === 'public' ? '公共历史资讯' : '个人历史资讯' }}</h2>
               <p>{{ historyMeta }}</p>
             </div>
           </div>
@@ -251,18 +474,18 @@ onMounted(loadLatestNews)
           <div v-else class="news-side-empty">
             <el-icon><Reading /></el-icon>
             <strong>暂无历史资讯</strong>
-            <span>生成每日资讯后会在这里保留历史记录。</span>
+            <span>生成资讯后会在这里保留历史记录。</span>
           </div>
         </section>
       </aside>
 
       <main class="news-reader-column">
-        <article v-if="activePanel === 'reader'" class="news-card news-issue-card" :class="{ 'is-loading': loading.latest || loading.history }">
+        <article v-if="scope !== 'favorites' && activePanel === 'reader'" class="news-card news-issue-card" :class="{ 'is-loading': loading.latest || loading.history }">
           <div class="news-issue-head">
             <div>
               <span class="news-issue-label">
-                <el-icon><Document /></el-icon>
-                今日简报
+                <el-icon><component :is="scope === 'public' ? Document : User" /></el-icon>
+                {{ scope === 'public' ? '公共简报' : '个人简报' }}
               </span>
               <h2>{{ issueTitle }}</h2>
               <p>{{ issueMeta }}</p>
@@ -282,7 +505,7 @@ onMounted(loadLatestNews)
             <span v-for="keyword in issueKeywords" :key="keyword">{{ keyword }}</span>
           </div>
 
-          <div v-if="issueErrors.length && isSuperadmin" class="news-warning">
+          <div v-if="issueErrors.length && canConfig" class="news-warning">
             <el-icon><WarningFilled /></el-icon>
             <span>{{ issueErrors.slice(0, 2).join('；') }}</span>
           </div>
@@ -301,6 +524,10 @@ onMounted(loadLatestNews)
                     <el-icon><CollectionTag /></el-icon>
                     {{ item.source || '未注明来源' }}
                   </span>
+                  <span class="news-fav-count" :class="{ active: (item.fav_count || 0) > 0 }">
+                    <el-icon><StarFilled /></el-icon>
+                    {{ item.fav_count || 0 }} 人收藏
+                  </span>
                 </div>
                 <h3>{{ item.title || '未命名资讯' }}</h3>
                 <p class="news-item-impact">
@@ -313,8 +540,18 @@ onMounted(loadLatestNews)
                     {{ item.action || '暂无' }}
                   </p>
                 </div>
-                <div v-if="item.url" class="news-item-source-row">
-                  <button type="button" @click="openSource(item.url)">
+                <div class="news-item-source-row">
+                  <button
+                    type="button"
+                    class="news-fav-toggle"
+                    :class="{ active: isFavorited(item) }"
+                    :disabled="loadingFav.mutate"
+                    @click="toggleFavorite(item)"
+                  >
+                    <el-icon><component :is="isFavorited(item) ? StarFilled : Star" /></el-icon>
+                    {{ isFavorited(item) ? '已收藏' : '收藏' }}
+                  </button>
+                  <button v-if="item.url" type="button" @click="openSource(item.url)">
                     来源链接
                     <el-icon><ArrowRight /></el-icon>
                   </button>
@@ -325,30 +562,28 @@ onMounted(loadLatestNews)
           <div v-else class="news-empty">
             <el-icon><Reading /></el-icon>
             <strong>暂无资讯条目</strong>
-            <span>{{ isSuperadmin ? '可以配置资讯源后生成今日简报。' : '暂无今日简报，请稍后刷新。' }}</span>
+            <span>{{ emptyHint }}</span>
           </div>
         </article>
 
-        <article v-else class="news-card news-config-page">
+        <article v-else-if="scope !== 'favorites'" class="news-card news-config-page">
           <div class="news-config-page-head">
             <div>
               <span class="news-date-pill">
                 <el-icon><Setting /></el-icon>
-                资讯配置
+                {{ scope === 'public' ? '公共资讯配置' : '个人资讯配置' }}
               </span>
               <h3>来源与自动生成配置</h3>
-              <p>维护抓取网页、搜索关键词和每日自动更新规则。</p>
+              <p>
+                {{ scope === 'public'
+                  ? '维护全站共享的抓取网页、搜索关键词和每日自动更新规则。'
+                  : '维护你自己的抓取网页、搜索关键词，开启后将按设定时间定期自动推送。' }}
+              </p>
             </div>
-            <span v-if="isSuperadmin && configLoaded" class="news-config-status">已读取</span>
+            <span v-if="state.configLoaded" class="news-config-status">已读取</span>
           </div>
 
-          <div v-if="!isSuperadmin" class="news-permission-card">
-            <el-icon><WarningFilled /></el-icon>
-            <strong>当前账号没有资讯配置权限</strong>
-            <span>请使用超级管理员账号维护资讯来源、自动搜索和定时更新配置。</span>
-          </div>
-
-          <div v-else class="news-config-form news-config-form--page">
+          <div class="news-config-form news-config-form--page">
             <label class="news-field news-field--full">
               <span>搜索关键词</span>
               <textarea v-model="config.search_query" rows="3" placeholder="轨道交通 OR 城市轨道 OR 地铁 OR 智慧轨交"></textarea>
@@ -387,7 +622,7 @@ onMounted(loadLatestNews)
                 </label>
                 <label>
                   <input v-model="config.auto_push" type="checkbox" />
-                  <span>每日自动更新推送</span>
+                  <span>{{ scope === 'public' ? '每日自动更新推送' : '定期自动推送给我' }}</span>
                 </label>
               </div>
 
@@ -407,6 +642,79 @@ onMounted(loadLatestNews)
                 {{ loading.generate ? '生成中' : '生成资讯' }}
               </button>
             </div>
+          </div>
+        </article>
+
+        <article v-else class="news-card news-favorites-page">
+          <div class="news-config-page-head">
+            <div>
+              <span class="news-date-pill">
+                <el-icon><StarFilled /></el-icon>
+                我的收藏
+              </span>
+              <h3>个人收藏夹</h3>
+              <p>这里汇总你从公共/个人资讯里收藏的条目，可按关键词搜索标题、来源或内容。</p>
+            </div>
+            <span class="news-config-status">{{ favorites.length }} 条</span>
+          </div>
+
+          <div class="news-fav-search">
+            <el-icon><Search /></el-icon>
+            <input
+              v-model="favoriteSearch"
+              type="search"
+              placeholder="搜索收藏夹：标题 / 来源 / 关键词"
+              @keyup.enter="searchFavorites"
+            />
+            <button v-if="favoriteSearch" type="button" class="news-fav-search-clear" @click="clearFavoriteSearch">清空</button>
+            <button type="button" class="news-button news-button--primary" :disabled="loadingFav.list" @click="searchFavorites">
+              <el-icon><Search /></el-icon>
+              {{ loadingFav.list ? '搜索中' : '搜索' }}
+            </button>
+          </div>
+
+          <div v-if="favorites.length" class="news-item-list">
+            <article v-for="fav in favorites" :key="fav.id" class="news-item-card">
+              <span class="news-item-index"><el-icon><StarFilled /></el-icon></span>
+              <div class="news-item-main">
+                <div class="news-item-top">
+                  <span>
+                    <el-icon><CollectionTag /></el-icon>
+                    {{ fav.source || '未注明来源' }}
+                  </span>
+                  <span class="news-fav-meta">
+                    <template v-if="fav.issue_date">{{ fav.issue_date }} · {{ fav.scope === 'personal' ? '个人资讯' : '公共资讯' }} · </template>
+                    {{ fav.fav_count || 0 }} 人收藏
+                  </span>
+                </div>
+                <h3>{{ fav.title || '未命名资讯' }}</h3>
+                <p v-if="fav.impact" class="news-item-impact">
+                  <strong>影响/价值</strong>
+                  {{ fav.impact }}
+                </p>
+                <div v-if="fav.action" class="news-item-action-row">
+                  <p>
+                    <strong>建议动作</strong>
+                    {{ fav.action }}
+                  </p>
+                </div>
+                <div class="news-item-source-row">
+                  <button v-if="fav.url" type="button" @click="openSource(fav.url)">
+                    来源链接
+                    <el-icon><ArrowRight /></el-icon>
+                  </button>
+                  <button type="button" class="news-fav-toggle active" :disabled="loadingFav.mutate" @click="removeFavorite(fav)">
+                    <el-icon><Delete /></el-icon>
+                    移出收藏
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="news-empty">
+            <el-icon><Star /></el-icon>
+            <strong>{{ favoriteSearch ? '没有匹配的收藏' : '收藏夹还是空的' }}</strong>
+            <span>{{ favoriteSearch ? '换个关键词再试试。' : '在公共/个人简报里点击条目上的星标即可加入收藏。' }}</span>
           </div>
         </article>
       </main>

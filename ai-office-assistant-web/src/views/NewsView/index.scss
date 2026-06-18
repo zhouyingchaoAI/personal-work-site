@@ -614,6 +614,7 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
 .news-item-source-row {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
 
   button {
     display: inline-flex;
@@ -1003,5 +1004,108 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
 
   .news-source-remove {
     width: 100%;
+  }
+}
+
+// 收藏功能：条目星标按钮、收藏夹搜索框与收藏列表元信息。
+.news-fav-toggle {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 9px;
+  border: 1px solid #f0d9a8;
+  border-radius: 6px;
+  color: #b3801c;
+  background: #fffaf0;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    border-color: #e9c477;
+    background: #fff4dc;
+  }
+
+  &.active {
+    border-color: #e6b94d;
+    color: #ffffff;
+    background: linear-gradient(180deg, #f3b53a, #e09c19);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.news-fav-meta {
+  color: $text-muted;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.news-item-top .news-fav-count {
+  flex: none;
+  color: $text-muted;
+
+  .el-icon {
+    color: #c9cdd6;
+  }
+
+  &.active {
+    color: #c8961f;
+
+    .el-icon {
+      color: #e6a817;
+    }
+  }
+}
+
+.news-fav-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  border: 1px solid $border;
+  border-radius: 10px;
+  background: #f8fbff;
+
+  > .el-icon {
+    color: $primary;
+    font-size: 18px;
+  }
+
+  input {
+    flex: 1;
+    min-width: 0;
+    height: 34px;
+    border: 0;
+    background: transparent;
+    font-size: 14px;
+    color: $text-strong;
+
+    &:focus {
+      outline: none;
+    }
+  }
+
+  .news-fav-search-clear {
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid #d3def0;
+    border-radius: 6px;
+    color: $text-muted;
+    background: #ffffff;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+
+    &:hover {
+      color: $primary;
+      border-color: $primary-border;
+    }
   }
 }

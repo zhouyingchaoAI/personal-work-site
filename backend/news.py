@@ -11,6 +11,32 @@ def news_dir():
     return path
 
 
+def user_news_dir(username):
+    """每个账号的个人资讯存储目录。"""
+    path = user_root(username) / "news"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def clean_news_sources(sources):
+    if isinstance(sources, str):
+        sources = [{"name": "", "url": line.strip()} for line in sources.splitlines() if line.strip()]
+    clean_sources = []
+    for item in sources or []:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url", "") or "").strip()
+        if not url:
+            continue
+        if not re.match(r"^https?://", url, re.I):
+            raise ValueError("资讯网页路径必须以 http:// 或 https:// 开头")
+        clean_sources.append({
+            "name": str(item.get("name", "") or "").strip(),
+            "url": url,
+        })
+    return clean_sources
+
+
 def news_config_payload():
     config = read_config()
     return {
@@ -24,23 +50,7 @@ def news_config_payload():
 
 def save_news_config(payload):
     config = read_config()
-    sources = payload.get("sources", [])
-    if isinstance(sources, str):
-        sources = [{"name": "", "url": line.strip()} for line in sources.splitlines() if line.strip()]
-    clean_sources = []
-    for item in sources:
-        if not isinstance(item, dict):
-            continue
-        url = str(item.get("url", "") or "").strip()
-        if not url:
-            continue
-        if not re.match(r"^https?://", url, re.I):
-            raise ValueError("资讯网页路径必须以 http:// 或 https:// 开头")
-        clean_sources.append({
-            "name": str(item.get("name", "") or "").strip(),
-            "url": url,
-        })
-    config["news_sources"] = clean_sources
+    config["news_sources"] = clean_news_sources(payload.get("sources", []))
     config["news_search_query"] = str(payload.get("search_query", "") or "").strip()
     config["news_auto_search"] = bool(payload.get("auto_search", True))
     config["news_auto_push"] = bool(payload.get("auto_push", True))
@@ -48,6 +58,37 @@ def save_news_config(payload):
     config["news_config_updated_at"] = datetime.now().isoformat(timespec="seconds")
     write_config(config)
     return {"ok": True, "config": news_config_payload()}
+
+
+def personal_news_config_payload(username):
+    """读取某账号的个人资讯配置。"""
+    store = read_config().get("user_news_config", {}) or {}
+    item = store.get(username, {}) or {}
+    return {
+        "sources": item.get("sources", []),
+        "search_query": item.get("search_query", ""),
+        "auto_search": bool(item.get("auto_search", True)),
+        "auto_push": bool(item.get("auto_push", False)),
+        "push_time": item.get("push_time", "08:30"),
+        "updated_at": item.get("updated_at", ""),
+    }
+
+
+def save_personal_news_config(username, payload):
+    if not username:
+        raise ValueError("未登录，无法保存个人资讯配置")
+    config = read_config()
+    store = config.setdefault("user_news_config", {})
+    store[username] = {
+        "sources": clean_news_sources(payload.get("sources", [])),
+        "search_query": str(payload.get("search_query", "") or "").strip(),
+        "auto_search": bool(payload.get("auto_search", True)),
+        "auto_push": bool(payload.get("auto_push", False)),
+        "push_time": str(payload.get("push_time", "") or "08:30").strip(),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    write_config(config)
+    return {"ok": True, "config": personal_news_config_payload(username)}
 
 
 def strip_html_text(text):
@@ -136,8 +177,8 @@ def fetch_news_source(source):
     }
 
 
-def latest_news_issue():
-    path = news_dir() / "latest.json"
+def latest_news_issue(directory=None):
+    path = (directory or news_dir()) / "latest.json"
     if not path.exists():
         return None
     try:
@@ -146,11 +187,11 @@ def latest_news_issue():
         return None
 
 
-def news_issue_by_date(date_text):
+def news_issue_by_date(date_text, directory=None):
     date_value = str(date_text or "").strip()
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", date_value):
         raise ValueError("资讯日期格式应为 YYYY-MM-DD")
-    path = news_dir() / f"{date_value}.json"
+    path = (directory or news_dir()) / f"{date_value}.json"
     if not path.exists():
         return None
     try:
@@ -159,13 +200,13 @@ def news_issue_by_date(date_text):
         return None
 
 
-def news_history(limit=30, include_config_details=False):
+def news_history(limit=30, include_config_details=False, directory=None):
     try:
         limit = max(1, min(int(limit or 30), 200))
     except Exception:
         limit = 30
     issues = []
-    for path in sorted(news_dir().glob("*.json"), reverse=True):
+    for path in sorted((directory or news_dir()).glob("*.json"), reverse=True):
         if path.name == "latest.json":
             continue
         try:
@@ -191,28 +232,31 @@ def news_history(limit=30, include_config_details=False):
     return issues
 
 
-def save_news_issue(issue):
-    issue_path = news_dir() / f"{issue['date']}.json"
-    latest_path = news_dir() / "latest.json"
+def save_news_issue(issue, directory=None):
+    directory = directory or news_dir()
+    issue_path = directory / f"{issue['date']}.json"
+    latest_path = directory / "latest.json"
     raw = json.dumps(issue, ensure_ascii=False, indent=2)
     issue_path.write_text(raw, encoding="utf-8")
     latest_path.write_text(raw, encoding="utf-8")
 
 
-def public_news_issue(issue, include_config_details=False):
+def public_news_issue(issue, include_config_details=False, with_counts=False):
     if not issue:
         return None
     item = dict(issue)
     if not include_config_details:
         for key in ("sources", "errors", "search_query", "auto_search"):
             item.pop(key, None)
+    if with_counts:
+        item = annotate_favorite_counts(item)
     return item
 
 
 def news_latest(include_config=False):
     result = {
         "ok": True,
-        "issue": public_news_issue(latest_news_issue(), include_config),
+        "issue": public_news_issue(latest_news_issue(), include_config, with_counts=True),
         "history": news_history(30, include_config),
     }
     if include_config:
@@ -227,11 +271,230 @@ def news_history_api(payload, username="", include_config=False):
         issue = news_issue_by_date(date_value)
         if not issue:
             return {"ok": False, "error": "没有找到该日期的每日资讯"}
-        return {"ok": True, "issue": public_news_issue(issue, include_config), "history": news_history(30, include_config)}
+        return {"ok": True, "issue": public_news_issue(issue, include_config, with_counts=True), "history": news_history(30, include_config)}
     return {"ok": True, "history": news_history(payload.get("limit", 30), include_config)}
 
 
-def local_news_issue(source_results, errors, search_query, auto_search, username):
+def personal_news_latest(username):
+    """个人资讯最新一期 + 历史 + 该账号自己的配置（账号本人可见全部细节）。"""
+    directory = user_news_dir(username)
+    return {
+        "ok": True,
+        "issue": public_news_issue(latest_news_issue(directory), True, with_counts=True),
+        "history": news_history(30, True, directory),
+        "config": personal_news_config_payload(username),
+    }
+
+
+def personal_news_history_api(payload, username):
+    payload = payload or {}
+    directory = user_news_dir(username)
+    date_value = str(payload.get("date") or "").strip()
+    if date_value:
+        issue = news_issue_by_date(date_value, directory)
+        if not issue:
+            return {"ok": False, "error": "没有找到该日期的个人资讯"}
+        return {"ok": True, "issue": public_news_issue(issue, True, with_counts=True), "history": news_history(30, True, directory)}
+    return {"ok": True, "history": news_history(payload.get("limit", 30), True, directory)}
+
+
+def user_news_favorites_path(username):
+    return user_news_dir(username) / "favorites.json"
+
+
+def read_news_favorites(username):
+    path = user_news_favorites_path(username)
+    if not path.exists():
+        return []
+    try:
+        data = read_json_lenient(path)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def write_news_favorites(username, favorites):
+    user_news_favorites_path(username).write_text(
+        json.dumps(favorites, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def favorite_match_key(item):
+    """同一条资讯的身份键：标题+链接组合。
+
+    只用链接会让「同源不同条」的多条资讯撞键，导致收藏一条却多条显示已收藏；
+    组合标题与链接后，仅当标题和链接都相同才视为同一条。
+    """
+    title = str(item.get("title", "") or "").strip().lower()
+    url = str(item.get("url", "") or "").strip().lower()
+    return f"{title}|{url}"
+
+
+def news_stats_path():
+    """全站收藏统计文件（item 身份键 -> 收藏过该条的用户名列表）。"""
+    return news_dir() / "favorite_stats.json"
+
+
+def read_news_stats():
+    path = news_stats_path()
+    if not path.exists():
+        return rebuild_news_stats()
+    try:
+        data = read_json_lenient(path)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def write_news_stats(stats):
+    news_stats_path().write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def rebuild_news_stats():
+    """扫描所有账号的收藏夹，重建全站收藏统计（首次或文件丢失时）。"""
+    stats = {}
+    try:
+        for entry in USER_DATA_DIR.iterdir():
+            if not entry.is_dir() or entry.name.startswith("_") or entry.name == "templates":
+                continue
+            fav_path = entry / "news" / "favorites.json"
+            if not fav_path.exists():
+                continue
+            try:
+                favorites = read_json_lenient(fav_path)
+            except Exception:
+                continue
+            if not isinstance(favorites, list):
+                continue
+            for item in favorites:
+                if not isinstance(item, dict):
+                    continue
+                holders = stats.setdefault(favorite_match_key(item), [])
+                if entry.name not in holders:
+                    holders.append(entry.name)
+    except Exception:
+        pass
+    try:
+        write_news_stats(stats)
+    except Exception:
+        pass
+    return stats
+
+
+def update_news_stats(item, username, add):
+    """收藏/取消时维护全站统计。add=True 收藏，False 取消。"""
+    stats = read_news_stats()
+    key = favorite_match_key(item)
+    holders = stats.get(key, [])
+    if add:
+        if username not in holders:
+            holders.append(username)
+        stats[key] = holders
+    else:
+        holders = [name for name in holders if name != username]
+        if holders:
+            stats[key] = holders
+        else:
+            stats.pop(key, None)
+    write_news_stats(stats)
+
+
+def news_favorite_count(item):
+    return len(read_news_stats().get(favorite_match_key(item), []))
+
+
+def annotate_favorite_counts(issue, stats=None):
+    """为简报条目附加 fav_count（多少人收藏过），返回新结构不改原数据。"""
+    if not issue:
+        return issue
+    items = issue.get("items")
+    if not isinstance(items, list):
+        return issue
+    if stats is None:
+        stats = read_news_stats()
+    annotated = [
+        dict(it, fav_count=len(stats.get(favorite_match_key(it), [])))
+        for it in items
+        if isinstance(it, dict)
+    ]
+    return dict(issue, items=annotated)
+
+
+def news_favorites_api(payload, username):
+    """列出/搜索个人收藏夹。q 为空则返回全部，按收藏时间倒序。"""
+    query = str((payload or {}).get("q") or "").strip().lower()
+    favorites = read_news_favorites(username)
+    if query:
+        def match(item):
+            haystack = " ".join(
+                str(item.get(field, "") or "")
+                for field in ("title", "source", "impact", "action", "url", "issue_title")
+            ).lower()
+            return query in haystack
+        favorites = [item for item in favorites if match(item)]
+    favorites = sorted(favorites, key=lambda item: str(item.get("saved_at", "") or ""), reverse=True)
+    stats = read_news_stats()
+    favorites = [dict(item, fav_count=len(stats.get(favorite_match_key(item), []))) for item in favorites]
+    return {"ok": True, "favorites": favorites}
+
+
+def add_news_favorite(payload, username):
+    if not username:
+        raise ValueError("未登录，无法收藏")
+    import uuid
+    payload = payload or {}
+    item = payload.get("item") if isinstance(payload.get("item"), dict) else payload
+    url = str(item.get("url", "") or "").strip()
+    title = str(item.get("title", "") or "").strip()
+    if not title and not url:
+        raise ValueError("收藏内容为空")
+    favorites = read_news_favorites(username)
+    key = favorite_match_key(item)
+    for existing in favorites:
+        if favorite_match_key(existing) == key:
+            return {"ok": True, "favorites": favorites, "already": True}
+    saved = {
+        "id": uuid.uuid4().hex,
+        "title": title or "未命名资讯",
+        "source": str(item.get("source", "") or "").strip(),
+        "url": url,
+        "impact": str(item.get("impact", "") or "").strip(),
+        "action": str(item.get("action", "") or "").strip(),
+        "scope": str(item.get("scope", "") or "").strip(),
+        "issue_date": str(item.get("issue_date", "") or "").strip(),
+        "issue_title": str(item.get("issue_title", "") or "").strip(),
+        "saved_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    favorites.append(saved)
+    write_news_favorites(username, favorites)
+    update_news_stats(saved, username, add=True)
+    return {"ok": True, "favorites": favorites, "fav_count": news_favorite_count(saved)}
+
+
+def remove_news_favorite(payload, username):
+    if not username:
+        raise ValueError("未登录，无法操作收藏夹")
+    payload = payload or {}
+    fav_id = str(payload.get("id") or "").strip()
+    url = str(payload.get("url") or "").strip()
+    title = str(payload.get("title") or "").strip()
+    favorites = read_news_favorites(username)
+
+    def keep(item):
+        if fav_id:
+            return item.get("id") != fav_id
+        return favorite_match_key(item) != favorite_match_key({"url": url, "title": title})
+
+    removed = [item for item in favorites if not keep(item)]
+    favorites = [item for item in favorites if keep(item)]
+    write_news_favorites(username, favorites)
+    for item in removed:
+        update_news_stats(item, username, add=False)
+    fav_count = news_favorite_count(removed[0]) if removed else 0
+    return {"ok": True, "favorites": favorites, "removed": len(removed), "fav_count": fav_count}
+
+
+def local_news_issue(source_results, errors, search_query, auto_search, username, directory=None):
     today = datetime.now().strftime("%Y-%m-%d")
     items = []
     seen = set()
@@ -290,13 +553,22 @@ def local_news_issue(source_results, errors, search_query, auto_search, username
         "auto_search": auto_search,
         "mode": "local_scrape",
     }
-    save_news_issue(issue)
+    save_news_issue(issue, directory)
     return {"ok": True, "issue": issue}
 
 
 def generate_news_issue(payload=None, username="system"):
+    return _build_news_issue(payload, username, news_config_payload(), news_dir())
+
+
+def generate_personal_news_issue(payload=None, username=""):
+    if not username:
+        raise ValueError("未登录，无法生成个人资讯")
+    return _build_news_issue(payload, username, personal_news_config_payload(username), user_news_dir(username))
+
+
+def _build_news_issue(payload, username, config_payload, directory):
     payload = payload or {}
-    config_payload = news_config_payload()
     settings = assistant_settings()
 
     sources = config_payload["sources"]
@@ -317,7 +589,7 @@ def generate_news_issue(payload=None, username="system"):
         if not source_results:
             detail = "；".join(errors[:3])
             raise ValueError(f"未抓取到可用网页内容，且未配置 AI 接口，无法生成每日资讯。{detail}")
-        return local_news_issue(source_results, errors, search_query, auto_search, username)
+        return local_news_issue(source_results, errors, search_query, auto_search, username, directory)
 
     source_text = "\n\n".join(
         f"【{item['name']}】{item['url']}\n"
@@ -364,9 +636,9 @@ def generate_news_issue(payload=None, username="system"):
         parsed = json.loads(result_text)
     except Exception as exc:
         if source_results:
-            fallback = local_news_issue(source_results, errors + [f"AI 生成失败：{exc}"], search_query, auto_search, username)
+            fallback = local_news_issue(source_results, errors + [f"AI 生成失败：{exc}"], search_query, auto_search, username, directory)
             fallback["issue"]["summary"] += " AI 生成失败，已使用本地抓取结果兜底。"
-            save_news_issue(fallback["issue"])
+            save_news_issue(fallback["issue"], directory)
             return fallback
         raise ValueError(f"每日资讯生成失败：{exc}")
 
@@ -383,28 +655,46 @@ def generate_news_issue(payload=None, username="system"):
         "search_query": search_query,
         "auto_search": auto_search,
     }
-    save_news_issue(issue)
+    save_news_issue(issue, directory)
     return {"ok": True, "issue": issue}
+
+
+def news_due_for_regen(latest, push_time, updated_at):
+    """判断某资讯目录今天是否需要（重新）生成。push_time 之前返回 False。"""
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    push_time = str(push_time or "08:30")
+    if re.match(r"^\d{2}:\d{2}$", push_time) and now.strftime("%H:%M") < push_time:
+        return False
+    latest_generated_at = str((latest or {}).get("generated_at", "") or "")
+    needs_retry = bool(latest and latest.get("date") == today and not latest.get("items"))
+    config_changed = bool(updated_at and latest_generated_at and str(updated_at) > latest_generated_at)
+    return (not latest) or latest.get("date") != today or needs_retry or config_changed
 
 
 def news_auto_worker():
     while True:
         try:
             config = read_config()
+            # 公共资讯：管理员配置，全站共享
             if config.get("news_auto_push", True):
                 latest = latest_news_issue()
-                now = datetime.now()
-                today = now.strftime("%Y-%m-%d")
-                push_time = str(config.get("news_push_time", "08:30") or "08:30")
-                if re.match(r"^\d{2}:\d{2}$", push_time) and now.strftime("%H:%M") < push_time:
-                    time.sleep(1800)
-                    continue
-                config_updated_at = str(config.get("news_config_updated_at", "") or "")
-                latest_generated_at = str((latest or {}).get("generated_at", "") or "")
-                needs_retry = bool(latest and latest.get("date") == today and not latest.get("items"))
-                config_changed = bool(config_updated_at and latest_generated_at and config_updated_at > latest_generated_at)
-                if not latest or latest.get("date") != today or needs_retry or config_changed:
+                if news_due_for_regen(latest, config.get("news_push_time", "08:30"), config.get("news_config_updated_at", "")):
                     generate_news_issue({"auto_search": config.get("news_auto_search", True)}, "system")
+            # 个人资讯：每个账号配置自己的来源，定期自动推送
+            store = config.get("user_news_config", {}) or {}
+            for username, item in list(store.items()):
+                try:
+                    if not isinstance(item, dict) or not item.get("auto_push"):
+                        continue
+                    has_input = bool(item.get("sources")) or (item.get("auto_search", True) and item.get("search_query"))
+                    if not has_input:
+                        continue
+                    latest = latest_news_issue(user_news_dir(username))
+                    if news_due_for_regen(latest, item.get("push_time", "08:30"), item.get("updated_at", "")):
+                        generate_personal_news_issue({"auto_search": item.get("auto_search", True)}, username)
+                except Exception:
+                    pass
         except Exception:
             pass
         time.sleep(1800)

@@ -632,7 +632,7 @@ def _ragflow_ask(question: str, top_k: int, username: str, settings: dict, offic
                 "dataset_id": chunk.get("dataset_id", chunk.get("kb_id", "")),
                 "doc_name": chunk.get("document_name", chunk.get("docnm_kwd", "")),
                 "score": round(float(chunk.get("similarity", 0) or 0), 4),
-                "text": str(chunk.get("content", ""))[:400],
+                "text": str(chunk.get("content", ""))[:4000],
                 "page": _ragflow_chunk_page(chunk),
             }
         )
@@ -1872,7 +1872,7 @@ def kb_ask_stream(handler, payload: dict, username: str = ""):
                 "dataset_id": chunk.get("dataset_id", chunk.get("kb_id", "")),
                 "doc_name": chunk.get("document_name", chunk.get("docnm_kwd", "")),
                 "score": round(float(chunk.get("similarity", 0) or 0), 4),
-                "text": str(chunk.get("content", ""))[:400],
+                "text": str(chunk.get("content", ""))[:4000],
                 "page": _ragflow_chunk_page(chunk),
             })
         if not final_answer:

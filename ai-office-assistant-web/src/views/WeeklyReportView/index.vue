@@ -17,11 +17,14 @@ import {
   getMailConfig,
   getReports,
   getWeeklyPrefill,
+  listDiaries,
   optimizeText,
   redirectToLoginOnUnauthorized,
   resourceUrl,
   sendMail,
   summarizeDiaries,
+  type DiaryEntry,
+  type DiarySummaryRows,
   type DraftResponse,
   type ReportFile,
   type SendMailPayload,
@@ -954,68 +957,141 @@ async function loadLatestHistory(showSuccess = true) {
   }
 }
 
-// 按后端已有周报格式把日记总结文本拆成三段内容。
-function parseDiarySummary(summary: string) {
-  const parsed: Record<SectionId, string[]> = { summary: [], follow: [], next: [] }
-  let current: SectionId | '' = ''
-  summary.split('\n').forEach((line) => {
-    const trimmed = line.trim()
-    if (!trimmed) return
-    if (trimmed.includes('本周工作总结') || trimmed.includes('本周工作')) {
-      current = 'summary'
-      return
-    }
-    if (trimmed.includes('重点工作跟进') || trimmed.includes('重点工作')) {
-      current = 'follow'
-      return
-    }
-    if (trimmed.includes('下周工作计划') || trimmed.includes('下周工作')) {
-      current = 'next'
-      return
-    }
-    const content = trimmed.replace(/^[\d一二三四五六七八九十]+[.、．\s]+/, '').replace(/^[-*]\s+/, '').trim()
-    if (current && content) parsed[current].push(content)
-  })
-  return parsed
+// ===== 从工作日记智能总结：三步弹框（与工作日记模块「总结本周→去周报」一致）=====
+const weekdayTexts = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+const summarizeDialogVisible = ref(false)
+const summarizeStep = ref<1 | 2 | 3>(1)
+const summarizeBusy = ref(false)
+const summarizeRange = ref<string[]>([])
+const rangeDiaries = ref<DiaryEntry[]>([])
+const selectedDates = ref<string[]>([])
+const suggestedCategories = ref<string[]>([])
+const summarizeCategories = ref<string[]>([])
+const summarizeResult = ref<DiarySummaryRows | null>(null)
+
+function parseDateValue(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return null
+  return new Date(year, month - 1, day)
 }
 
-async function summarizeFromDiaries() {
-  if (!weeklyPeriod.start || !weeklyPeriod.end) {
-    ElMessage.warning('请选择周报时段')
+function formatMonthDay(value: string) {
+  const date = parseDateValue(value)
+  if (!date) return value
+  return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`
+}
+
+function formatWeekday(value: string) {
+  const date = parseDateValue(value)
+  return date ? weekdayTexts[date.getDay()].replace('星期', '周') : ''
+}
+
+function diaryPreview(entry: DiaryEntry) {
+  return entry.today_work_preview || entry.today_work || entry.tomorrow_plan || entry.thoughts || '无内容'
+}
+
+function summarizeWeekRange(reference: Date) {
+  const day = reference.getDay() || 7
+  const monday = new Date(reference)
+  monday.setHours(0, 0, 0, 0)
+  monday.setDate(reference.getDate() - day + 1)
+  const friday = new Date(monday)
+  friday.setDate(monday.getDate() + 4)
+  return { start: toDateInputValue(monday), end: toDateInputValue(friday) }
+}
+
+// 第一步：打开弹框，默认沿用当前周报时段（没有则取本周），加载日记列表并默认全选。
+async function openSummarizeDialog() {
+  const fallback = summarizeWeekRange(new Date())
+  summarizeStep.value = 1
+  summarizeResult.value = null
+  suggestedCategories.value = []
+  summarizeCategories.value = []
+  summarizeRange.value = [weeklyPeriod.start || fallback.start, weeklyPeriod.end || fallback.end]
+  summarizeDialogVisible.value = true
+  await loadRangeDiaries()
+}
+
+async function loadRangeDiaries() {
+  const [start, end] = summarizeRange.value
+  if (!start || !end) {
+    rangeDiaries.value = []
+    selectedDates.value = []
     return
   }
-  loading.summarize = true
+  summarizeBusy.value = true
   try {
-    const data = await summarizeDiaries(weeklyPeriod.start, weeklyPeriod.end)
+    const result = await listDiaries({ start, end, limit: 200 })
+    rangeDiaries.value = result.diaries
+    selectedDates.value = result.diaries.map((entry) => entry.date)
+  } catch (error) {
+    rangeDiaries.value = []
+    selectedDates.value = []
+    ElMessage.error(error instanceof Error ? error.message : '加载日记失败')
+  } finally {
+    summarizeBusy.value = false
+  }
+}
+
+// 第二步：拉取上一份周报「本周总结 + 下周计划」的分类作提示，供编辑。
+async function goToCategoryStep() {
+  if (!selectedDates.value.length) {
+    ElMessage.warning('请至少勾选一篇日记')
+    return
+  }
+  summarizeStep.value = 2
+  summarizeBusy.value = true
+  try {
+    const prefill = await getWeeklyPrefill()
+    const cats = Array.from(
+      new Set(
+        [...(prefill.summary_rows || []), ...(prefill.next_rows || [])]
+          .map((row) => String(row.category || '').trim())
+          .filter(Boolean),
+      ),
+    )
+    suggestedCategories.value = cats
+    if (!summarizeCategories.value.length) summarizeCategories.value = [...cats]
+  } catch {
+    suggestedCategories.value = []
+  } finally {
+    summarizeBusy.value = false
+  }
+}
+
+// 第三步：调用 AI 总结所选日记，展示结果。
+async function runSummarize() {
+  const [start, end] = summarizeRange.value
+  summarizeBusy.value = true
+  try {
+    const data = await summarizeDiaries(start, end, summarizeCategories.value, selectedDates.value)
     if (!data.ok) {
-      setStatus(data.error || '工作日记总结失败', 'error')
+      ElMessage.error(data.error || '工作日记总结失败')
       return
     }
     if (data.mode === 'empty') {
-      setStatus(data.warning || '该范围内没有工作日记', 'error')
+      ElMessage.warning(data.warning || '所选日记没有内容')
       return
     }
-    // 日记总结只更新「本周工作总结」和「下周工作计划」；「重点工作跟进」沿用历史周报内容，不覆盖。
-    if (data.rows && [data.rows.summary, data.rows.next].some((rows) => rows?.length)) {
-      // 后端已返回结构化行（分类对齐历史周报），直接应用。
-      applyRows('summary', data.rows.summary || [])
-      applyRows('next', data.rows.next || [])
-    } else {
-      // 兼容回退：后端只给了纯文本时按段落拆分。
-      const parsed = parseDiarySummary(data.summary || '')
-      applyRows('summary', parsed.summary.map((content) => ({ category: '', content, status: '已完成' })))
-      applyRows('next', parsed.next.map((content) => ({ category: '', content, difficulty: '正常' })))
-    }
-    syncActiveSectionToFirstFilled()
-    setStatus('已更新本周工作总结和下周工作计划（重点工作跟进保留上周内容），请检查后再生成正文', 'ok')
-    activeStep.value = 1
-    markReportDirty()
-    saveWeeklyDraft()
+    summarizeResult.value = data.rows || { summary: [], follow: [], next: [] }
+    summarizeStep.value = 3
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : '工作日记总结失败', 'error')
+    ElMessage.error(error instanceof Error ? error.message : '工作日记总结失败')
   } finally {
-    loading.summarize = false
+    summarizeBusy.value = false
   }
+}
+
+// 确认结果：直接套用到当前周报（本周总结/下周计划），重点工作跟进沿用历史周报。
+async function confirmSummarize() {
+  const [start, end] = summarizeRange.value
+  const rows = summarizeResult.value || { summary: [], follow: [], next: [] }
+  summarizeDialogVisible.value = false
+  await initializeFromDiarySummary({
+    start,
+    end,
+    rows: { summary: rows.summary || [], next: rows.next || [] },
+  })
 }
 
 async function generateReport() {
@@ -1360,7 +1436,7 @@ onMounted(initializeWeekly)
         </div>
 
         <div class="toolbar-actions">
-          <IconTextButton icon="sparkle" size="md" :disabled="loading.summarize" @click="summarizeFromDiaries">
+          <IconTextButton icon="sparkle" size="md" :disabled="summarizeBusy" @click="openSummarizeDialog">
             从工作日记智能总结
           </IconTextButton>
           <IconTextButton icon="history" size="md" :disabled="loading.prefill" @click="loadLatestHistory(true)">
@@ -1763,6 +1839,122 @@ onMounted(initializeWeekly)
       destroy-on-close
     >
       <div class="mail-body-dialog-preview" v-html="mailBodyPreviewHtml"></div>
+    </el-dialog>
+
+    <el-dialog
+      v-model="summarizeDialogVisible"
+      class="diary-summarize-dialog"
+      title="从工作日记智能总结"
+      width="min(640px, 94vw)"
+      append-to-body
+      destroy-on-close
+      :close-on-click-modal="false"
+    >
+      <el-steps :active="summarizeStep - 1" align-center finish-status="success" class="diary-summarize-steps">
+        <el-step title="选择日记" />
+        <el-step title="确认分类" />
+        <el-step title="查看结果" />
+      </el-steps>
+
+      <!-- 第一步：选时间范围 + 勾选日记 -->
+      <div v-if="summarizeStep === 1" class="diary-summarize-step">
+        <p class="diary-summarize-tip">选择日期范围，并勾选要纳入本次总结的日记（默认全选）。</p>
+        <el-date-picker
+          v-model="summarizeRange"
+          type="daterange"
+          value-format="YYYY-MM-DD"
+          format="YYYY.MM.DD"
+          range-separator="→"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          @change="loadRangeDiaries"
+        />
+        <div class="diary-summarize-list">
+          <p v-if="summarizeBusy" class="diary-summarize-tip diary-summarize-tip--muted">正在加载日记...</p>
+          <el-checkbox-group v-else v-model="selectedDates">
+            <el-checkbox v-for="entry in rangeDiaries" :key="entry.date" :value="entry.date" class="diary-summarize-check">
+              <strong>{{ formatMonthDay(entry.date) }} {{ formatWeekday(entry.date) }}</strong>
+              <span>{{ diaryPreview(entry) }}</span>
+            </el-checkbox>
+          </el-checkbox-group>
+          <p v-if="!summarizeBusy && !rangeDiaries.length" class="diary-summarize-tip diary-summarize-tip--muted">
+            该日期范围内没有日记。
+          </p>
+        </div>
+      </div>
+
+      <!-- 第二步：确认/编辑任务分类 -->
+      <div v-else-if="summarizeStep === 2" class="diary-summarize-step">
+        <p class="diary-summarize-tip">
+          下列分类取自上一份周报的「本周总结」与「下周计划」。确认要把本周日记总结归入这些分类（可增删、回车新建）：
+        </p>
+        <el-select
+          v-model="summarizeCategories"
+          class="diary-summarize-select"
+          multiple
+          filterable
+          allow-create
+          default-first-option
+          :loading="summarizeBusy"
+          placeholder="输入分类后回车添加，例如：个人办公智能体"
+        >
+          <el-option v-for="cat in suggestedCategories" :key="cat" :label="cat" :value="cat" />
+        </el-select>
+        <p v-if="!summarizeBusy && !suggestedCategories.length" class="diary-summarize-tip diary-summarize-tip--muted">
+          未找到历史周报分类，可直接输入本周的任务分类。
+        </p>
+      </div>
+
+      <!-- 第三步：查看总结结果 -->
+      <div v-else class="diary-summarize-step">
+        <p class="diary-summarize-tip">总结结果预览（「重点工作跟进」将沿用历史周报，不在此处生成）：</p>
+        <div class="diary-summarize-result">
+          <h4>本周工作总结</h4>
+          <ul>
+            <li v-for="(row, i) in summarizeResult?.summary || []" :key="`s${i}`">
+              <em>{{ row.category }}</em>{{ row.content }}
+            </li>
+            <li v-if="!(summarizeResult?.summary || []).length" class="diary-summarize-empty">（无）</li>
+          </ul>
+          <h4>下周工作计划</h4>
+          <ul>
+            <li v-for="(row, i) in summarizeResult?.next || []" :key="`n${i}`">
+              <em>{{ row.category }}</em>{{ row.content }}
+            </li>
+            <li v-if="!(summarizeResult?.next || []).length" class="diary-summarize-empty">（无）</li>
+          </ul>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="prompt-dialog-actions">
+          <el-button class="prompt-dialog-button" @click="summarizeDialogVisible = false">取消</el-button>
+          <el-button
+            v-if="summarizeStep === 1"
+            class="prompt-dialog-button prompt-dialog-button--primary"
+            :disabled="summarizeBusy || !selectedDates.length"
+            @click="goToCategoryStep"
+          >
+            下一步
+          </el-button>
+          <template v-else-if="summarizeStep === 2">
+            <el-button class="prompt-dialog-button" @click="summarizeStep = 1">上一步</el-button>
+            <el-button
+              class="prompt-dialog-button prompt-dialog-button--primary"
+              :loading="summarizeBusy"
+              @click="runSummarize"
+            >
+              开始总结
+            </el-button>
+          </template>
+          <template v-else>
+            <el-button class="prompt-dialog-button" @click="summarizeStep = 2">重新总结</el-button>
+            <el-button class="prompt-dialog-button prompt-dialog-button--primary" @click="confirmSummarize">
+              应用到周报
+            </el-button>
+          </template>
+        </div>
+      </template>
     </el-dialog>
 
     <section class="wizard-footer">
