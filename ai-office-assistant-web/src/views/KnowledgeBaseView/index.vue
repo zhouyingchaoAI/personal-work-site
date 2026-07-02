@@ -72,6 +72,17 @@ const chatBodyRef = ref<HTMLElement | null>(null)
 const chatSessions = ref<KnowledgeChatSession[]>([])
 const currentSessionId = ref('')
 const sessionsLoading = ref(false)
+const selectedKbIds = ref<string[]>([])
+
+const selectableKbs = computed(() => kbs.value.filter((kb) => kb.chunk_count > 0))
+const activeKbIds = computed(() => selectedKbIds.value.length ? selectedKbIds.value : selectableKbs.value.map((kb) => kb.id))
+const selectedKbSummary = computed(() => {
+  if (!selectableKbs.value.length) return '暂无可用知识库'
+  const active = activeKbIds.value
+  if (active.length === selectableKbs.value.length) return `全部知识库（${active.length}）`
+  if (active.length === 1) return kbs.value.find((kb) => kb.id === active[0])?.name || '1 个知识库'
+  return `已选 ${active.length} 个知识库`
+})
 
 function escapeHtml(value: string) {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -82,6 +93,16 @@ function splitSessionTitle(title: string) {
   const match = text.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})(?:\s+(.+))?$/)
   if (!match) return { topic: text || '新会话', date: '' }
   return { topic: match[2]?.trim() || '新会话', date: match[1] }
+}
+
+function citationSourceIndex(citeNumber: number, sources: KnowledgeAskSource[] = []) {
+  const byExactIndex = sources.findIndex((source) => source.index === citeNumber)
+  if (byExactIndex >= 0) return byExactIndex
+  const byZeroBasedRagflowIndex = sources.findIndex((source) => source.index === citeNumber + 1)
+  if (byZeroBasedRagflowIndex >= 0) return byZeroBasedRagflowIndex
+  if (citeNumber >= 0 && citeNumber < sources.length) return citeNumber
+  const oneBasedOffset = citeNumber - 1
+  return oneBasedOffset >= 0 && oneBasedOffset < sources.length ? oneBasedOffset : -1
 }
 
 function renderAnswer(msg: ChatMessage) {
@@ -99,9 +120,23 @@ function renderAnswer(msg: ChatMessage) {
   const cited = text
     .replace(/\s*##(\d+)\$\$/g, (_, n) => ` [CITE:${n}]`)
     .replace(/\s*\[ID:(\d+)\]/g, (_, n) => ` [CITE:${n}]`)
+  const fallbackCitationIndexes = new Map<number, number>()
+  let fallbackNextSourceIndex = 0
   let html = renderMarkdown(cited).replace(
     /\[CITE:(\d+)\]/g,
-    (_, n) => `<sup class="kb-cite" data-cite="${Number(n)}">${Number(n) + 1}</sup>`,
+    (_, n) => {
+      const citeNumber = Number(n)
+      let sourceIndex = citationSourceIndex(citeNumber, msg.sources || [])
+      if (sourceIndex < 0 && msg.sources?.length) {
+        if (!fallbackCitationIndexes.has(citeNumber) && fallbackNextSourceIndex < msg.sources.length) {
+          fallbackCitationIndexes.set(citeNumber, fallbackNextSourceIndex)
+          fallbackNextSourceIndex += 1
+        }
+        sourceIndex = fallbackCitationIndexes.get(citeNumber) ?? -1
+      }
+      const label = sourceIndex >= 0 ? (msg.sources || [])[sourceIndex].index : citeNumber + 1
+      return `<sup class="kb-cite" data-cite="${citeNumber}" data-cite-index="${sourceIndex}">${label}</sup>`
+    },
   )
   if (think) {
     html =
@@ -116,6 +151,21 @@ function scrollChat() {
     chatBodyRef.value?.scrollTo({ top: chatBodyRef.value.scrollHeight, behavior: 'smooth' })
   })
 }
+
+function defaultChatKbIds() {
+  return selectableKbs.value.map((kb) => kb.id)
+}
+
+function normalizeChatKbSelection(ids: string[] = []) {
+  const available = new Set(selectableKbs.value.map((kb) => kb.id))
+  const filtered = ids.filter((id) => available.has(id))
+  selectedKbIds.value = filtered.length ? filtered : defaultChatKbIds()
+}
+
+function applySessionKbSelection(session?: KnowledgeChatSession) {
+  normalizeChatKbSelection(session?.selected_kb_ids || [])
+}
+
 
 async function loadChatSessions(selectLatest = false) {
   sessionsLoading.value = true
@@ -135,7 +185,10 @@ async function loadChatSessions(selectLatest = false) {
 async function loadChatHistory(sessionId = currentSessionId.value) {
   try {
     const result = sessionId ? await getKnowledgeChatSession(sessionId) : await getKnowledgeChatHistory()
-    if (result.session?.id) currentSessionId.value = result.session.id
+    if (result.session?.id) {
+      currentSessionId.value = result.session.id
+      applySessionKbSelection(result.session)
+    }
     chat.value = result.messages || []
     scrollChat()
   } catch {
@@ -145,9 +198,10 @@ async function loadChatHistory(sessionId = currentSessionId.value) {
 
 async function startNewChat() {
   try {
-    const result = await createKnowledgeChatSession()
+    const result = await createKnowledgeChatSession('', activeKbIds.value)
     currentSessionId.value = result.session.id
     chatSessions.value = [result.session, ...chatSessions.value.filter((item) => item.id !== result.session.id)]
+    applySessionKbSelection(result.session)
     chat.value = []
     searchResults.value = []
     warning.value = ''
@@ -201,8 +255,31 @@ const cite = reactive({ visible: false, x: 0, y: 0, source: null as KnowledgeAsk
 // 移出角标后延时关闭，留出时间让鼠标移到浮层上操作（点「预览原文」等）。
 let citeCloseTimer: number | undefined
 
+function resolveCitationSourceIndex(target: HTMLElement, msg: ChatMessage) {
+  const sources = msg.sources || []
+  const directIndex = Number(target.dataset.citeIndex)
+  if (Number.isInteger(directIndex) && directIndex >= 0 && directIndex < sources.length) return directIndex
+  const citeNumber = Number(target.dataset.cite || 0)
+  const matchedIndex = citationSourceIndex(citeNumber, sources)
+  if (matchedIndex >= 0) return matchedIndex
+  const container = target.closest('.kb-markdown')
+  const citeNodes = Array.from(container?.querySelectorAll<HTMLElement>('.kb-cite') || [])
+  const fallbackByCite = new Map<number, number>()
+  let nextFallback = 0
+  for (const item of citeNodes) {
+    const itemNumber = Number(item.dataset.cite || 0)
+    if (citationSourceIndex(itemNumber, sources) >= 0) continue
+    if (!fallbackByCite.has(itemNumber) && nextFallback < sources.length) {
+      fallbackByCite.set(itemNumber, nextFallback)
+      nextFallback += 1
+    }
+  }
+  return fallbackByCite.get(citeNumber) ?? -1
+}
+
 function showCite(target: HTMLElement, msg: ChatMessage) {
-  const source = (msg.sources || [])[Number(target.dataset.cite || 0)]
+  const sourceIndex = resolveCitationSourceIndex(target, msg)
+  const source = (msg.sources || [])[sourceIndex]
   if (!source) return
   const rect = target.getBoundingClientRect()
   cite.source = source
@@ -212,6 +289,13 @@ function showCite(target: HTMLElement, msg: ChatMessage) {
 }
 
 function handleCiteHover(event: MouseEvent, msg: ChatMessage) {
+  const target = event.target as HTMLElement
+  if (!target.classList.contains('kb-cite')) return
+  cancelCloseCite()
+  showCite(target, msg)
+}
+
+function handleCiteClick(event: MouseEvent, msg: ChatMessage) {
   const target = event.target as HTMLElement
   if (!target.classList.contains('kb-cite')) return
   cancelCloseCite()
@@ -248,6 +332,12 @@ function handleGlobalClick(event: MouseEvent) {
   if (!target.closest('.kb-cite-pop') && !target.classList.contains('kb-cite')) closeCite()
 }
 
+function handleQueryKeydown(event: KeyboardEvent) {
+  if (event.shiftKey) return
+  event.preventDefault()
+  void handleAsk()
+}
+
 async function handleAsk() {
   const text = query.value.trim()
   if (!text || asking.value) return
@@ -263,7 +353,7 @@ async function handleAsk() {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: text, top_k: 5, session_id: currentSessionId.value }),
+      body: JSON.stringify({ question: text, top_k: 5, session_id: currentSessionId.value, kb_ids: activeKbIds.value }),
     })
     if (!response.ok || !response.body) throw new Error(`请求失败（${response.status}）`)
     const reader = response.body.getReader()
@@ -585,6 +675,7 @@ async function loadKbs(selectId = '') {
     const result = await listKnowledgeKbs()
     kbs.value = result.kbs
     provider.value = result.provider || ''
+    normalizeChatKbSelection(selectedKbIds.value)
     const exists = result.kbs.some((kb) => kb.id === currentKbId.value)
     if (selectId && result.kbs.some((kb) => kb.id === selectId)) {
       currentKbId.value = selectId
@@ -725,7 +816,7 @@ async function handleSearch() {
   if (!text) return
   searching.value = true
   try {
-    const result = await searchKnowledge(text, 8)
+    const result = await searchKnowledge(text, 8, activeKbIds.value)
     searchResults.value = result.results
     warning.value = result.warning || ''
     if (!result.results.length) ElMessage.info('没有检索到相关内容')
@@ -740,9 +831,9 @@ async function handleSearch() {
 onMounted(async () => {
   window.addEventListener('click', handleGlobalClick)
   void ensureSession()
+  await loadKbs()
   await loadChatSessions(true)
   void loadChatHistory()
-  await loadKbs()
   void loadDocs()
 })
 
@@ -982,7 +1073,7 @@ onUnmounted(() => {
             <div v-if="msg.role === 'user'" class="kb-bubble kb-bubble--user">{{ msg.content }}</div>
             <div v-else :class="['kb-bubble', 'kb-bubble--assistant', { failed: msg.failed }]">
               <div v-if="!msg.content && asking && i === chat.length - 1" class="kb-typing"><span></span><span></span><span></span></div>
-              <div v-else class="kb-markdown" v-html="renderAnswer(msg)" @mouseover="handleCiteHover($event, msg)" @mouseout="handleCiteLeave($event)"></div>
+              <div v-else class="kb-markdown" v-html="renderAnswer(msg)" @mouseover="handleCiteHover($event, msg)" @click="handleCiteClick($event, msg)" @mouseout="handleCiteLeave($event)"></div>
               <div v-if="msg.sources?.length" class="kb-refs">
                 <span class="kb-refs-label">引用 {{ msg.sources.length }} 篇</span>
                 <button v-for="(source, idx) in msg.sources" :key="source.index" type="button" class="kb-ref-chip" :title="htmlToText(source.text)" @click="openPreview(source)">
@@ -1009,11 +1100,34 @@ onUnmounted(() => {
           </section>
         </div>
 
+        <div class="kb-chat-scope">
+          <span>检索范围</span>
+          <el-select
+            v-model="selectedKbIds"
+            class="kb-chat-scope-select"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            clearable
+            :max-collapse-tags="2"
+            placeholder="全部知识库"
+          >
+            <el-option
+              v-for="kb in kbs"
+              :key="kb.id"
+              :label="`${kb.shared ? '共享 · ' : ''}${kb.name}（${kb.document_count} 文档）`"
+              :value="kb.id"
+              :disabled="kb.chunk_count <= 0"
+            />
+          </el-select>
+          <small>{{ selectedKbSummary }} · 个人知识库优先</small>
+        </div>
+
         <div class="kb-query">
           <button v-if="chat.length" class="kb-btn kb-btn--icon" type="button" title="清空对话" @click="clearChat">
             <el-icon><Delete /></el-icon>
           </button>
-          <input v-model="query" placeholder="输入问题，回车发送…" @keydown.enter="handleAsk" />
+          <textarea v-model="query" rows="2" placeholder="输入问题，Enter 发送；Shift+Enter 换行…" @keydown.enter="handleQueryKeydown" />
           <button class="kb-btn" type="button" :disabled="searching" @click="handleSearch">
             <el-icon><Search /></el-icon> {{ searching ? '检索中…' : '语义检索' }}
           </button>

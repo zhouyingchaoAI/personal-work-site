@@ -30,6 +30,19 @@ KB_RAGFLOW_CHAT_OPENER = (
     "你好！我是企业知识库助手，可以基于你的个人知识库和公司共享知识库回答问题，"
     "回答会标注引用来源，点击角标可查看原文。试试问我文档里的内容吧～"
 )
+KB_RAGFLOW_CHAT_PROMPT = (
+    "你是企业知识库问答助手。请只依据知识库片段回答用户问题，并在回答中标注引用。\n"
+    "如果用户要求生成试卷、培训题、总结、清单、流程或方案，只要资料片段与主题相关，即使资料不完整，"
+    "也要基于现有资料完成可用草稿，并明确说明适用范围和资料局限。\n"
+    "资料片段相关但不完整时，不能回答未找到；应说明‘以下内容基于知识库中已有资料整理’。\n"
+    "只有当资料片段全部无关时，才回答：The answer you are looking for is not found in the knowledge base!\n"
+    "请用中文回答。\n"
+    "Here is the knowledge base:\n{knowledge}\nThe above is the knowledge base."
+)
+
+
+def _ragflow_chat_prompt_payload() -> dict:
+    return {"opener": KB_RAGFLOW_CHAT_OPENER, "show_quote": True, "prompt": KB_RAGFLOW_CHAT_PROMPT}
 
 
 def kb_embedding_settings() -> dict:
@@ -349,14 +362,91 @@ def _ragflow_scope_settings(settings: dict, scope: str, username: str):
 def _ragflow_user_query_datasets(settings: dict, username: str):
     """检索/问答用的 (用户settings, 有内容的数据集列表)：覆盖用户租户全部知识库 +
     team 可见的共享库。空数据集会让 RAGFlow 检索报 No chunk found，必须过滤。"""
+    return _ragflow_selected_query_datasets(settings, username, None)
+
+
+def _kb_normalize_selected_kb_ids(value) -> list:
+    """把前端传入的知识库选择规范成去重后的 ID 列表；空列表表示全部可见知识库。"""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw = [item.strip() for item in value.split(",")]
+    else:
+        raw = [str(item or "").strip() for item in value]
+    seen = set()
+    result = []
+    for item in raw:
+        if item and item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
+
+def _ragflow_selected_query_datasets(settings: dict, username: str, selected_kb_ids=None):
+    """返回当前问答范围内有内容的数据集；默认个人/自建库优先，共享库最后补充。"""
     user_settings = _ragflow_user_settings(settings, username)
-    _ragflow_user_dataset_id(user_settings, username)  # 确保默认个人库存在
+    default_id = _ragflow_user_dataset_id(user_settings, username)  # 确保默认个人库存在
+    try:
+        shared_id = _ragflow_shared_dataset_id(settings)
+    except ValueError:
+        shared_id = ""
     data = _ragflow_request(user_settings, "GET", "/api/v1/datasets?page=1&page_size=200") or []
+    selected = set(_kb_normalize_selected_kb_ids(selected_kb_ids))
+    personal = []
+    shared = []
+    other = []
+    for item in data:
+        dataset_id = str(item.get("id") or "")
+        if not dataset_id:
+            continue
+        if int(item.get("chunk_count", item.get("chunk_num", 0)) or 0) <= 0:
+            continue
+        if selected and dataset_id not in selected:
+            continue
+        if dataset_id == shared_id:
+            shared.append(dataset_id)
+        elif dataset_id == default_id:
+            personal.insert(0, dataset_id)
+        else:
+            other.append(dataset_id)
     dataset_ids = [
-        item["id"] for item in data
-        if int(item.get("chunk_count", item.get("chunk_num", 0)) or 0) > 0
+        *personal,
+        *[item for item in other if item not in personal],
+        *[item for item in shared if item not in personal and item not in other],
     ]
     return user_settings, dataset_ids
+
+
+def _ragflow_chat_cache_key(username: str, dataset_ids) -> str:
+    """按知识库集合隔离 RAGFlow chat，避免手动选择不同范围时互相覆盖。"""
+    key = username or "anonymous"
+    ids = [str(item) for item in (dataset_ids or []) if item]
+    if not ids:
+        return key
+    digest = hashlib.md5("|".join(sorted(ids)).encode("utf-8")).hexdigest()[:12]
+    return f"{key}::kb::{digest}"
+
+
+def _kb_session_selected_kb_ids(session: dict, payload: dict = None) -> list:
+    payload = payload or {}
+    incoming = _kb_normalize_selected_kb_ids(payload.get("kb_ids"))
+    if incoming:
+        return incoming
+    metadata = (session or {}).get("metadata") or {}
+    return _kb_normalize_selected_kb_ids(metadata.get("selected_kb_ids"))
+
+
+def _kb_update_session_selected_kbs(session_id: str, selected_kb_ids: list):
+    getter = globals().get("get_session")
+    updater = globals().get("update_session")
+    if not (callable(getter) and callable(updater)) or not session_id:
+        return
+    session = getter(session_id)
+    if not session:
+        return
+    metadata = dict(session.get("metadata") or {})
+    metadata["selected_kb_ids"] = _kb_normalize_selected_kb_ids(selected_kb_ids)
+    updater(session_id, metadata=metadata)
 
 
 def kb_datasets(username: str = "") -> dict:
@@ -440,20 +530,29 @@ def _ragflow_dataset_has_content(settings: dict, dataset_id: str) -> bool:
 
 
 def _ragflow_user_chat_id(settings: dict, username: str, dataset_ids) -> str:
-    """每个用户一个专属助手（建在用户自己的租户里，settings 须带用户 Key）。
-    RAGFlow 不允许绑定空数据集，按当前有内容的库动态调整绑定。"""
-    key = username or "anonymous"
+    """按用户和知识库集合创建专属助手，避免不同检索范围互相覆盖。"""
+    user_key = username or "anonymous"
+    mapping_key = _ragflow_chat_cache_key(user_key, dataset_ids)
     mapping = _kb_mapping("ragflow_tenant_chats.json")
-    entry = mapping.get(key)
+    entry = mapping.get(mapping_key)
+    if not entry and mapping_key != user_key:
+        legacy = mapping.get(user_key)
+        if isinstance(legacy, dict) and sorted(legacy.get("datasets", [])) == sorted(dataset_ids):
+            entry = legacy
+            mapping[mapping_key] = legacy
+            _kb_mapping_save("ragflow_tenant_chats.json", mapping)
     if isinstance(entry, str):
         entry = {"id": entry, "datasets": []}
     if entry and entry.get("id"):
-        if sorted(entry.get("datasets", [])) != sorted(dataset_ids):
-            _ragflow_request(settings, "PUT", f"/api/v1/chats/{entry['id']}", {"dataset_ids": dataset_ids})
-            mapping[key] = {"id": entry["id"], "datasets": dataset_ids}
+        body = {"prompt": _ragflow_chat_prompt_payload()}
+        if list(entry.get("datasets", [])) != list(dataset_ids):
+            body["dataset_ids"] = dataset_ids
+            mapping[mapping_key] = {"id": entry["id"], "datasets": dataset_ids}
             _kb_mapping_save("ragflow_tenant_chats.json", mapping)
+        _ragflow_request(settings, "PUT", f"/api/v1/chats/{entry['id']}", body)
         return entry["id"]
-    name = f"{KB_RAGFLOW_CHAT_NAME}-{key}"
+    suffix = "" if mapping_key == user_key else "-" + mapping_key.rsplit("::", 1)[-1]
+    name = f"{KB_RAGFLOW_CHAT_NAME}-{user_key}{suffix}"
     try:
         data = _ragflow_request(settings, "GET", f"/api/v1/chats?page=1&page_size=100&name={urllib.parse.quote(name)}") or []
     except ValueError:
@@ -463,9 +562,11 @@ def _ragflow_user_chat_id(settings: dict, username: str, dataset_ids) -> str:
         chat = _ragflow_request(settings, "POST", "/api/v1/chats", {
             "name": name,
             "dataset_ids": dataset_ids,
-            "prompt": {"opener": KB_RAGFLOW_CHAT_OPENER, "show_quote": True},
+            "prompt": _ragflow_chat_prompt_payload(),
         })
-    mapping[key] = {"id": chat["id"], "datasets": dataset_ids}
+    mapping[mapping_key] = {"id": chat["id"], "datasets": dataset_ids}
+    if mapping_key == user_key:
+        mapping[user_key] = mapping[mapping_key]
     _kb_mapping_save("ragflow_tenant_chats.json", mapping)
     return chat["id"]
 
@@ -563,6 +664,40 @@ def _ragflow_search(query: str, top_k: int, settings: dict, dataset_ids) -> dict
     return {"ok": True, "results": results}
 
 
+def _kb_is_generation_request(question: str) -> bool:
+    text = str(question or "")
+    return any(word in text for word in ("试卷", "考试", "考题", "题目", "培训题", "测试题", "生成一份"))
+
+
+def _kb_sources_from_search_results(results, top_k: int) -> list:
+    sources = []
+    for index, item in enumerate((results or [])[:top_k]):
+        sources.append({
+            "index": index + 1,
+            "doc_id": item.get("doc_id", ""),
+            "dataset_id": item.get("dataset_id", ""),
+            "doc_name": item.get("doc_name", ""),
+            "score": round(float(item.get("score", 0) or 0), 4),
+            "text": str(item.get("text", ""))[:4000],
+            "page": item.get("page", 0),
+        })
+    return sources
+
+
+def _kb_generate_answer_from_sources(question: str, sources: list) -> str:
+    context = "\n\n".join(
+        f"[{idx + 1}]（来自《{item.get('doc_name', '')}》）\n{item.get('text', '')}"
+        for idx, item in enumerate(sources)
+    )
+    system = (
+        "你是企业知识库问答助手。只依据提供的资料片段回答。"
+        "如果用户要求生成试卷、考试题、培训题或清单，只要资料片段与主题相关，"
+        "就基于现有资料生成可用草稿，并说明资料范围；不要因为资料不完整就回答未找到。"
+        "只有资料片段全部无关时，才说明知识库中没有找到相关内容。引用时标注 [1]、[2]。"
+    )
+    return _meeting_llm_chat(system, f"资料片段：\n{context}\n\n用户问题：{question}", temperature=0.2)
+
+
 def _ragflow_chunk_page(chunk: dict) -> int:
     """片段在 PDF 中的起始页码（positions 格式 [页, x1, x2, y1, y2]，页码从 1 起）；无定位返回 0。"""
     positions = chunk.get("positions") or []
@@ -570,6 +705,65 @@ def _ragflow_chunk_page(chunk: dict) -> int:
         return int(positions[0][0]) if positions and positions[0] else 0
     except (TypeError, ValueError, IndexError):
         return 0
+
+
+def _ragflow_reference_chunks(reference) -> list:
+    if isinstance(reference, dict):
+        chunks = reference.get("chunks") or []
+    elif isinstance(reference, list):
+        chunks = reference
+    else:
+        chunks = []
+    return [chunk for chunk in chunks if isinstance(chunk, dict)]
+
+
+def _ragflow_answer_reference_ids(answer: str) -> list[int]:
+    ids = []
+    for pattern in (r"\[ID:(\d+)\]", r"##(\d+)\$\$"):
+        for match in re.finditer(pattern, str(answer or "")):
+            try:
+                idx = int(match.group(1))
+            except (TypeError, ValueError):
+                continue
+            if idx not in ids:
+                ids.append(idx)
+    return ids
+
+
+def _ragflow_source_from_chunk(chunk: dict, index: int) -> dict:
+    return {
+        "index": index + 1,
+        "doc_id": chunk.get("document_id", ""),
+        "dataset_id": chunk.get("dataset_id", chunk.get("kb_id", "")),
+        "doc_name": chunk.get("document_name", chunk.get("docnm_kwd", chunk.get("document_keyword", ""))),
+        "score": round(float(chunk.get("similarity", 0) or 0), 4),
+        "text": str(chunk.get("content", chunk.get("content_with_weight", "")) or "")[:4000],
+        "page": _ragflow_chunk_page(chunk),
+    }
+
+
+def _ragflow_normalize_answer_sources(answer: str, reference, top_k: int) -> tuple[str, list]:
+    chunks = _ragflow_reference_chunks(reference)
+    if not chunks:
+        return str(answer or "").strip(), []
+    max_sources = max(1, min(int(top_k or 5), 10))
+    raw_ids = _ragflow_answer_reference_ids(answer)
+    valid_ids = [idx for idx in raw_ids if 0 <= idx < len(chunks)]
+    if raw_ids and len(valid_ids) != len(raw_ids):
+        selected_ids = list(range(min(len(raw_ids), len(chunks), max_sources)))
+        id_map = {old_idx: new_idx for new_idx, old_idx in enumerate(raw_ids[:len(selected_ids)])}
+    else:
+        selected_ids = (valid_ids if valid_ids else list(range(min(top_k, len(chunks)))))[:max_sources]
+        id_map = {old_idx: new_idx for new_idx, old_idx in enumerate(selected_ids)}
+
+    def replace_id(match):
+        old_idx = int(match.group(1))
+        return f"[ID:{id_map[old_idx]}]" if old_idx in id_map else ""
+
+    normalized_answer = re.sub(r"\[ID:(\d+)\]", replace_id, str(answer or ""))
+    normalized_answer = re.sub(r"##(\d+)\$\$", replace_id, normalized_answer).strip()
+    sources = [_ragflow_source_from_chunk(chunks[old_idx], new_idx) for new_idx, old_idx in enumerate(selected_ids)]
+    return normalized_answer, sources
 
 
 def _ragflow_session_cache_key(username: str, office_session_id: str = "") -> str:
@@ -587,6 +781,8 @@ def _ragflow_session_id(settings: dict, chat_id: str, username: str, office_sess
         except Exception:
             sessions = {}
     cache_key = _ragflow_session_cache_key(username, office_session_id)
+    if office_session_id and chat_id:
+        cache_key = f"{cache_key}::chat::{chat_id}"
     cached = sessions.get(cache_key, "")
     if cached:
         return cached
@@ -598,11 +794,19 @@ def _ragflow_session_id(settings: dict, chat_id: str, username: str, office_sess
     return session_id
 
 
-def _ragflow_ask(question: str, top_k: int, username: str, settings: dict, office_session_id: str = "") -> dict:
-    """用用户自己的租户问答：助手建在用户租户，绑定个人库 + 共享库（team 可读）。"""
-    user_settings, dataset_ids = _ragflow_user_query_datasets(settings, username)
+def _ragflow_ask(question: str, top_k: int, username: str, settings: dict, office_session_id: str = "", selected_kb_ids=None) -> dict:
+    """用用户自己的租户问答：助手建在用户租户，绑定所选个人/共享知识库。"""
+    user_settings, dataset_ids = _ragflow_selected_query_datasets(settings, username, selected_kb_ids)
     if not dataset_ids:
         return {"ok": True, "answer": "知识库中还没有可用文档，请先上传并等待解析完成。", "sources": []}
+    if _kb_is_generation_request(question):
+        try:
+            search = _ragflow_search(question, max(top_k, 8), user_settings, dataset_ids)
+            direct_sources = _kb_sources_from_search_results(search.get("results", []), top_k)
+            if direct_sources:
+                return {"ok": True, "answer": _kb_generate_answer_from_sources(question, direct_sources), "sources": direct_sources}
+        except Exception:
+            pass
     chat_id = _ragflow_user_chat_id(user_settings, username, dataset_ids)
     session_id = _ragflow_session_id(user_settings, chat_id, username or "anonymous", office_session_id)
 
@@ -623,20 +827,8 @@ def _ragflow_ask(question: str, top_k: int, username: str, settings: dict, offic
         data = _completion(session_id)
     data = data or {}
     reference = data.get("reference") or {}
-    sources = []
-    for index, chunk in enumerate((reference.get("chunks") or [])[:top_k]):
-        sources.append(
-            {
-                "index": index + 1,
-                "doc_id": chunk.get("document_id", ""),
-                "dataset_id": chunk.get("dataset_id", chunk.get("kb_id", "")),
-                "doc_name": chunk.get("document_name", chunk.get("docnm_kwd", "")),
-                "score": round(float(chunk.get("similarity", 0) or 0), 4),
-                "text": str(chunk.get("content", ""))[:4000],
-                "page": _ragflow_chunk_page(chunk),
-            }
-        )
-    return {"ok": True, "answer": str(data.get("answer", "") or "").strip(), "sources": sources}
+    answer, sources = _ragflow_normalize_answer_sources(str(data.get("answer", "") or ""), reference, top_k)
+    return {"ok": True, "answer": answer, "sources": sources}
 
 
 # ---------------------------------------------------------------------------
@@ -1065,11 +1257,7 @@ def kb_search(payload: dict, username: str = "") -> dict:
     if settings["provider"] == "ragflow":
         _ragflow_ready(settings)
         # 用用户自己的 Key 检索：个人库在自己租户，共享库经 team 成员权限可读。
-        user_settings, dataset_ids = _ragflow_user_query_datasets(settings, username)
-        # 可选 kb_ids：只检索指定知识库（如数字人接入指定库）。
-        only = {str(x) for x in (payload.get("kb_ids") or []) if x}
-        if only:
-            dataset_ids = [d for d in dataset_ids if d in only]
+        user_settings, dataset_ids = _ragflow_selected_query_datasets(settings, username, payload.get("kb_ids"))
         if not dataset_ids:
             return {"ok": True, "results": []}
         return _ragflow_search(query, top_k, user_settings, dataset_ids)
@@ -1137,7 +1325,14 @@ def kb_ask(payload: dict, username: str = "") -> dict:
     settings = kb_embedding_settings()
     if settings["provider"] == "ragflow":
         _ragflow_ready(settings)
-        return _ragflow_ask(question, int(payload.get("top_k", 5) or 5), username, settings, str(payload.get("session_id", "") or ""))
+        return _ragflow_ask(
+            question,
+            int(payload.get("top_k", 5) or 5),
+            username,
+            settings,
+            str(payload.get("session_id", "") or ""),
+            payload.get("kb_ids"),
+        )
     search = kb_search({"query": question, "top_k": int(payload.get("top_k", 5) or 5)}, username)
     results = search.get("results", [])
     if not results:
@@ -1405,6 +1600,7 @@ def _kb_format_session(session: dict) -> dict:
         "created_at": session.get("created_at", ""),
         "updated_at": session.get("updated_at", ""),
         "message_count": len(messages),
+        "selected_kb_ids": list((session.get("metadata") or {}).get("selected_kb_ids") or []),
     }
 
 
@@ -1625,12 +1821,17 @@ def _kb_list_sessions(username: str, limit: int = 30) -> list:
     for row in rows:
         item = dict(row)
         title = str(item.get("title") or "").strip() or "新会话"
+        try:
+            metadata = json.loads(item.get("metadata_json") or "{}")
+        except Exception:
+            metadata = {}
         sessions.append({
             "id": item.get("id", ""),
             "title": title,
             "created_at": item.get("created_at", ""),
             "updated_at": item.get("updated_at", ""),
             "message_count": int(item.get("message_count", 0) or 0),
+            "selected_kb_ids": list(metadata.get("selected_kb_ids") or []),
         })
     return sessions
 
@@ -1647,7 +1848,9 @@ def _kb_create_session(username: str, title: str = "", metadata: dict = None) ->
     meta = {"feature": "knowledge"}
     if metadata:
         meta.update(metadata)
-    return creator(username or "anonymous", kind="knowledge", title=title, metadata=meta)
+    session = creator(username or "anonymous", kind="knowledge", title=title, metadata=meta)
+    getter = globals().get("get_session")
+    return getter(session["id"]) if callable(getter) else session
 
 
 def _kb_ensure_session(username: str, session_id: str = "", title: str = "") -> dict:
@@ -1688,7 +1891,9 @@ def kb_chat_sessions(payload: dict, username: str = "") -> dict:
             sessions = [_kb_format_session(session)]
         return {"ok": True, "sessions": sessions}
     if action == "create":
-        session = _kb_create_session(username, payload.get("title", ""))
+        selected_kb_ids = _kb_normalize_selected_kb_ids(payload.get("kb_ids"))
+        metadata = {"selected_kb_ids": selected_kb_ids} if selected_kb_ids else None
+        session = _kb_create_session(username, payload.get("title", ""), metadata=metadata)
         return {"ok": True, "session": _kb_format_session(session)}
     if action == "get":
         session = _kb_agent_session_owned(payload.get("session_id", ""), username)
@@ -1789,6 +1994,11 @@ def kb_ask_stream(handler, payload: dict, username: str = ""):
     top_k = min(10, max(1, int(payload.get("top_k", 5) or 5)))
     session = _kb_ensure_session(username, str(payload.get("session_id", "") or ""), title="新会话")
     office_session_id = session["id"]
+    selected_kb_ids = _kb_session_selected_kb_ids(session, payload)
+    if _kb_normalize_selected_kb_ids(payload.get("kb_ids")):
+        _kb_update_session_selected_kbs(office_session_id, selected_kb_ids)
+        getter = globals().get("get_session")
+        session = getter(office_session_id) if callable(getter) else session
 
     def send_event(obj):
         handler.wfile.write(f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8"))
@@ -1810,7 +2020,7 @@ def kb_ask_stream(handler, payload: dict, username: str = ""):
         _kb_update_session_title_from_question(office_session_id, question)
         settings = kb_embedding_settings()
         if settings["provider"] != "ragflow":
-            result = kb_ask({"question": question, "top_k": top_k, "session_id": office_session_id}, username)
+            result = kb_ask({"question": question, "top_k": top_k, "session_id": office_session_id, "kb_ids": selected_kb_ids}, username)
             final_answer = result.get("answer", "")
             sources = result.get("sources", [])
             send_event({"answer": final_answer})
@@ -1818,13 +2028,25 @@ def kb_ask_stream(handler, payload: dict, username: str = ""):
             _kb_add_chat_message(office_session_id, "assistant", final_answer, {"feature": "knowledge", "sources": sources})
             return
         _ragflow_ready(settings)
-        user_settings, dataset_ids = _ragflow_user_query_datasets(settings, username)
+        user_settings, dataset_ids = _ragflow_selected_query_datasets(settings, username, selected_kb_ids)
         if not dataset_ids:
             final_answer = "知识库中还没有可用文档，请先上传并等待解析完成。"
             send_event({"answer": final_answer})
             send_event({"done": True, "sources": [], "session_id": office_session_id})
             _kb_add_chat_message(office_session_id, "assistant", final_answer, {"feature": "knowledge", "sources": []})
             return
+        if _kb_is_generation_request(question):
+            try:
+                search = _ragflow_search(question, max(top_k, 8), user_settings, dataset_ids)
+                sources = _kb_sources_from_search_results(search.get("results", []), top_k)
+                if sources:
+                    final_answer = _kb_generate_answer_from_sources(question, sources)
+                    send_event({"answer": final_answer})
+                    send_event({"done": True, "sources": sources, "session_id": office_session_id})
+                    _kb_add_chat_message(office_session_id, "assistant", final_answer, {"feature": "knowledge", "sources": sources})
+                    return
+            except Exception:
+                sources = []
         chat_id = _ragflow_user_chat_id(user_settings, username, dataset_ids)
         ragflow_session_id = _ragflow_session_id(user_settings, chat_id, username or "anonymous", office_session_id)
         _kb_bind_ragflow_session(office_session_id, chat_id, ragflow_session_id)
@@ -1865,16 +2087,11 @@ def kb_ask_stream(handler, payload: dict, username: str = ""):
                 if answer:
                     final_answer = answer
                     send_event({"answer": answer})
-        for index, chunk in enumerate((reference.get("chunks") or [])[:top_k]):
-            sources.append({
-                "index": index + 1,
-                "doc_id": chunk.get("document_id", ""),
-                "dataset_id": chunk.get("dataset_id", chunk.get("kb_id", "")),
-                "doc_name": chunk.get("document_name", chunk.get("docnm_kwd", "")),
-                "score": round(float(chunk.get("similarity", 0) or 0), 4),
-                "text": str(chunk.get("content", ""))[:4000],
-                "page": _ragflow_chunk_page(chunk),
-            })
+        if final_answer:
+            normalized_answer, sources = _ragflow_normalize_answer_sources(final_answer, reference, top_k)
+            if normalized_answer != final_answer:
+                final_answer = normalized_answer
+                send_event({"answer": final_answer})
         if not final_answer:
             final_answer = "知识库中没有找到相关内容。"
             send_event({"answer": final_answer})

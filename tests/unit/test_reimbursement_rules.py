@@ -46,6 +46,17 @@ class ReimbursementRuleExtractionTests(unittest.TestCase):
         self.assertEqual(meta["invoice_date"], "2026-04-03")
         self.assertEqual(meta["invoice_amount"], "¥113.90")
 
+
+    def test_telecom_usage_report_is_not_invoice_email(self):
+        self.assertFalse(rt._is_invoice_email(
+            "【139邮箱使用报告】您的2026年5月使用报告已生成，快来看看！",
+            "中国移动139邮箱 <mail139@139.com>",
+        ))
+        self.assertTrue(rt._is_invoice_email(
+            "【移动发票】您的电子发票已送达，敬请查阅！",
+            "10086@139.com",
+        ))
+
     def test_extracts_flight_receipt_fields_and_ignores_table_header(self):
         candidate = {
             "key": "flight",

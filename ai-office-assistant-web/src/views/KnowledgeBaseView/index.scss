@@ -216,22 +216,56 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
   box-shadow: $panel-shadow;
 }
 
+.kb-chat-scope {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid $border-soft;
+  border-radius: 8px;
+  background: #f8fafd;
+
+  > span {
+    color: $text-strong;
+    font-size: 13px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  small {
+    color: $text-muted;
+    font-size: 12px;
+  }
+}
+
+.kb-chat-scope-select {
+  width: min(420px, 100%);
+}
+
 .kb-query {
   display: flex;
+  align-items: flex-end;
   gap: 10px;
 
-  input {
+  textarea {
     flex: 1;
     min-width: 0;
-    padding: 10px 13px;
+    min-height: 52px;
+    max-height: 118px;
+    padding: 11px 13px;
     border: 1px solid $border;
     border-radius: 8px;
     color: $text-strong;
     font: inherit;
+    font-size: 15px;
+    line-height: 1.55;
+    resize: vertical;
 
     &:focus {
       border-color: $primary;
       outline: none;
+      box-shadow: 0 0 0 3px rgba(21, 73, 156, 0.1);
     }
   }
 }
@@ -816,6 +850,74 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
     }
   }
 
+
+  .kb-excel-chunk {
+    display: grid;
+    gap: 8px;
+  }
+
+  .kb-excel-record {
+    overflow: hidden;
+    border: 1px solid #d8e4d9;
+    border-radius: 8px;
+    background: #fbfdfb;
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 9px;
+      border-bottom: 1px solid #e2eadf;
+      background: #eef7f0;
+
+      span {
+        flex: 1;
+        min-width: 0;
+        color: $text-muted;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      strong {
+        color: $text-strong;
+        font-size: 12.5px;
+      }
+    }
+
+    ol {
+      display: grid;
+      gap: 0;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      display: grid;
+      grid-template-columns: minmax(70px, 92px) minmax(0, 1fr);
+      gap: 8px;
+      padding: 6px 9px;
+      border-top: 1px solid #edf2ea;
+
+      &:first-child {
+        border-top: 0;
+      }
+    }
+
+    li span {
+      color: $text-muted;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    li em {
+      min-width: 0;
+      color: $text-main;
+      font-style: normal;
+      word-break: break-word;
+    }
+  }
+
   hr {
     margin: 10px 0;
     border: 0;
@@ -1106,5 +1208,10 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
 
   .kb-query {
     flex-wrap: wrap;
+
+    textarea {
+      flex-basis: 100%;
+      min-height: 74px;
+    }
   }
 }

@@ -977,6 +977,20 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
   }
 }
 
+
+.detail-extra-field {
+  display: grid;
+  gap: 8px;
+}
+
+.ai-compare-card--compact {
+  margin: 0 0 4px;
+
+  .ai-compare-editor {
+    min-height: 88px;
+  }
+}
+
 .ai-compare-card {
   display: grid;
   gap: 10px;
@@ -1008,7 +1022,8 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
     font-weight: 900;
   }
 
-  p {
+  p,
+  .ai-compare-editor {
     min-height: 40px;
     margin: 0;
     color: #213a68;
@@ -1016,6 +1031,24 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
     line-height: 1.65;
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  .ai-compare-editor {
+    width: 100%;
+    min-height: 110px;
+    box-sizing: border-box;
+    padding: 8px 9px;
+    border: 1px solid #d7e3f3;
+    border-radius: 6px;
+    background: #fbfdff;
+    font-family: inherit;
+    resize: vertical;
+
+    &:focus {
+      border-color: $primary;
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(21, 73, 156, 0.1);
+    }
   }
 }
 

@@ -47,6 +47,10 @@ _INVOICE_SENDER_DOMAINS = [
     'ntax.com.cn', 'jss.com.cn',
     'dingtax.com', 'tax.gov.cn',
     'yunzhangfang.com', 'kp.shui5.com',
+]
+
+# 运营商域名会发送普通账单/报告，不能仅凭发件人认定为发票。
+_TELECOM_SENDER_DOMAINS = [
     '139.com',          # 中国移动
     '10086.com',        # 中国移动
     'chinamobile.com',  # 中国移动
@@ -78,10 +82,11 @@ def _to_imap_date(date_str):
 def _imap_connect_safe(settings):
     """建立 IMAP 连接，网易系服务器自动发送 ID 命令。"""
     validate_imap_ready(settings)
+    timeout = int(settings.get("timeout") or 20)
     if settings["use_ssl"]:
-        box = imaplib.IMAP4_SSL(settings["host"], settings["port"])
+        box = imaplib.IMAP4_SSL(settings["host"], settings["port"], timeout=timeout)
     else:
-        box = imaplib.IMAP4(settings["host"], settings["port"])
+        box = imaplib.IMAP4(settings["host"], settings["port"], timeout=timeout)
     box.login(settings["user"], settings["password"])
     if settings["host"].lower() in _NETEASE_IMAP_HOSTS:
         imaplib.Commands['ID'] = ('AUTH',)
@@ -243,6 +248,14 @@ _SCAN_SKIP_FOLDERS = ['已发送', '草稿', '垃圾', '病毒', '已删除', '�
                       'sent', 'draft', 'trash', 'junk', 'spam', 'deleted']
 
 
+def _select_folder(box, folder_raw):
+    """选择 IMAP 文件夹。139 邮箱不接受 SELECT "INBOX"，优先原始名再回退带引号。"""
+    status, data = box.select(folder_raw)
+    if status == "OK":
+        return status, data
+    return _select_folder(box, folder_raw)
+
+
 def _scan_folders(box):
     """返回参与扫描的 (原始名, 解码名) 文件夹列表，INBOX 优先。"""
     folders = [("INBOX", "INBOX")]
@@ -276,8 +289,11 @@ def _is_invoice_email(subject, from_addr):
     """
     subj = (subject or '').lower()
     frm  = (from_addr or '').lower()
+    has_invoice_subject = any(kw in subj for kw in _INVOICE_KEYWORDS)
+    if any(d in frm for d in _TELECOM_SENDER_DOMAINS):
+        return has_invoice_subject
     return (
-        any(kw in subj for kw in _INVOICE_KEYWORDS) or
+        has_invoice_subject or
         any(d in frm for d in _INVOICE_SENDER_DOMAINS) or
         'invoice' in frm or 'fapiao' in frm
     )
@@ -901,7 +917,7 @@ def scan_invoice_attachments(username, start_date, end_date, account="company"):
 
         BATCH_H = 50
         for folder_raw, _folder_name in folders:
-            st, _ = box.select(f'"{folder_raw}"')
+            st, _ = _select_folder(box, folder_raw)
             if st != "OK":
                 continue
             st, data = box.uid("search", None, f'SINCE {since} BEFORE {before}')
@@ -942,7 +958,7 @@ def scan_invoice_attachments(username, start_date, end_date, account="company"):
 
         BATCH = 20
         for folder_raw, invoice_uids in invoice_by_folder.items():
-          st, _ = box.select(f'"{folder_raw}"')
+          st, _ = _select_folder(box, folder_raw)
           if st != "OK":
               continue
           for i in range(0, len(invoice_uids), BATCH):
@@ -1265,7 +1281,7 @@ def get_reimbursement_email_html(username, account, uid):
         uid = str(uid)
         if "||" in uid:
             folder, uid = uid.rsplit("||", 1)
-        status, _ = box.select(f'"{folder}"')
+        status, _ = _select_folder(box, folder)
         if status != "OK":
             return {"ok": False, "error": "无法打开邮件所在文件夹"}
         st, fetched = box.uid("fetch", str(uid), "(BODY.PEEK[])")

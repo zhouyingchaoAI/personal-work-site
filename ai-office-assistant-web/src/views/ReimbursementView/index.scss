@@ -81,6 +81,39 @@ $border: #dce7f6;
   border: 1px solid $border;
 }
 
+.reimbursement-chunk-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reimbursement-chunk {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px solid $border;
+  border-radius: 8px;
+  background: #fff;
+  color: $text-muted;
+  font-size: 12px;
+}
+
+.reimbursement-chunk span {
+  color: $text;
+  font-weight: 600;
+}
+
+.reimbursement-chunk em {
+  font-style: normal;
+}
+
+.reimbursement-chunk--scanning { border-color: rgba(37, 99, 235, 0.3); background: #eff6ff; }
+.reimbursement-chunk--done { border-color: rgba(22, 163, 74, 0.25); background: #f0fdf4; }
+.reimbursement-chunk--failed { border-color: rgba(220, 38, 38, 0.25); background: #fef2f2; }
+.reimbursement-chunk--failed em { color: #b91c1c; }
+
 // ── 列表区域 ──
 .reimbursement-list-section {
   flex: 1;

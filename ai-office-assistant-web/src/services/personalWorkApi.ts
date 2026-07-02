@@ -390,6 +390,11 @@ export interface SendMailResponse {
   ok: boolean
   mode: 'sent' | 'draft'
   message: string
+  promoted?: {
+    kind: 'weekly' | 'trip' | string
+    name: string
+    path?: string
+  }
 }
 
 export interface MailAttachment {
@@ -1138,6 +1143,7 @@ export interface KnowledgeChatSession {
   created_at: string
   updated_at: string
   message_count: number
+  selected_kb_ids?: string[]
 }
 
 export function getKnowledgeChatHistory(sessionId?: string) {
@@ -1149,8 +1155,8 @@ export function listKnowledgeChatSessions() {
   return post<{ ok: boolean; sessions: KnowledgeChatSession[] }>('/knowledge/chat-sessions', { action: 'list' })
 }
 
-export function createKnowledgeChatSession(title?: string) {
-  return post<{ ok: boolean; session: KnowledgeChatSession }>('/knowledge/chat-sessions', { action: 'create', title })
+export function createKnowledgeChatSession(title?: string, kbIds: string[] = []) {
+  return post<{ ok: boolean; session: KnowledgeChatSession }>('/knowledge/chat-sessions', { action: 'create', title, kb_ids: kbIds })
 }
 
 export function getKnowledgeChatSession(sessionId: string) {
@@ -1295,12 +1301,12 @@ export function saveRagflowChunkConfig(payload: { chunk_method: string; chunk_to
   return post<{ ok: boolean; updated: string[]; warning?: string; hint?: string }>('/ragflow/chunk-config', payload)
 }
 
-export function searchKnowledge(query: string, topK = 5) {
-  return post<{ ok: boolean; results: KnowledgeSearchResult[]; warning?: string }>('/knowledge/search', { query, top_k: topK })
+export function searchKnowledge(query: string, topK = 5, kbIds: string[] = []) {
+  return post<{ ok: boolean; results: KnowledgeSearchResult[]; warning?: string }>('/knowledge/search', { query, top_k: topK, kb_ids: kbIds })
 }
 
-export function askKnowledge(question: string, topK = 5) {
-  return post<{ ok: boolean; answer: string; sources: KnowledgeAskSource[]; warning?: string }>('/knowledge/ask', { question, top_k: topK })
+export function askKnowledge(question: string, topK = 5, kbIds: string[] = []) {
+  return post<{ ok: boolean; answer: string; sources: KnowledgeAskSource[]; warning?: string }>('/knowledge/ask', { question, top_k: topK, kb_ids: kbIds })
 }
 
 export interface MeetingConfig {

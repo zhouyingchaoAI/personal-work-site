@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Check,
@@ -37,6 +37,7 @@ import {
   type ReportFile,
   type ReportTemplateItem,
   type SendMailPayload,
+  type SendMailResponse,
   type TripPayload,
 } from '../../services/personalWorkApi'
 import './index.scss'
@@ -64,6 +65,7 @@ interface TripGroup {
 interface FieldOptimizePreview {
   original: string
   suggestion: string
+  edited: string
 }
 
 const tripTabs: Array<{ id: TripTabId; label: string }> = [
@@ -190,7 +192,7 @@ const promptForm = reactive<Partial<Record<TripFieldKey, string>>>({
   suggestions: '',
 })
 
-// AI 优化结果先暂存，用户确认采纳后才写回输入框。
+// AI 优化结果先暂存，用户可手动调整后再写回输入框。
 const fieldOptimizePreview = reactive<Partial<Record<TripFieldKey, FieldOptimizePreview | null>>>({})
 
 const mailDraft = reactive({
@@ -430,9 +432,12 @@ async function optimizeTripField(field: TripField) {
     fieldOptimizePreview[field.key] = {
       original,
       suggestion: result.text || original,
+      edited: result.text || original,
     }
     if (result.warning) ElMessage.warning(result.warning)
-    else ElMessage.success('已生成优化结果，请对比后采纳')
+    else ElMessage.success('已生成优化结果，可修改后应用')
+    await nextTick()
+    document.querySelector('.trip-ai-compare-card')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : 'AI 优化失败')
   } finally {
@@ -443,7 +448,7 @@ async function optimizeTripField(field: TripField) {
 function acceptTripOptimizePreview(field: TripField) {
   const preview = fieldOptimizePreview[field.key]
   if (!preview) return
-  tripForm[field.key] = preview.suggestion
+  tripForm[field.key] = (preview.edited || preview.suggestion).trim()
   fieldOptimizePreview[field.key] = null
 }
 
@@ -739,6 +744,16 @@ function handleRecipientPaste(event: Event, field: MailRecipientField) {
   clearSendReview()
 }
 
+async function applySentTripPromotion(result: SendMailResponse) {
+  if (result.mode !== 'sent') return
+  if (result.promoted?.kind === 'trip' && result.promoted.name) {
+    selectedReport.value = result.promoted.name
+    mailDraft.attachment = result.promoted.name
+    mailDraft.download_url = `/download?file=${encodeURIComponent(result.promoted.name)}`
+  }
+  await loadReports()
+}
+
 async function sendReport() {
   const payload = buildSendPayload()
   const blockers = findSendBlockers(payload)
@@ -767,8 +782,9 @@ async function sendReport() {
   loading.send = true
   try {
     const result = await sendMail(payload)
+    await applySentTripPromotion(result)
     loading.send = false
-    void ElMessageBox.alert(result.mode === 'sent' ? '邮件已发送' : result.message, result.mode === 'sent' ? '发送成功' : '处理完成', {
+    void ElMessageBox.alert(result.mode === 'sent' ? '邮件已发送，报告已转入历史报告' : result.message, result.mode === 'sent' ? '发送成功' : '处理完成', {
       confirmButtonText: '知道了',
       type: 'success',
     }).catch(() => undefined)
@@ -1080,13 +1096,13 @@ onMounted(initializeTrip)
                   <p>{{ fieldOptimizePreview[activeMainField.key]?.original }}</p>
                 </section>
                 <section>
-                  <span>优化结果</span>
-                  <p>{{ fieldOptimizePreview[activeMainField.key]?.suggestion }}</p>
+                  <span>优化结果（可编辑）</span>
+                  <textarea v-model="fieldOptimizePreview[activeMainField.key]!.edited" class="trip-ai-compare-editor" rows="5" />
                 </section>
               </div>
               <div class="trip-ai-compare-actions">
                 <button type="button" @click="undoOptimizePreview(activeMainField)">撤销</button>
-                <button type="button" class="primary" @click="acceptTripOptimizePreview(activeMainField)">采纳</button>
+                <button type="button" class="primary" @click="acceptTripOptimizePreview(activeMainField)">应用结果</button>
               </div>
             </div>
           </div>

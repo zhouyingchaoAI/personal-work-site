@@ -567,6 +567,75 @@ def generate_personal_news_issue(payload=None, username=""):
     return _build_news_issue(payload, username, personal_news_config_payload(username), user_news_dir(username))
 
 
+def _balanced_json_object(text, start):
+    """从 start 处的 '{' 起，按字符串/转义规则扫描出配平的 JSON 对象子串。"""
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        else:
+            if ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start:i + 1]
+    return None
+
+
+def parse_news_json(text):
+    """尽量稳健地从大模型回复里解析出 JSON 对象。
+
+    依次尝试：去除代码围栏后直接解析 → 抽取配平的 {…} 子串 → 去掉尾随逗号再解析
+    → 从首个 '{' 起容忍尾随杂质解析。全部失败才抛错，交由上层兜底。
+    """
+    text = str(text or "").strip()
+    text = re.sub(r"```(?:json)?", "", text, flags=re.I).replace("```", "").strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    start = text.find("{")
+    if start != -1:
+        candidate = _balanced_json_object(text, start)
+        attempts = []
+        if candidate:
+            attempts.append(candidate)
+            attempts.append(re.sub(r",(\s*[}\]])", r"\1", candidate))  # 去掉尾随逗号
+        for attempt in attempts:
+            try:
+                return json.loads(attempt)
+            except Exception:
+                continue
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(text[start:])
+            return obj
+        except Exception:
+            pass
+    raise ValueError("模型未返回可解析的 JSON")
+
+
+def _request_news_chat(settings, messages, force_json=True):
+    payload = {
+        "model": settings["model"],
+        "messages": messages,
+        "temperature": 0.35,
+    }
+    if force_json:
+        payload["response_format"] = {"type": "json_object"}
+    return request_json(settings["url"] + "/v1/chat/completions", settings["key"], payload, "POST", 90)
+
+
 def _build_news_issue(payload, username, config_payload, directory):
     payload = payload or {}
     settings = assistant_settings()
@@ -608,7 +677,7 @@ def _build_news_issue(payload, username, config_payload, directory):
     prompt = (
         "你是轨道交通行业资讯分析智能体。请生成一份每日关键资讯简报，聚焦轨道交通、城市轨道、地铁、智慧运维、施工安全、客流、低空/AI/数字化等与轨交相关的信息。"
         "大模型能力必须来自当前平台配置的 API。若可用工具支持联网搜索，请使用工具补充最新信息；若不可用，请只基于提供的网页内容，不要编造事实。"
-        "严格返回 JSON，不要 Markdown："
+        "只返回一个 JSON 对象，不要输出 Markdown 或多余文字；字符串内部的双引号必须转义，不能出现未配对的引号或多余逗号。"
         "{\"title\":\"今日标题\",\"summary\":\"总览摘要\",\"items\":[{\"title\":\"资讯标题\",\"source\":\"来源\",\"url\":\"链接\",\"impact\":\"影响/价值\",\"action\":\"建议动作\"}],\"keywords\":[\"关键词\"]}"
     )
     user_content = (
@@ -616,24 +685,18 @@ def _build_news_issue(payload, username, config_payload, directory):
         f"自动搜索要求：\n{search_instruction}\n\n"
         f"已配置网页抓取内容：\n{source_text or '无'}"
     )
+    messages = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": user_content},
+    ]
     try:
-        data = request_json(
-            settings["url"] + "/v1/chat/completions",
-            settings["key"],
-            {
-                "model": settings["model"],
-                "messages": [
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": user_content},
-                ],
-                "temperature": 0.35,
-            },
-            "POST",
-            90,
-        )
-        result_text = data["choices"][0]["message"]["content"].strip()
-        result_text = re.sub(r"^```(?:json)?|```$", "", result_text, flags=re.I).strip()
-        parsed = json.loads(result_text)
+        try:
+            data = _request_news_chat(settings, messages, force_json=True)
+        except Exception:
+            # 部分接口不支持 response_format，去掉该参数重试一次。
+            data = _request_news_chat(settings, messages, force_json=False)
+        result_text = data["choices"][0]["message"]["content"]
+        parsed = parse_news_json(result_text)
     except Exception as exc:
         if source_results:
             fallback = local_news_issue(source_results, errors + [f"AI 生成失败：{exc}"], search_query, auto_search, username, directory)

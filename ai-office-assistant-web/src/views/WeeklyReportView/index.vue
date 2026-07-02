@@ -66,6 +66,7 @@ interface EditTarget {
 interface FieldOptimizePreview {
   original: string
   suggestion: string
+  edited: string
 }
 
 interface ReportUploadFile {
@@ -142,7 +143,7 @@ const sendBlockers = ref<string[]>([])
 const isReportDirty = ref(true)
 const previewSource = ref<'instant' | 'generated'>('instant')
 const initialized = ref(false)
-const fieldOptimizing = ref<RowField | ''>('')
+const fieldOptimizing = ref<RowField[]>([])
 
 const loading = reactive({
   init: false,
@@ -180,7 +181,7 @@ const promptForm = reactive<Record<RowField, string>>({
   plan: '',
   difficulty: '',
 })
-// AI 优化结果先暂存，用户对比后再决定是否写回输入框。
+// AI 优化结果先暂存，用户可手动调整后再写回输入框。
 const fieldOptimizePreview = reactive<Record<RowField, FieldOptimizePreview | null>>({
   category: null,
   content: null,
@@ -540,7 +541,7 @@ function beginEdit(sectionId: SectionId, row: WeeklyRow, isNew = false) {
     promptForm[fieldKey] = ''
     fieldOptimizePreview[fieldKey] = null
   })
-  fieldOptimizing.value = ''
+  fieldOptimizing.value = []
   promptEditor.value = ''
 }
 
@@ -588,7 +589,7 @@ function applyEditFormToRow(section: WeeklySection, row: WeeklyRow) {
 
 function clearEditState() {
   editing.value = null
-  fieldOptimizing.value = ''
+  fieldOptimizing.value = []
   promptEditor.value = ''
 }
 
@@ -665,7 +666,7 @@ function undoOptimizePreview(field: EditField) {
 function acceptOptimizePreview(field: EditField) {
   const preview = fieldOptimizePreview[field.key]
   if (!preview) return
-  editForm[field.key] = preview.suggestion
+  editForm[field.key] = (preview.edited || preview.suggestion).trim()
   fieldOptimizePreview[field.key] = null
 }
 
@@ -1131,20 +1132,22 @@ async function optimizeEditField(field: EditField) {
     ElMessage.warning('请先填写需要优化的内容')
     return
   }
-  fieldOptimizing.value = field.key
+  if (fieldOptimizing.value.includes(field.key)) return
+  fieldOptimizing.value = [...fieldOptimizing.value, field.key]
   fieldOptimizePreview[field.key] = null
   try {
     const result = await optimizeText(original, optimizePrompt(field.key))
     fieldOptimizePreview[field.key] = {
       original,
       suggestion: result.text || original,
+      edited: result.text || original,
     }
     if (result.warning) ElMessage.warning(result.warning)
-    else ElMessage.success('已生成优化结果，请对比后采纳')
+    else ElMessage.success('已生成优化结果，可修改后应用')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : 'AI 优化失败')
   } finally {
-    fieldOptimizing.value = ''
+    fieldOptimizing.value = fieldOptimizing.value.filter((key) => key !== field.key)
   }
 }
 
@@ -1537,9 +1540,9 @@ onMounted(initializeWeekly)
                 <span>{{ primaryTextEditingField.label }}</span>
                 <div class="detail-field-tools ai-field-actions">
                   <button class="ai-prompt-button" type="button" @click="openPromptEditor(primaryTextEditingField)">提示词</button>
-                  <button class="ai-polish-button" type="button" :disabled="fieldOptimizing !== ''" @click="optimizeEditField(primaryTextEditingField)">
+                  <button class="ai-polish-button" type="button" :disabled="fieldOptimizing.includes(primaryTextEditingField.key)" @click="optimizeEditField(primaryTextEditingField)">
                     <span aria-hidden="true">✦</span>
-                    {{ fieldOptimizing === primaryTextEditingField.key ? '润色中' : 'AI 润色' }}
+                    {{ fieldOptimizing.includes(primaryTextEditingField.key) ? '润色中' : 'AI 润色' }}
                   </button>
                 </div>
                 <el-input
@@ -1559,27 +1562,52 @@ onMounted(initializeWeekly)
                     <p>{{ primaryOptimizePreview.original }}</p>
                   </section>
                   <section>
-                    <span>优化结果</span>
-                    <p>{{ primaryOptimizePreview.suggestion }}</p>
+                    <span>优化结果（可编辑）</span>
+                    <textarea v-model="primaryOptimizePreview.edited" class="ai-compare-editor" rows="5" />
                   </section>
                 </div>
                 <div class="ai-compare-actions">
                   <button type="button" @click="undoOptimizePreview(primaryTextEditingField)">忽略</button>
-                  <button type="button" class="primary" @click="acceptOptimizePreview(primaryTextEditingField)">采纳建议</button>
+                  <button type="button" class="primary" @click="acceptOptimizePreview(primaryTextEditingField)">应用结果</button>
                 </div>
               </div>
 
               <details class="detail-extra">
                 <summary>补充信息（后续计划、当前进展说明、困难与求助）</summary>
-                <label v-for="field in extraEditingFields" :key="field.key" class="detail-field">
-                  <span>{{ field.label }}</span>
-                  <el-input
-                    v-model="editForm[field.key]"
-                    type="textarea"
-                    :autosize="{ minRows: 3, maxRows: 6 }"
-                    @input="handleEditFieldInput(field.key)"
-                  />
-                </label>
+                <div v-for="field in extraEditingFields" :key="field.key" class="detail-extra-field">
+                  <label class="detail-field">
+                    <span>{{ field.label }}</span>
+                    <div v-if="canOptimizeField(field)" class="detail-field-tools ai-field-actions">
+                      <button class="ai-prompt-button" type="button" @click="openPromptEditor(field)">提示词</button>
+                      <button class="ai-polish-button" type="button" :disabled="fieldOptimizing.includes(field.key)" @click="optimizeEditField(field)">
+                        <span aria-hidden="true">✦</span>
+                        {{ fieldOptimizing.includes(field.key) ? '润色中' : 'AI 润色' }}
+                      </button>
+                    </div>
+                    <el-input
+                      v-model="editForm[field.key]"
+                      type="textarea"
+                      :autosize="{ minRows: 3, maxRows: 6 }"
+                      @input="handleEditFieldInput(field.key)"
+                    />
+                  </label>
+                  <div v-if="fieldOptimizePreview[field.key]" class="ai-compare-card ai-compare-card--compact">
+                    <div class="ai-compare-grid">
+                      <section>
+                        <span>原内容</span>
+                        <p>{{ fieldOptimizePreview[field.key]?.original }}</p>
+                      </section>
+                      <section>
+                        <span>优化结果（可编辑）</span>
+                        <textarea v-model="fieldOptimizePreview[field.key]!.edited" class="ai-compare-editor" rows="4" />
+                      </section>
+                    </div>
+                    <div class="ai-compare-actions">
+                      <button type="button" @click="undoOptimizePreview(field)">忽略</button>
+                      <button type="button" class="primary" @click="acceptOptimizePreview(field)">应用结果</button>
+                    </div>
+                  </div>
+                </div>
               </details>
             </div>
 

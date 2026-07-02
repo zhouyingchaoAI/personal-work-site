@@ -601,39 +601,169 @@ def mail_header_summary(uid, msg):
     }
 
 
-def list_inbox_messages(username, limit=20, refresh=False):
-    limit = max(1, min(int(limit or 20), 50))
-    cache_name = f"inbox_{limit}"
+_IMAP_SEARCH_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+# 友好名 -> 可能的中英文文件夹名（小写匹配）。不同邮箱服务器命名各异，按解码后的中文/英文名匹配。
+_FOLDER_ALIASES = {
+    'inbox': ['inbox', '收件箱'],
+    'archive': ['已归档', '归档', 'archive', 'archives'],
+    'sent': ['已发送', '发件箱', 'sent', 'sent messages', 'sent items'],
+    'drafts': ['草稿箱', '草稿', 'drafts', 'draft'],
+    'trash': ['已删除', '废件箱', 'trash', 'deleted', 'deleted messages'],
+    'spam': ['垃圾邮件', 'spam', 'junk'],
+}
+
+
+def _imap_utf7_decode(name):
+    """解码 IMAP modified UTF-7 文件夹名（如 &XfJfUmhj- -> 已归档）。"""
+    import binascii
+    res = []
+    i = 0
+    while i < len(name):
+        ch = name[i]
+        if ch == '&':
+            j = name.find('-', i)
+            if j == -1:
+                res.append(name[i:])
+                break
+            chunk = name[i + 1:j]
+            if chunk == '':
+                res.append('&')
+            else:
+                try:
+                    res.append(binascii.a2b_base64(chunk.replace(',', '/') + '=' * (-len(chunk) % 4)).decode('utf-16-be'))
+                except Exception:
+                    res.append(name[i:j + 1])
+            i = j + 1
+        else:
+            res.append(ch)
+            i += 1
+    return ''.join(res)
+
+
+def _resolve_imap_folder(box, wanted):
+    """把用户传入的文件夹名（inbox/已归档/archive/原始 IMAP 名）解析成实际可 select 的 IMAP 名。"""
+    w = str(wanted or '').strip()
+    if not w or w.lower() in ('inbox', '收件箱'):
+        return 'INBOX'
+    wl = w.lower()
+    wanted_set = {wl}
+    for canon, names in _FOLDER_ALIASES.items():
+        if wl == canon or wl in [n.lower() for n in names]:
+            wanted_set.add(canon)
+            wanted_set.update(n.lower() for n in names)
+    try:
+        typ, data = box.list()
+    except Exception:
+        return w
+    for f in data or []:
+        if not f:
+            continue
+        line = f.decode('utf-8', 'ignore') if isinstance(f, (bytes, bytearray)) else str(f)
+        m = re.search(r'\(([^)]*)\)\s+"([^"]*)"\s+(.+)$', line)
+        raw = (m.group(3).strip().strip('"') if m else line.strip().split()[-1].strip('"'))
+        decoded = _imap_utf7_decode(raw)
+        if raw == w or decoded == w or raw.lower() in wanted_set or decoded.lower() in wanted_set:
+            return raw
+    return w
+
+
+def _fetch_folder_summaries(box, raw_folder, since_imap, before_imap, window, folder_label):
+    """在已连接的 box 上选中某文件夹并按日期范围抓取邮件头摘要（带 folder 标签便于详情回查）。"""
+    box.select(raw_folder, readonly=True)
+    criteria = []
+    if since_imap:
+        criteria += ["SINCE", since_imap]
+    if before_imap:
+        criteria += ["BEFORE", before_imap]
+    if not criteria:
+        criteria = ["ALL"]
+    status, data = box.uid("search", None, *criteria)
+    if status != "OK":
+        raise ValueError("读取邮件失败")
+    all_uids = data[0].split()
+    uids = all_uids[-window:][::-1]
+    messages = []
+    if uids:
+        uid_set = b",".join(uids)
+        status, fetched = box.uid("fetch", uid_set, "(BODY.PEEK[HEADER.FIELDS (SUBJECT FROM TO DATE)])")
+        if status != "OK" or not fetched:
+            raise ValueError("读取邮件失败")
+        for item in fetched:
+            if not isinstance(item, tuple) or not item[1]:
+                continue
+            meta = item[0].decode("utf-8", errors="ignore")
+            match = re.search(r"UID\s+(\d+)", meta)
+            uid = match.group(1) if match else ""
+            if not uid:
+                continue
+            summary = mail_header_summary(uid, email.message_from_bytes(item[1]))
+            summary["folder"] = folder_label
+            messages.append(summary)
+        order = {uid.decode("ascii", errors="ignore"): idx for idx, uid in enumerate(uids)}
+        messages.sort(key=lambda it: order.get(str(it.get("uid", "")), 999))
+    return messages
+
+
+def _imap_search_date(value):
+    """把 YYYY-MM-DD（或 / . 分隔）转成 IMAP 需要的 DD-Mon-YYYY。"""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for sep in ("-", "/", "."):
+        parts = text.split(sep)
+        if len(parts) == 3:
+            try:
+                year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+                return f"{day:02d}-{_IMAP_SEARCH_MONTHS[month - 1]}-{year}"
+            except (ValueError, IndexError):
+                break
+    raise ValueError(f"日期格式应为 YYYY-MM-DD：{text}")
+
+
+def list_inbox_messages(username, limit=20, refresh=False, since=None, before=None, keyword=None, folder=None):
+    since_imap = _imap_search_date(since) if since else None
+    before_imap = _imap_search_date(before) if before else None
+    keyword = str(keyword or "").strip() or None
+    folder = str(folder or "inbox").strip() or "inbox"
+    has_filter = bool(since_imap or before_imap or keyword)
+    # 带日期/关键词筛选时放宽到 200 封，便于翻查半年内邮件；无筛选保持最近 50 封。
+    cap = 200 if has_filter else 50
+    limit = max(1, min(int(limit or 20), cap))
+    cache_key = re.sub(r"[^A-Za-z0-9]+", "_", f"{folder}_{limit}_{since_imap or ''}_{before_imap or ''}_{keyword or ''}")
+    cache_name = f"inbox_{cache_key}"
     if not refresh:
         cached = read_mail_cache(username, cache_name, 1800)
         if cached:
             cached["ok"] = True
             cached["cached"] = True
             return cached
+    # 关键词过滤时每个文件夹先取较大候选集（最新 cap 封）再过滤，避免漏掉 limit 窗口外的命中。
+    window = cap if keyword else limit
     box = imap_connect(username)
     try:
-        box.select("INBOX", readonly=True)
-        status, data = box.uid("search", None, "ALL")
-        if status != "OK":
-            raise ValueError("读取收件箱失败")
-        uids = data[0].split()[-limit:][::-1]
+        # folder=all/全部：合并 收件箱 + 已归档（半年前的历史邮件多在已归档）。
+        if folder.lower() in ("all", "全部", "inbox+archive"):
+            targets = [("INBOX", "收件箱"), (_resolve_imap_folder(box, "archive"), "已归档")]
+        else:
+            raw = _resolve_imap_folder(box, folder)
+            label = "收件箱" if raw == "INBOX" else _imap_utf7_decode(raw)
+            targets = [(raw, label)]
         messages = []
-        if uids:
-            uid_set = b",".join(uids)
-            status, fetched = box.uid("fetch", uid_set, "(BODY.PEEK[HEADER.FIELDS (SUBJECT FROM TO DATE)])")
-            if status != "OK" or not fetched:
-                raise ValueError("读取收件箱失败")
-            for item in fetched:
-                if not isinstance(item, tuple) or not item[1]:
-                    continue
-                meta = item[0].decode("utf-8", errors="ignore")
-                match = re.search(r"UID\s+(\d+)", meta)
-                uid = match.group(1) if match else ""
-                if not uid:
-                    continue
-                messages.append(mail_header_summary(uid, email.message_from_bytes(item[1])))
-        uid_order = {uid.decode("ascii", errors="ignore"): idx for idx, uid in enumerate(uids)}
-        messages.sort(key=lambda item: uid_order.get(str(item.get("uid", "")), 999))
+        for raw_folder, label in targets:
+            try:
+                messages += _fetch_folder_summaries(box, raw_folder, since_imap, before_imap, window, label)
+            except Exception:
+                continue
+        if len(targets) > 1:
+            messages.sort(key=lambda it: str(it.get("date", "")), reverse=True)
+        if keyword:
+            kw = keyword.lower()
+            messages = [
+                m for m in messages
+                if kw in str(m.get("subject", "")).lower() or kw in str(m.get("from", "")).lower()
+            ]
+        messages = messages[:limit]
         result = write_mail_cache(username, cache_name, {"ok": True, "messages": messages, "cached": False})
         result["ok"] = True
         return result
@@ -644,11 +774,13 @@ def list_inbox_messages(username, limit=20, refresh=False):
             pass
 
 
-def get_inbox_message(username, uid, refresh=False):
+def get_inbox_message(username, uid, refresh=False, folder=None):
     uid = str(uid or "").strip()
     if not uid:
         raise ValueError("缺少邮件 UID")
-    cache_name = f"detail_{uid}"
+    # IMAP UID 是按文件夹独立的；列表来自哪个文件夹，详情就得选中同一个文件夹。
+    folder = str(folder or "inbox").strip() or "inbox"
+    cache_name = f"detail_{re.sub(r'[^A-Za-z0-9]+', '_', folder)}_{uid}"
     if not refresh:
         cached = read_mail_cache(username, cache_name, 7200)
         if cached and not mail_detail_cache_is_stale(cached):
@@ -657,7 +789,7 @@ def get_inbox_message(username, uid, refresh=False):
             return cached
     box = imap_connect(username)
     try:
-        box.select("INBOX", readonly=True)
+        box.select(_resolve_imap_folder(box, folder), readonly=True)
         status, fetched = box.uid("fetch", uid, "(BODY.PEEK[])")
         if status != "OK" or not fetched:
             raise ValueError("邮件不存在或读取失败")

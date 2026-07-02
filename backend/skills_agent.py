@@ -273,16 +273,22 @@ def skill_defs():
             "name": "mailbox.list",
             "module": "邮件",
             "title": "查看收件箱",
-            "description": "通过当前用户 IMAP 配置读取最近邮件。",
-            "parameters": {"limit": "10/20/50，可选"},
+            "description": "通过当前用户 IMAP 配置读取邮件；支持按文件夹、日期范围（since/before）和主题关键词筛选。注意：约1个月前的历史邮件多在“已归档”，发出的邮件在“已发送”——查半年请用对应 folder 或 folder=all。",
+            "parameters": {
+                "limit": "返回条数，默认20；带筛选时最多200，可选",
+                "since": "起始日期 YYYY-MM-DD（含当天），可选",
+                "before": "截止日期 YYYY-MM-DD（不含当天），可选",
+                "keyword": "主题关键词，可选",
+                "folder": "文件夹，可选：inbox(默认)/archive(已归档)/sent(已发送)/drafts/trash/spam，或 all(收件箱+已归档合并)",
+            },
             "safe": True,
         },
         {
             "name": "mailbox.detail",
             "module": "邮件",
             "title": "查看邮件详情",
-            "description": "通过邮件 UID 读取邮件正文、HTML 预览和附件信息。",
-            "parameters": {"uid": "邮件 UID"},
+            "description": "通过邮件 UID 读取邮件正文、HTML 预览和附件信息。若邮件来自非收件箱（如 mailbox.list 返回的 folder=已归档/已发送），需带上同样的 folder。",
+            "parameters": {"uid": "邮件 UID", "folder": "邮件所在文件夹，来自 mailbox.list 返回项的 folder 字段，可选，默认 inbox"},
             "safe": True,
         },
         {
@@ -888,9 +894,22 @@ def execute_skill(name, arguments, username):
     if name == "diary.list":
         return list_diaries(args, username)
     if name == "mailbox.list":
-        return list_inbox_messages(username, args.get("limit", 20), bool(args.get("refresh", False)))
+        return list_inbox_messages(
+            username,
+            args.get("limit", 20),
+            bool(args.get("refresh", False)),
+            since=args.get("since"),
+            before=args.get("before"),
+            keyword=args.get("keyword"),
+            folder=args.get("folder"),
+        )
     if name == "mailbox.detail":
-        return get_inbox_message(username, str(args.get("uid", "") or ""), bool(args.get("refresh", False)))
+        return get_inbox_message(
+            username,
+            str(args.get("uid", "") or ""),
+            bool(args.get("refresh", False)),
+            folder=args.get("folder"),
+        )
     if name == "mailbox.attachment":
         return mailbox_attachment_skill(args, username)
     if name == "mail.send":

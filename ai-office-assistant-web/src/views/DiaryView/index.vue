@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowRight, Delete, EditPen, Search } from '@element-plus/icons-vue'
@@ -32,6 +32,7 @@ interface DiarySection {
 interface DiaryOptimizePreview {
   original: string
   suggestion: string
+  edited: string
 }
 
 const diarySections: DiarySection[] = [
@@ -64,13 +65,23 @@ const selectedDiary = ref<DiaryEntry | null>(null)
 const statusMessage = ref('选择日期后可以直接记录或载入已有日记。')
 const statusTone = ref<DiaryStatusTone>('normal')
 const diaries = ref<DiaryEntry[]>([])
-const optimizingField = ref<DiaryFieldKey | ''>('')
+const optimizingFields = ref<DiaryFieldKey[]>([])
 const promptEditor = ref<DiaryFieldKey | ''>('')
 const promptDraft = ref('')
 
 const router = useRouter()
 // 已载入内容的快照，用于判断是否有未保存修改。
 const formSnapshot = ref('')
+
+// 自动保存：默认开启、每 3 分钟一次，间隔可配置，配置保存在本地浏览器。
+const AUTO_SAVE_STORAGE_KEY = 'diary-autosave-config'
+const autoSaveIntervalOptions = [1, 3, 5, 10, 15]
+const autoSaveConfig = reactive({
+  enabled: true,
+  intervalMinutes: 3,
+})
+const lastAutoSavedAt = ref('')
+let autoSaveTimer: ReturnType<typeof setInterval> | null = null
 
 // 「总结本周→去周报」弹框（三步：选日记 → 确认分类 → 查看结果）。
 const summarizeDialogVisible = ref(false)
@@ -284,20 +295,22 @@ async function optimizeDiaryField(section: DiarySection) {
     ElMessage.warning('请先填写需要润色的内容')
     return
   }
-  optimizingField.value = section.key
+  if (optimizingFields.value.includes(section.key)) return
+  optimizingFields.value = [...optimizingFields.value, section.key]
   optimizePreview[section.key] = null
   try {
     const result = await optimizeText(original, optimizePrompt(section.key))
     optimizePreview[section.key] = {
       original,
       suggestion: result.text || original,
+      edited: result.text || original,
     }
     if (result.warning) ElMessage.warning(result.warning)
-    else ElMessage.success('已生成润色结果，请对比后采纳')
+    else ElMessage.success('已生成润色结果，可修改后应用')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : 'AI 润色失败')
   } finally {
-    optimizingField.value = ''
+    optimizingFields.value = optimizingFields.value.filter((key) => key !== section.key)
   }
 }
 
@@ -308,7 +321,7 @@ function ignoreOptimizePreview(key: DiaryFieldKey) {
 function acceptOptimizePreview(key: DiaryFieldKey) {
   const preview = optimizePreview[key]
   if (!preview) return
-  diaryForm[key] = preview.suggestion
+  diaryForm[key] = (preview.edited || preview.suggestion).trim()
   optimizePreview[key] = null
 }
 
@@ -357,22 +370,73 @@ async function loadDiaryList(selectFirst = false) {
   }
 }
 
-async function saveCurrentDiary() {
-  if (!validateDiary()) return
+async function saveCurrentDiary(options: { silent?: boolean } = {}) {
+  const silent = options.silent === true
+  if (silent) {
+    // 自动保存：没有可保存的内容或没有改动时，静默跳过，不打扰用户。
+    if (activeMode.value !== 'write' || loading.save || loading.current) return
+    if (!selectedDate.value || !totalContentLength.value || !isFormDirty.value) return
+  } else if (!validateDiary()) {
+    return
+  }
   loading.save = true
   try {
     const result = await saveDiary({ date: selectedDate.value, ...diaryForm })
     await loadDiaryList()
     selectedDiary.value = result.diary
     formSnapshot.value = formFingerprint()
-    setStatus(`${formatDateText(selectedDate.value)} 的日记已保存`, 'ok')
-    ElMessage.success('日记已保存')
+    if (silent) {
+      lastAutoSavedAt.value = formatDateTime(new Date().toISOString())
+      setStatus(`已于 ${lastAutoSavedAt.value} 自动保存`, 'ok')
+    } else {
+      setStatus(`${formatDateText(selectedDate.value)} 的日记已保存`, 'ok')
+      ElMessage.success('日记已保存')
+    }
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : '日记保存失败', 'error')
+    setStatus(error instanceof Error ? error.message : silent ? '自动保存失败' : '日记保存失败', 'error')
   } finally {
     loading.save = false
   }
 }
+
+function loadAutoSaveConfig() {
+  try {
+    const raw = localStorage.getItem(AUTO_SAVE_STORAGE_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as Partial<typeof autoSaveConfig>
+    if (typeof parsed.enabled === 'boolean') autoSaveConfig.enabled = parsed.enabled
+    if (typeof parsed.intervalMinutes === 'number' && parsed.intervalMinutes > 0) {
+      autoSaveConfig.intervalMinutes = parsed.intervalMinutes
+    }
+  } catch {
+    // 配置损坏时忽略，保留默认值。
+  }
+}
+
+function stopAutoSaveTimer() {
+  if (autoSaveTimer) {
+    clearInterval(autoSaveTimer)
+    autoSaveTimer = null
+  }
+}
+
+function restartAutoSaveTimer() {
+  stopAutoSaveTimer()
+  if (!autoSaveConfig.enabled) return
+  const intervalMs = Math.max(1, autoSaveConfig.intervalMinutes) * 60 * 1000
+  autoSaveTimer = setInterval(() => {
+    void saveCurrentDiary({ silent: true })
+  }, intervalMs)
+}
+
+// 配置变化时持久化并按新间隔重启定时器。
+watch(
+  () => [autoSaveConfig.enabled, autoSaveConfig.intervalMinutes],
+  () => {
+    localStorage.setItem(AUTO_SAVE_STORAGE_KEY, JSON.stringify({ ...autoSaveConfig }))
+    restartAutoSaveTimer()
+  },
+)
 
 function clearDiaryForm() {
   applyDiary(null)
@@ -602,11 +666,14 @@ async function initializeDiary() {
 
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload)
+  loadAutoSaveConfig()
+  restartAutoSaveTimer()
   initializeDiary()
 })
 
 onUnmounted(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
+  stopAutoSaveTimer()
 })
 </script>
 
@@ -641,11 +708,27 @@ onUnmounted(() => {
             <IconTextButton icon="history" :disabled="loading.current" @click="loadTodayDiary">载入今天</IconTextButton>
             <IconTextButton icon="refresh" :disabled="loading.current" @click="copyYesterdayPlan">复制昨日计划</IconTextButton>
             <IconTextButton icon="refresh" @click="clearDiaryForm">清空</IconTextButton>
-            <IconTextButton icon="send" variant="primary" :disabled="loading.save" @click="saveCurrentDiary">
+            <IconTextButton icon="send" variant="primary" :disabled="loading.save" @click="saveCurrentDiary()">
               {{ loading.save ? '保存中' : '保存日记' }}
             </IconTextButton>
             <IconTextButton icon="send" :disabled="loading.current" @click="openSummarizeDialog">总结本周→去周报</IconTextButton>
           </div>
+        </section>
+
+        <section class="diary-autosave-bar">
+          <div class="diary-autosave-main">
+            <el-switch v-model="autoSaveConfig.enabled" size="small" />
+            <span class="diary-autosave-label">自动保存</span>
+            <el-select
+              v-model="autoSaveConfig.intervalMinutes"
+              class="diary-autosave-select"
+              size="small"
+              :disabled="!autoSaveConfig.enabled"
+            >
+              <el-option v-for="minutes in autoSaveIntervalOptions" :key="minutes" :label="`每 ${minutes} 分钟`" :value="minutes" />
+            </el-select>
+          </div>
+          <small v-if="autoSaveConfig.enabled && lastAutoSavedAt" class="diary-autosave-hint">上次自动保存 {{ lastAutoSavedAt }}</small>
         </section>
 
         <section
@@ -662,9 +745,9 @@ onUnmounted(() => {
             </div>
             <div class="diary-section-tools ai-field-actions">
               <button class="ai-prompt-button" type="button" @click="openPromptEditor(section)">提示词</button>
-              <button class="ai-polish-button" type="button" :disabled="optimizingField !== ''" @click="optimizeDiaryField(section)">
+              <button class="ai-polish-button" type="button" :disabled="optimizingFields.includes(section.key)" @click="optimizeDiaryField(section)">
                 <span aria-hidden="true">✦</span>
-                {{ optimizingField === section.key ? '润色中' : 'AI 润色' }}
+                {{ optimizingFields.includes(section.key) ? '润色中' : 'AI 润色' }}
               </button>
             </div>
           </header>
@@ -682,13 +765,13 @@ onUnmounted(() => {
                 <p>{{ optimizePreview[section.key]?.original }}</p>
               </section>
               <section>
-                <span>润色结果</span>
-                <p>{{ optimizePreview[section.key]?.suggestion }}</p>
+                <span>润色结果（可编辑）</span>
+                <textarea v-model="optimizePreview[section.key]!.edited" class="diary-ai-compare-editor" rows="5" />
               </section>
             </div>
             <div class="diary-ai-compare-actions">
               <button type="button" @click="ignoreOptimizePreview(section.key)">忽略</button>
-              <button class="primary" type="button" @click="acceptOptimizePreview(section.key)">采纳建议</button>
+              <button class="primary" type="button" @click="acceptOptimizePreview(section.key)">应用结果</button>
             </div>
           </div>
         </section>

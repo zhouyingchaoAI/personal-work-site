@@ -16,6 +16,7 @@ import {
 import './index.scss'
 
 type ListItem = ReimbursementItem & { included: boolean }
+type ScanChunkState = { start: string; end: string; status: 'pending' | 'scanning' | 'done' | 'failed'; total_scanned: number; item_count: number; message: string }
 
 const INVOICE_TYPES = ['住宿', '火车', '机票', '餐饮', '出租车', '通讯费', '其他']
 const TYPE_COLORS: Record<string, string> = {
@@ -34,6 +35,8 @@ const dateRange = ref<[string, string] | null>(defaultDateRange())
 const account = ref<'company' | 'personal'>('personal')
 const scanning = ref(false)
 const scanStatus = ref('')
+const scanChunks = ref<ScanChunkState[]>([])
+const retryingChunkKey = ref('')
 const merging = ref(false)
 const items = ref<ListItem[]>([])
 const outputName = ref('')
@@ -69,32 +72,128 @@ function defaultOutputName() {
   return `报销附件_${dateRange.value[0]}_${dateRange.value[1]}`
 }
 
+const SCAN_CHUNK_DAYS = 7
+
+function splitDateRange(startText: string, endText: string, chunkDays = SCAN_CHUNK_DAYS): [string, string][] {
+  const start = new Date(`${startText}T00:00:00`)
+  const end = new Date(`${endText}T00:00:00`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return []
+  const fmt = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  const chunks: [string, string][] = []
+  const cursor = new Date(start)
+  while (cursor <= end) {
+    const chunkStart = new Date(cursor)
+    const chunkEnd = new Date(cursor)
+    chunkEnd.setDate(chunkEnd.getDate() + chunkDays - 1)
+    if (chunkEnd > end) chunkEnd.setTime(end.getTime())
+    chunks.push([fmt(chunkStart), fmt(chunkEnd)])
+    cursor.setTime(chunkEnd.getTime())
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return chunks
+}
+
+function scanErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : '扫描失败'
+}
+
+function toListItems(rawItems: ReimbursementItem[]): ListItem[] {
+  return rawItems.map((item) => ({
+    ...item,
+    included: !item.is_stub,   // stub 默认不勾选
+    source: item.source ?? 'mail',
+  }))
+}
+
+function appendScannedItems(rawItems: ReimbursementItem[]) {
+  items.value.push(...toListItems(rawItems))
+  if (items.value.length && !outputName.value) outputName.value = defaultOutputName()
+}
+
+function chunkKey(chunk: Pick<ScanChunkState, 'start' | 'end'>) {
+  return `${chunk.start}_${chunk.end}`
+}
+
+function updateScanStatus() {
+  const totalScanned = scanChunks.value.reduce((sum, chunk) => sum + chunk.total_scanned, 0)
+  const failed = scanChunks.value.filter((chunk) => chunk.status === 'failed').length
+  const done = scanChunks.value.filter((chunk) => chunk.status === 'done').length
+  const base = `已完成 ${done}/${scanChunks.value.length} 段，共扫描 ${totalScanned} 封邮件，找到 ${items.value.length} 张发票。`
+  scanStatus.value = failed ? `${base} ${failed} 段失败，可单独重扫。` : base
+}
+
 // ──────────── 扫描 ────────────
 async function handleScan() {
   if (!dateRange.value?.[0] || !dateRange.value?.[1]) {
     ElMessage.warning('请先选择日期范围')
     return
   }
+  const chunks = splitDateRange(dateRange.value[0], dateRange.value[1])
+  if (!chunks.length) {
+    ElMessage.warning('日期范围不正确')
+    return
+  }
   scanning.value = true
   scanStatus.value = '正在连接邮箱扫描...'
+  scanChunks.value = chunks.map(([start, end]) => ({ start, end, status: 'pending', total_scanned: 0, item_count: 0, message: '' }))
   items.value = []
   mergeResult.value = null
   try {
-    const result = await scanInvoiceAttachments(dateRange.value[0], dateRange.value[1], account.value)
-    items.value = (result.items || []).map((item) => ({
-      ...item,
-      included: !item.is_stub,   // stub 默认不勾选
-      source: item.source ?? 'mail',
-    }))
-    scanStatus.value = items.value.length === 0
-      ? `扫描完成，共扫描 ${result.total_scanned} 封邮件，未找到发票附件。`
-      : `扫描完成，共扫描 ${result.total_scanned} 封邮件，找到 ${items.value.length} 张发票。`
-    if (items.value.length && !outputName.value) outputName.value = defaultOutputName()
-  } catch (error) {
-    scanStatus.value = ''
-    ElMessage.error(error instanceof Error ? error.message : '扫描失败')
+    for (let index = 0; index < scanChunks.value.length; index += 1) {
+      const chunk = scanChunks.value[index]
+      chunk.status = 'scanning'
+      chunk.message = '扫描中'
+      scanStatus.value = scanChunks.value.length === 1
+        ? '正在扫描邮件...'
+        : `正在扫描第 ${index + 1}/${scanChunks.value.length} 段：${chunk.start} 至 ${chunk.end}`
+      try {
+        const result = await scanInvoiceAttachments(chunk.start, chunk.end, account.value)
+        const rawItems = result.items || []
+        appendScannedItems(rawItems)
+        chunk.status = 'done'
+        chunk.total_scanned = result.total_scanned || 0
+        chunk.item_count = rawItems.length
+        chunk.message = `完成，找到 ${rawItems.length} 张`
+      } catch (error) {
+        chunk.status = 'failed'
+        chunk.message = scanErrorMessage(error)
+      }
+      updateScanStatus()
+    }
+    if (scanChunks.value.some((chunk) => chunk.status === 'failed')) ElMessage.warning('部分日期分段扫描失败，可点击重扫。')
   } finally {
     scanning.value = false
+  }
+}
+
+async function retryScanChunk(chunk: ScanChunkState) {
+  const key = chunkKey(chunk)
+  retryingChunkKey.value = key
+  chunk.status = 'scanning'
+  chunk.message = '重扫中'
+  try {
+    scanStatus.value = `正在重扫：${chunk.start} 至 ${chunk.end}`
+    const result = await scanInvoiceAttachments(chunk.start, chunk.end, account.value)
+    const rawItems = result.items || []
+    appendScannedItems(rawItems)
+    chunk.status = 'done'
+    chunk.total_scanned = result.total_scanned || 0
+    chunk.item_count = rawItems.length
+    chunk.message = `重扫完成，新增 ${rawItems.length} 张`
+    updateScanStatus()
+    ElMessage.success('该分段已重扫完成')
+  } catch (error) {
+    chunk.status = 'failed'
+    chunk.message = scanErrorMessage(error)
+    updateScanStatus()
+    ElMessage.error(chunk.message)
+  } finally {
+    retryingChunkKey.value = ''
   }
 }
 
@@ -414,6 +513,26 @@ async function handleStubFileSelect(event: Event) {
         </div>
       </div>
       <p v-if="scanStatus" class="reimbursement-scan-status">{{ scanStatus }}</p>
+      <div v-if="scanChunks.length > 1" class="reimbursement-chunk-list">
+        <div
+          v-for="chunk in scanChunks"
+          :key="chunkKey(chunk)"
+          :class="['reimbursement-chunk', `reimbursement-chunk--${chunk.status}`]"
+        >
+          <span>{{ chunk.start }} 至 {{ chunk.end }}</span>
+          <em>{{ chunk.message || '等待扫描' }}</em>
+          <button
+            v-if="chunk.status === 'failed'"
+            class="reimb-btn reimb-btn--ghost reimb-btn--sm"
+            type="button"
+            :disabled="scanning || retryingChunkKey === chunkKey(chunk)"
+            @click="retryScanChunk(chunk)"
+          >
+            <el-icon><Refresh /></el-icon>
+            重扫
+          </button>
+        </div>
+      </div>
 
       <!-- 发票列表 -->
       <div v-if="items.length > 0" class="reimbursement-list-section">

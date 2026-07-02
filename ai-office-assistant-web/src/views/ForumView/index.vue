@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   ChatLineRound,
@@ -30,6 +30,19 @@ import {
   type ForumTopic,
 } from '../../services/personalWorkApi'
 import { authState } from '../../services/authSession'
+import {
+  clearForumAiDraft,
+  clearForumCommentDraft,
+  clearForumCreateDraft,
+  hasForumAiDraft,
+  hasForumCreateDraft,
+  loadForumAiDraft,
+  loadForumCommentDraft,
+  loadForumCreateDraft,
+  saveForumAiDraft,
+  saveForumCommentDraft,
+  saveForumCreateDraft,
+} from '../../utils/forumDrafts'
 import './index.scss'
 
 interface ForumCreateForm {
@@ -51,7 +64,7 @@ const commentStatus = ref('')
 const replyTarget = ref<ForumComment | null>(null)
 const commentPage = ref(1)
 const commentsCollapsed = ref(false)
-const createOpen = ref(false)
+const createOpen = ref(hasForumCreateDraft() || hasForumAiDraft())
 const forumNotice = ref('')
 const aiFiles = ref<File[]>([])
 const createFiles = ref<File[]>([])
@@ -62,8 +75,12 @@ const commentInputRef = ref<HTMLTextAreaElement | null>(null)
 const aiFileInputRef = ref<HTMLInputElement | null>(null)
 const createFileInputRef = ref<HTMLInputElement | null>(null)
 const commentFileInputRef = ref<HTMLInputElement | null>(null)
+const previewAttachment = ref<ForumAttachment | null>(null)
 const createForm = reactive<ForumCreateForm>({ title: '', body: '', preset: '' })
 const aiForm = reactive<ForumAiForm>({ seed: '', chat: '' })
+Object.assign(createForm, loadForumCreateDraft())
+Object.assign(aiForm, loadForumAiDraft())
+let suppressCommentDraftSave = false
 const loading = reactive({
   list: false,
   detail: false,
@@ -155,6 +172,38 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : '操作失败'
 }
 
+function allComments(comments: ForumComment[]) {
+  return comments
+}
+
+function saveCurrentCommentDraft() {
+  if (suppressCommentDraftSave) return
+  saveForumCommentDraft(selectedTopicId.value, {
+    text: commentText.value,
+    status: commentStatus.value,
+    replyToId: replyTarget.value?.id || '',
+    replyToAuthor: replyTarget.value?.author || '',
+  })
+}
+
+function restoreCommentDraftForTopic(topic: ForumTopic) {
+  const draft = loadForumCommentDraft(selectedTopicId.value)
+  const reply = draft.replyToId ? allComments(topic.comments || []).find((comment) => comment.id === draft.replyToId) || null : null
+  commentText.value = draft.text || ''
+  commentStatus.value = isPlatformTicket(topic) ? draft.status || '' : ''
+  replyTarget.value = reply
+}
+
+watch(createForm, () => {
+  saveForumCreateDraft({ title: createForm.title, body: createForm.body, preset: createForm.preset })
+})
+
+watch(aiForm, () => {
+  saveForumAiDraft({ seed: aiForm.seed, chat: aiForm.chat })
+})
+
+watch([commentText, commentStatus, replyTarget], saveCurrentCommentDraft)
+
 function formatFileSize(size: number) {
   if (!size) return '0 B'
   if (size < 1024) return `${size} B`
@@ -168,6 +217,16 @@ function attachmentUrl(attachment: ForumAttachment) {
 
 function isImageAttachment(attachment: ForumAttachment) {
   return attachment.is_image || attachment.type.startsWith('image/')
+}
+
+function openImagePreview(event: MouseEvent, attachment: ForumAttachment) {
+  if (!isImageAttachment(attachment)) return
+  event.preventDefault()
+  previewAttachment.value = attachment
+}
+
+function closeImagePreview() {
+  previewAttachment.value = null
 }
 
 function mergeSelectedFiles(current: File[], selected: File[]) {
@@ -286,19 +345,25 @@ async function refreshTopicList() {
 }
 
 async function openTopic(id: string) {
+  if (selectedTopicId.value && selectedTopicId.value !== id) saveCurrentCommentDraft()
+  suppressCommentDraftSave = true
   selectedTopicId.value = id
   commentPage.value = 1
   commentsCollapsed.value = false
   replyTarget.value = null
+  commentText.value = ''
+  commentStatus.value = ''
   loading.detail = true
   try {
     const result = await getForumTopic(id)
     detailTopic.value = result.topic
-    if (!isPlatformTicket(result.topic)) commentStatus.value = ''
+    restoreCommentDraftForTopic(result.topic)
     await refreshTopicList()
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
+    await nextTick()
+    suppressCommentDraftSave = false
     loading.detail = false
   }
 }
@@ -328,6 +393,7 @@ async function submitTopic() {
     createForm.title = ''
     createForm.body = ''
     createForm.preset = ''
+    clearForumCreateDraft()
     clearCreateFiles()
     createOpen.value = false
     selectedTopicId.value = result.topic.id
@@ -393,6 +459,7 @@ async function submitAiTopic() {
     const result = await createForumAiTopic(aiForm.seed, aiForm.chat, files)
     aiForm.seed = ''
     aiForm.chat = ''
+    clearForumAiDraft()
     clearAiFiles()
     createOpen.value = false
     selectedTopicId.value = result.topic.id
@@ -418,6 +485,7 @@ async function submitComment() {
     const attachments = await uploadForumFiles(commentFiles.value, (message) => { commentUploadStatus.value = message })
     const result = await addForumComment(selectedTopic.value.id, content, replyTarget.value?.id || '', attachments, commentStatus.value)
     detailTopic.value = result.topic
+    clearForumCommentDraft(selectedTopic.value.id)
     commentText.value = ''
     commentStatus.value = ''
     clearCommentFiles()
@@ -788,9 +856,9 @@ onMounted(loadInitialTopics)
                 v-for="attachment in selectedTopic.attachments"
                 :key="attachment.id"
                 :href="attachmentUrl(attachment)"
-                :target="isImageAttachment(attachment) ? '_blank' : undefined"
                 rel="noreferrer"
                 class="forum-attachment"
+                @click="openImagePreview($event, attachment)"
               >
                 <span v-if="isImageAttachment(attachment)" class="forum-attachment-thumb">
                   <img :src="attachmentUrl(attachment)" :alt="attachment.name" />
@@ -833,7 +901,14 @@ onMounted(loadInitialTopics)
                       </header>
                       <p>{{ comment.content }}</p>
                       <div v-if="comment.attachments?.length" class="forum-comment-attachments">
-                        <a v-for="attachment in comment.attachments" :key="attachment.id" :href="attachmentUrl(attachment)" target="_blank" rel="noreferrer">
+                        <a
+                          v-for="attachment in comment.attachments"
+                          :key="attachment.id"
+                          :href="attachmentUrl(attachment)"
+                          :target="isImageAttachment(attachment) ? undefined : '_blank'"
+                          rel="noreferrer"
+                          @click="openImagePreview($event, attachment)"
+                        >
                           <img v-if="isImageAttachment(attachment)" :src="attachmentUrl(attachment)" :alt="attachment.name" />
                           <span v-else><el-icon><Document /></el-icon></span>
                           <em>{{ attachment.name }}</em>
@@ -860,7 +935,14 @@ onMounted(loadInitialTopics)
                           </header>
                           <p>{{ child.content }}</p>
                           <div v-if="child.attachments?.length" class="forum-comment-attachments">
-                            <a v-for="attachment in child.attachments" :key="attachment.id" :href="attachmentUrl(attachment)" target="_blank" rel="noreferrer">
+                            <a
+                              v-for="attachment in child.attachments"
+                              :key="attachment.id"
+                              :href="attachmentUrl(attachment)"
+                              :target="isImageAttachment(attachment) ? undefined : '_blank'"
+                              rel="noreferrer"
+                              @click="openImagePreview($event, attachment)"
+                            >
                               <img v-if="isImageAttachment(attachment)" :src="attachmentUrl(attachment)" :alt="attachment.name" />
                               <span v-else><el-icon><Document /></el-icon></span>
                               <em>{{ attachment.name }}</em>
@@ -973,4 +1055,20 @@ onMounted(loadInitialTopics)
       </section>
     </section>
   </section>
+
+  <div v-if="previewAttachment" class="forum-image-preview" @click.self="closeImagePreview">
+    <div class="forum-image-preview__dialog" role="dialog" aria-modal="true" :aria-label="previewAttachment.name">
+      <header class="forum-image-preview__head">
+        <strong>{{ previewAttachment.name }}</strong>
+        <a :href="attachmentUrl(previewAttachment)" target="_blank" rel="noreferrer">打开原图</a>
+        <button type="button" aria-label="关闭预览" @click="closeImagePreview">
+          <el-icon><Close /></el-icon>
+        </button>
+      </header>
+      <div class="forum-image-preview__body">
+        <img :src="attachmentUrl(previewAttachment)" :alt="previewAttachment.name" />
+      </div>
+    </div>
+  </div>
+
 </template>
