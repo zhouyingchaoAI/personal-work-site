@@ -31,12 +31,14 @@ import {
   removeNewsFavorite,
   saveNewsConfig,
   savePersonalNewsConfig,
+  searchWechatAccounts,
   type NewsConfig,
   type NewsFavorite,
   type NewsHistoryItem,
   type NewsIssue,
   type NewsItem,
   type NewsSource,
+  type WechatAccountCandidate,
 } from '../../services/personalWorkApi'
 import './index.scss'
 
@@ -53,7 +55,7 @@ interface ScopeState {
 
 function emptyConfig(): NewsConfig {
   return {
-    sources: [{ name: '', url: '' }],
+    sources: [{ name: '', url: '', kind: 'web' }],
     search_query: '',
     auto_search: true,
     auto_push: true,
@@ -83,6 +85,10 @@ const loading = reactive({
   saveConfig: false,
   generate: false,
 })
+const wechatSearch = reactive({ query: '', loading: false, candidates: [] as WechatAccountCandidate[], notice: '' })
+const wechatManual = reactive({ name: '', url: '', saving: false })
+const wechatExporterUrl = `${window.location.origin}/personal-office-assistant/wechat-article/`
+const advancedOpen = ref(false)
 
 const user = computed(() => authState.user)
 const isSuperadmin = computed(() => !!user.value?.is_superadmin)
@@ -91,6 +97,11 @@ const canConfig = computed(() => scope.value === 'personal' || (scope.value === 
 
 const state = computed<ScopeState>(() => (scope.value === 'personal' ? per : pub))
 const config = computed(() => state.value.config)
+const subscribedWechatSources = computed(() =>
+  config.value.sources
+    .map((source, index) => ({ source, index }))
+    .filter(({ source }) => source.kind === 'wechat_account' && source.name.trim()),
+)
 
 // 个人收藏夹：跨公共/个人资讯，看到感兴趣的条目可收藏，支持搜索。
 const favorites = ref<NewsFavorite[]>([])
@@ -147,12 +158,13 @@ function formatDateTime(value: string) {
   })
 }
 
-function normalizeSources(sources: NewsSource[]) {
-  const normalized = sources.map((source) => ({
+function normalizeSources(sources: NewsSource[]): NewsSource[] {
+  const normalized: NewsSource[] = sources.map((source) => ({
     name: source.name || '',
     url: source.url || '',
+    kind: source.kind === 'wechat_account' ? 'wechat_account' : 'web',
   }))
-  return normalized.length ? normalized : [{ name: '', url: '' }]
+  return normalized.length ? normalized : [{ name: '', url: '', kind: 'web' }]
 }
 
 function applyConfig(target: ScopeState, payload?: NewsConfig) {
@@ -174,8 +186,9 @@ function configPayload(): NewsConfig {
       .map((source) => ({
         name: source.name.trim(),
         url: source.url.trim(),
+        kind: source.kind === 'wechat_account' ? 'wechat_account' as const : 'web' as const,
       }))
-      .filter((source) => source.url),
+      .filter((source) => source.url || (source.kind === 'wechat_account' && source.name)),
     search_query: current.search_query.trim(),
     auto_search: current.auto_search,
     auto_push: current.auto_push,
@@ -198,8 +211,73 @@ function switchPanel(panel: 'reader' | 'config') {
   activePanel.value = panel
 }
 
-function addSource() {
-  state.value.config.sources.push({ name: '', url: '' })
+function addSource(kind: NewsSource['kind'] = 'web') {
+  state.value.config.sources.push({ name: '', url: '', kind: kind || 'web' })
+}
+
+async function handleWechatAccountSearch() {
+  const query = wechatSearch.query.trim()
+  if (query.length < 2 || wechatSearch.loading) {
+    if (query.length < 2) ElMessage.warning('请输入至少两个字的公众号名称')
+    return
+  }
+  wechatSearch.loading = true
+  wechatSearch.candidates = []
+  try {
+    const result = await searchWechatAccounts(query)
+    wechatSearch.candidates = result.candidates || []
+    wechatSearch.notice = result.notice || ''
+  } catch (error) {
+    wechatSearch.notice = errorMessage(error)
+  } finally {
+    wechatSearch.loading = false
+  }
+}
+
+async function subscribeWechatAccount(candidate: WechatAccountCandidate) {
+  const duplicate = state.value.config.sources.some((source) =>
+    source.kind === 'wechat_account' && source.name.trim().toLowerCase() === candidate.name.trim().toLowerCase(),
+  )
+  if (duplicate) {
+    ElMessage.info('该公众号已在订阅列表中')
+    return
+  }
+  state.value.config.sources.push({ name: candidate.name, url: '', kind: 'wechat_account' })
+  await handleSaveConfig()
+  wechatSearch.query = ''
+  wechatSearch.candidates = []
+  wechatSearch.notice = `已订阅「${candidate.name}」，可直接生成个人资讯。`
+}
+
+// 搜索无结果时的兜底：按名称手动订阅公众号，可选附一篇 mp.weixin.qq.com/s/ 文章入口。
+async function subscribeWechatManual() {
+  const name = wechatManual.name.trim()
+  const url = wechatManual.url.trim()
+  if (!name) {
+    ElMessage.warning('请填写公众号名称')
+    return
+  }
+  if (url && !/^https?:\/\/mp\.weixin\.qq\.com\/s\//i.test(url)) {
+    ElMessage.warning('文章入口需为 mp.weixin.qq.com/s/... 的链接；如无可留空')
+    return
+  }
+  const duplicate = state.value.config.sources.some((source) =>
+    source.kind === 'wechat_account' && source.name.trim().toLowerCase() === name.toLowerCase(),
+  )
+  if (duplicate) {
+    ElMessage.info('该公众号已在订阅列表中')
+    return
+  }
+  wechatManual.saving = true
+  try {
+    state.value.config.sources.push({ name, url, kind: 'wechat_account' })
+    await handleSaveConfig()
+    wechatManual.name = ''
+    wechatManual.url = ''
+    wechatSearch.notice = `已订阅「${name}」，可直接生成个人资讯。`
+  } finally {
+    wechatManual.saving = false
+  }
 }
 
 function removeSource(index: number) {
@@ -344,7 +422,15 @@ async function handleSaveConfig() {
     const result =
       scope.value === 'public' ? await saveNewsConfig(payload) : await savePersonalNewsConfig(payload)
     applyConfig(target, result.config)
-    ElMessage.success('资讯配置已保存')
+    if (result.issue) {
+      target.issue = result.issue
+      target.activeDate = result.issue.date
+      const latest = scope.value === 'public' ? await fetchNewsHistory() : await fetchPersonalNewsHistory()
+      target.history = latest.history || []
+      ElMessage.success('配置已保存，今日资讯已更新')
+    } else {
+      ElMessage.success(result.refresh_error ? '资讯配置已保存，自动刷新失败，可点击生成资讯重试' : '资讯配置已保存')
+    }
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
@@ -361,12 +447,18 @@ async function handleGenerateNews() {
       scope.value === 'public'
         ? await generateNewsIssue(target.config.search_query, target.config.auto_search)
         : await generatePersonalNewsIssue(target.config.search_query, target.config.auto_search)
-    target.issue = result.issue
-    target.activeDate = result.issue.date
+    if (result.issue) {
+      target.issue = result.issue
+      target.activeDate = result.issue.date
+    }
     const latest =
       scope.value === 'public' ? await fetchNewsHistory() : await fetchPersonalNewsHistory()
     target.history = latest.history || []
-    ElMessage.success(scope.value === 'public' ? '今日资讯已生成' : '个人资讯已生成')
+    ElMessage.success(
+      result.skipped
+        ? (result.message || '没有可用资讯，本次未生成简报')
+        : (scope.value === 'public' ? '今日资讯已生成' : '个人资讯已生成'),
+    )
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
@@ -388,10 +480,6 @@ onMounted(() => {
 <template>
   <section class="workspace-main news-main">
     <header class="news-page-head">
-      <div class="news-title-block">
-        <h1>每日资讯助手</h1>
-        <p>公共资讯由管理员统一配置，个人资讯由每个账号配置自己的来源并定期自动推送；看到感兴趣的可加入「我的收藏」。</p>
-      </div>
       <div class="news-page-actions">
         <div class="news-page-tabs" role="tablist" aria-label="资讯范围">
           <button :class="{ active: scope === 'public' }" type="button" @click="switchScope('public')">公共资讯</button>
@@ -573,63 +661,89 @@ onMounted(() => {
                 <el-icon><Setting /></el-icon>
                 {{ scope === 'public' ? '公共资讯配置' : '个人资讯配置' }}
               </span>
-              <h3>来源与自动生成配置</h3>
+              <h3>订阅与更新</h3>
               <p>
                 {{ scope === 'public'
-                  ? '维护全站共享的抓取网页、搜索关键词和每日自动更新规则。'
-                  : '维护你自己的抓取网页、搜索关键词，开启后将按设定时间定期自动推送。' }}
+                  ? '订阅公众号后，每日自动生成全站共享资讯。'
+                  : '订阅感兴趣的公众号，每日自动为你更新最新资讯。' }}
               </p>
             </div>
             <span v-if="state.configLoaded" class="news-config-status">已读取</span>
           </div>
 
           <div class="news-config-form news-config-form--page">
-            <label class="news-field news-field--full">
-              <span>搜索关键词</span>
-              <textarea v-model="config.search_query" rows="3" placeholder="轨道交通 OR 城市轨道 OR 地铁 OR 智慧轨交"></textarea>
-            </label>
-
             <div class="news-source-editor">
               <div class="news-source-title">
-                <strong>资讯网页</strong>
-                <button type="button" @click="addSource">
-                  <el-icon><Plus /></el-icon>
-                  新增网页
-                </button>
+                <strong>订阅公众号</strong>
+                <span>搜索后点击订阅，最新文章会自动进入资讯。</span>
               </div>
-              <div class="news-source-list">
-                <div v-for="(source, index) in config.sources" :key="index" class="news-source-row">
-                  <label>
-                    <span>名称</span>
-                    <input v-model="source.name" type="text" placeholder="来源名称" />
-                  </label>
-                  <label>
-                    <span>网址</span>
-                    <input v-model="source.url" type="url" placeholder="https://example.com/news" />
-                  </label>
-                  <button class="news-source-remove" type="button" :aria-label="`删除第 ${index + 1} 个来源`" @click="removeSource(index)">
-                    <el-icon><Delete /></el-icon>
+              <div class="news-wechat-subscribe">
+                <strong>订阅微信公众号</strong>
+                <label class="news-wechat-label" for="news-wechat-search">搜索公众号</label>
+                <div class="news-wechat-search-row">
+                  <input id="news-wechat-search" v-model="wechatSearch.query" type="search" placeholder="输入公众号名称，例如：新智元" @keyup.enter="handleWechatAccountSearch" />
+                  <button class="news-source-add-wechat" type="button" :disabled="wechatSearch.loading" @click="handleWechatAccountSearch">
+                    <el-icon><Search /></el-icon>{{ wechatSearch.loading ? '搜索中' : '搜索公众号' }}
+                  </button>
+                </div>
+                <p v-if="wechatSearch.notice" class="news-source-help">{{ wechatSearch.notice }}</p>
+                <div v-if="wechatSearch.candidates.length" class="news-wechat-candidates">
+                  <article v-for="candidate in wechatSearch.candidates" :key="`${candidate.name}-${candidate.url}`">
+                    <div><strong>{{ candidate.name }}</strong><span>{{ candidate.account_type || '公众号' }}<template v-if="candidate.account_id"> · 微信号：{{ candidate.account_id }}</template></span><span v-if="candidate.original_count || candidate.updated_text">{{ candidate.original_count ? `${candidate.original_count} 篇原创内容` : '' }}{{ candidate.original_count && candidate.updated_text ? ' · ' : '' }}{{ candidate.updated_text }}</span><span v-if="candidate.source">核验来源：{{ candidate.source }}</span><p>{{ candidate.description }}</p></div>
+                    <button type="button" @click="subscribeWechatAccount(candidate)">订阅</button>
+                  </article>
+                </div>
+                <div class="news-wechat-manual">
+                  <span class="news-wechat-manual__hint">搜不到？按名称手动订阅，或补一篇文章入口链接作为抓取回退。</span>
+                  <div class="news-wechat-manual__row">
+                    <input v-model="wechatManual.name" type="text" placeholder="公众号名称" />
+                    <input v-model="wechatManual.url" type="url" placeholder="文章入口（可选，mp.weixin.qq.com/s/...）" @keyup.enter="subscribeWechatManual" />
+                    <button type="button" :disabled="wechatManual.saving" @click="subscribeWechatManual">订阅</button>
+                  </div>
+                </div>
+              </div>
+              <div v-if="subscribedWechatSources.length" class="news-wechat-subscribed">
+                <div class="news-wechat-subscribed__head">
+                  <div><strong>已订阅公众号</strong><span>{{ subscribedWechatSources.length }} 个</span></div>
+                  <p>仅收录当天新发布的文章；未更新账号会在简报中明确提示。</p>
+                </div>
+                <div class="news-wechat-subscribed__list">
+                  <button v-for="item in subscribedWechatSources" :key="`${item.source.name}-${item.index}`" type="button" @click="removeSource(item.index)">
+                    <span>{{ item.source.name }}</span><el-icon title="取消订阅"><Delete /></el-icon>
                   </button>
                 </div>
               </div>
+              <div v-if="isSuperadmin" class="news-wechat-exporter">
+                <div class="news-wechat-exporter__copy">
+                  <span class="news-wechat-exporter__badge">系统管理</span>
+                  <strong>采集历史库（本浏览器）</strong>
+                  <span>仅显示在采集器中手动导入并同步历史的账号。资讯助手订阅独立生效，无需在此重复添加。</span>
+                </div>
+                <a :href="wechatExporterUrl" target="_blank" rel="noopener noreferrer">打开历史库</a>
+              </div>
             </div>
 
-            <div class="news-config-grid">
-              <div class="news-check-row">
-                <label>
-                  <input v-model="config.auto_search" type="checkbox" />
-                  <span>允许大模型自动网络搜索</span>
-                </label>
-                <label>
-                  <input v-model="config.auto_push" type="checkbox" />
-                  <span>{{ scope === 'public' ? '每日自动更新推送' : '定期自动推送给我' }}</span>
-                </label>
-              </div>
+            <div class="news-simple-schedule">
+              <span>每日更新</span>
+              <label><input v-model="config.auto_push" type="checkbox" /> 自动生成</label>
+              <input v-model="config.push_time" type="time" :disabled="!config.auto_push" />
+              <button type="button" @click="advancedOpen = !advancedOpen">{{ advancedOpen ? '收起高级设置' : '高级设置' }}</button>
+            </div>
 
-              <label class="news-field">
-                <span>推送时间</span>
-                <input v-model="config.push_time" type="time" />
+            <div v-if="advancedOpen" class="news-advanced-settings">
+              <label class="news-field news-field--full">
+                <span>补充搜索关键词</span>
+                <textarea v-model="config.search_query" rows="2" placeholder="例如：人工智能 OR 大模型 OR 机器人"></textarea>
               </label>
+              <label class="news-check-row"><input v-model="config.auto_search" type="checkbox" /><span>允许大模型补充全网最新资讯</span></label>
+              <div class="news-source-title"><strong>其他网页来源</strong><button type="button" @click="addSource('web')"><el-icon><Plus /></el-icon> 添加网页</button></div>
+              <div class="news-source-list">
+                <div v-for="(source, index) in config.sources" v-show="source.kind === 'web'" :key="index" class="news-source-row news-source-row--web">
+                  <label><span>来源名称</span><input v-model="source.name" type="text" placeholder="可选，例如行业官网" /></label>
+                  <label><span>网址</span><input v-model="source.url" type="url" placeholder="https://" /></label>
+                  <button class="news-source-remove" type="button" :aria-label="`删除第 ${index + 1} 个来源`" @click="removeSource(index)"><el-icon><Delete /></el-icon></button>
+                </div>
+              </div>
             </div>
 
             <div class="news-config-actions news-config-actions--page">

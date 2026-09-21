@@ -531,26 +531,42 @@ def _direct_diary_save_call(raw_text: str) -> dict | None:
     today_parts: list[str] = []
     tomorrow_parts: list[str] = []
     thought_parts: list[str] = []
+    # A natural message frequently uses semicolons inside one plan, e.g.
+    # “明天上午开会；下午客户沟通”。  Once the user switches to a section,
+    # following unlabelled segments belong to that same section until another
+    # explicit label appears.
+    active_field = "today_work"
     for segment in re.split(r"[；;\n]+", content):
         seg = segment.strip()
         if not seg:
             continue
         if re.search(r"明天|明日|计划|待办", seg):
-            tomorrow_parts.append(_clean_diary_segment(seg))
+            active_field = "tomorrow_plan"
         elif re.search(r"想法|心得|思路|感受|备注", seg):
-            thought_parts.append(_clean_diary_segment(seg))
-        else:
-            today_parts.append(_clean_diary_segment(seg))
+            active_field = "thoughts"
+        elif re.search(r"今天|今日|工作内容|已完成|完成了?", seg):
+            active_field = "today_work"
 
-    if not today_parts and content:
+        cleaned = _clean_diary_segment(seg)
+        if active_field == "tomorrow_plan":
+            tomorrow_parts.append(cleaned)
+        elif active_field == "thoughts":
+            thought_parts.append(cleaned)
+        else:
+            today_parts.append(cleaned)
+
+    if not (today_parts or tomorrow_parts or thought_parts) and content:
         today_parts.append(_clean_diary_segment(content))
 
-    payload = {
-        "date": date,
-        "today_work": "；".join(p for p in today_parts if p),
-        "tomorrow_plan": "；".join(p for p in tomorrow_parts if p),
-        "thoughts": "；".join(p for p in thought_parts if p),
-    }
+    payload = {"date": date}
+    for field, parts in (
+        ("today_work", today_parts),
+        ("tomorrow_plan", tomorrow_parts),
+        ("thoughts", thought_parts),
+    ):
+        value = "；".join(part for part in parts if part)
+        if value:
+            payload[field] = value
     if not any(payload.get(k) for k in ("today_work", "tomorrow_plan", "thoughts")):
         return None
     return {"name": "diary.save", "arguments": payload}
@@ -942,10 +958,30 @@ def agent_chat(payload: dict, username: str = "") -> dict:
         payload={"kind": kind, "message_count": len(payload.get("messages", []) or [])},
     )
 
-    # Persist incoming user messages
+    # Resolve files uploaded by the chat dialog before persisting the turn. The
+    # writing module owns extraction and user-scoped storage for PDF/Office/text
+    # files, which keeps this agent path consistent with the writing assistant.
     incoming = payload.get("messages", [])
     if isinstance(incoming, dict):
         incoming = [incoming]
+    else:
+        incoming = list(incoming or [])
+    file_ids = payload.get("file_ids") or []
+    if file_ids:
+        attachment_context_fn = globals().get("writing_agent_attachment_context")
+        if not attachment_context_fn:
+            return _agent_error(session_id, username, "附件识别服务暂不可用", kind=kind)
+        try:
+            attachment_context = attachment_context_fn(file_ids, username)
+        except Exception as exc:
+            return _agent_error(session_id, username, f"附件读取失败：{exc}", kind=kind)
+        if attachment_context:
+            for item in reversed(incoming):
+                if isinstance(item, dict) and item.get("role") == "user" and str(item.get("content") or "").strip():
+                    item["content"] = str(item["content"]).strip() + attachment_context
+                    break
+
+    # Persist incoming user messages
     for m in incoming:
         if isinstance(m, dict) and m.get("role") == "user" and m.get("content"):
             add_message(session_id, "user", str(m["content"]), metadata={"kind": kind})

@@ -1,31 +1,41 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowRight, Calendar, ChatDotRound, ChatLineSquare, Document, Message, Notebook, Setting } from '@element-plus/icons-vue'
+import { ArrowRight, ChatDotRound, Document, Setting } from '@element-plus/icons-vue'
 import DigitalHumanAssistant from '../../components/DigitalHumanAssistant/index.vue'
 import AppLayout from '../../layout/AppLayout/index.vue'
-import DiaryView from '../DiaryView/index.vue'
-import ForumView from '../ForumView/index.vue'
-import LobsterBaseView from '../LobsterBaseView/index.vue'
-import MailAssistantView from '../MailAssistantView/index.vue'
-import MeetingAssistantView from '../MeetingAssistantView/index.vue'
-import KnowledgeBaseView from '../KnowledgeBaseView/index.vue'
-import ReimbursementView from '../ReimbursementView/index.vue'
-import NewsView from '../NewsView/index.vue'
-import SettingsView from '../SettingsView/index.vue'
-import TripReportView from '../TripReportView/index.vue'
-import WeeklyReportView from '../WeeklyReportView/index.vue'
+// 各业务菜单按需切分独立 chunk：打开工作台只加载首页 + 当前菜单对应的模块，
+// 首屏不再一次性解析全部功能（原先所有视图打进单一 2.5MB 主包，导致首次打开慢）。
+const AssistantCenterView = defineAsyncComponent(() => import('../AssistantCenterView/index.vue'))
+const DiaryView = defineAsyncComponent(() => import('../DiaryView/index.vue'))
+const ForumView = defineAsyncComponent(() => import('../ForumView/index.vue'))
+const WorkOrderView = defineAsyncComponent(() => import('../WorkOrderView/index.vue'))
+const LobsterBaseView = defineAsyncComponent(() => import('../LobsterBaseView/index.vue'))
+const MailAssistantView = defineAsyncComponent(() => import('../MailAssistantView/index.vue'))
+const MeetingAssistantView = defineAsyncComponent(() => import('../MeetingAssistantView/index.vue'))
+const KnowledgeBaseView = defineAsyncComponent(() => import('../KnowledgeBaseView/index.vue'))
+const ProjectAssistantView = defineAsyncComponent(() => import('../ProjectAssistantView/index.vue'))
+const LedgerAssistantView = defineAsyncComponent(() => import('../LedgerAssistantView/index.vue'))
+const CashflowAssistantView = defineAsyncComponent(() => import('../CashflowAssistantView/index.vue'))
+const CrmAssistantView = defineAsyncComponent(() => import('../CrmAssistantView/index.vue'))
+const ReimbursementView = defineAsyncComponent(() => import('../ReimbursementView/index.vue'))
+const NewsView = defineAsyncComponent(() => import('../NewsView/index.vue'))
+const SettingsView = defineAsyncComponent(() => import('../SettingsView/index.vue'))
+const TripReportView = defineAsyncComponent(() => import('../TripReportView/index.vue'))
+const WeeklyReportView = defineAsyncComponent(() => import('../WeeklyReportView/index.vue'))
+const WritingAssistantView = defineAsyncComponent(() => import('../WritingAssistantView/index.vue'))
+const WorkflowCenterView = defineAsyncComponent(() => import('../WorkflowCenterView/index.vue'))
 import { authState, logoutSession } from '../../services/authSession'
 import { downloadUrl, getReports, type ReportFile } from '../../services/personalWorkApi'
-import { isMenuId, visibleMenuItems, type MenuId } from '../../layout/menu'
+import { customizableMenuItems, isMenuId, visibleMenuItems, type MenuId } from '../../layout/menu'
+import { applyNavPrefs, loadNavPrefs, reorderVisibleAssistants } from '../../layout/navPrefs'
 import benbenImage from '../../assets/benben.png'
 import homeHeroBanner from '../../assets/home-hero-banner.png'
 import assistantLogo from '../../assets/logo_1.png'
 import {
   focusMomentImage,
   homeAssistantActions,
-  homeCapabilities,
   homeFeatures,
   promptQuestions,
   type HomeRecordTone,
@@ -42,11 +52,33 @@ const recentReportsLoading = ref(false)
 const recentReportsError = ref('')
 const user = computed(() => authState.user)
 const activeMenu = computed<MenuId>(() => {
-  const menu = String(route.params.menu || 'weekly')
-  return isMenuId(menu) ? menu : 'weekly'
+  const menu = String(route.params.menu || 'dashboard')
+  return isMenuId(menu) ? menu : 'dashboard'
 })
-const menuItems = computed(() => (user.value ? visibleMenuItems(user.value) : []))
-const homeGreeting = computed(() => greetingByHour(currentTime.value.getHours()))
+const menuItems = computed(() => (user.value ? applyNavPrefs(visibleMenuItems(user.value)) : []))
+const hasActiveAssistantView = computed(() => [
+  'assistants', 'weekly', 'trip', 'diary', 'writing', 'forum', 'workorder', 'news', 'mailassistant',
+  'meeting', 'knowledge', 'project', 'crm', 'ledger', 'cashflow', 'workflow', 'reimbursement', 'lobsterbase',
+  'config', 'mailconfig', 'skills', 'usermanage', 'mcp',
+].includes(activeMenu.value))
+const homeGreeting = computed(() => {
+  const name = user.value?.name?.trim() || user.value?.username || ''
+  const greeting = greetingByHour(currentTime.value.getHours())
+  return name ? greeting.replace('，', `，${name}，`) : greeting
+})
+const homePage = ref(1)
+const homeMenus = computed(() => menuItems.value.filter(item => item.group === 'main' && !item.fixed && item.showInSidebar !== false))
+const homeIds = computed(() => new Set(homeMenus.value.map(item => item.id)))
+const visibleFeatures = computed(() => homeMenus.value.map(item => {
+  const feature = homeFeatures.find(f => f.menuId === item.id)
+  return {id:item.id,menuId:item.id,label:item.label,description:feature?.description || `打开${item.label}，开始处理工作`,image:feature?.image,icon:item.icon,tone:feature?.tone || 'blue'}
+}))
+const pageFeatures = computed(() => visibleFeatures.value.slice((homePage.value - 1) * 6, homePage.value * 6))
+const visibleCapabilities = computed(() => pageFeatures.value.slice(0,4).map(item => ({id:item.id,title:item.label,description:item.description,icon:item.icon})))
+const visibleActions = computed(() => homeAssistantActions.filter(item => homeIds.value.has(item.menuId || (item.id === 'meeting' ? 'meeting' : 'dashboard'))))
+const visibleReports = computed(() => recentReports.value.filter(item => (item.kind === 'weekly' && homeIds.value.has('weekly')) || (item.kind === 'trip' && homeIds.value.has('trip'))).slice(0,5))
+const showRecentReports = computed(() => homeIds.value.has('weekly') || homeIds.value.has('trip'))
+watch(() => homeMenus.value.map(item => item.id).join(','), () => { homePage.value = 1 })
 let greetingTimer: number | undefined
 
 onMounted(() => {
@@ -54,15 +86,28 @@ onMounted(() => {
   greetingTimer = window.setInterval(() => {
     currentTime.value = new Date()
   }, 60 * 1000)
+  // 加载当前用户的导航偏好（排序 / 隐藏），让侧边栏按个人配置展示。
+  loadNavPrefs()
 })
+
+async function handleNavReorder(ids: MenuId[]) {
+  if (!user.value) return
+  try {
+    await reorderVisibleAssistants(ids, customizableMenuItems(user.value))
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '保存导航顺序失败')
+  }
+}
 
 watch(
   activeMenu,
   (menu) => {
-    if (menu === 'dashboard') loadRecentReports()
+    if (menu === 'dashboard' && showRecentReports.value) loadRecentReports()
   },
   { immediate: true },
 )
+
+watch(showRecentReports, (show) => { if (show && activeMenu.value === 'dashboard') loadRecentReports() })
 
 onBeforeUnmount(() => {
   if (greetingTimer) window.clearInterval(greetingTimer)
@@ -75,7 +120,7 @@ async function loadRecentReports() {
   try {
     const data = await getReports()
     // 最近编辑按文件修改时间统一排序，不沿用报告管理列表的分类排序。
-    recentReports.value = data.reports.slice().sort((left, right) => right.mtime - left.mtime).slice(0, 5)
+    recentReports.value = data.reports.slice().sort((left, right) => right.mtime - left.mtime)
   } catch (error) {
     recentReportsError.value = error instanceof Error ? error.message : '最近文档加载失败'
   } finally {
@@ -85,6 +130,13 @@ async function loadRecentReports() {
 
 function selectMenu(menu: string) {
   if (isMenuId(menu)) router.push(`/workspace/${menu}`)
+}
+
+function openWeeklyEditor(draft: Record<string, unknown>) {
+  if (!user.value?.username) return
+  localStorage.setItem(`personalWorkSite.pendingWeeklyAgentDraft:${user.value.username}`, JSON.stringify(draft))
+  selectMenu('weekly')
+  ElMessage.success('周报草稿已带入编辑页，可继续调整并发送邮件')
 }
 
 function greetingByHour(hour: number) {
@@ -153,24 +205,36 @@ async function handleLogout() {
     :user="user"
     @update:active-menu="selectMenu"
     @logout="handleLogout"
+    @reorder="handleNavReorder"
   >
-    <WeeklyReportView v-if="activeMenu === 'weekly'" />
-    <TripReportView v-else-if="activeMenu === 'trip'" />
-    <DiaryView v-else-if="activeMenu === 'diary'" />
-    <ForumView v-else-if="activeMenu === 'forum'" />
-    <NewsView v-else-if="activeMenu === 'news'" />
-    <MailAssistantView v-else-if="activeMenu === 'mailassistant'" />
-    <MeetingAssistantView v-else-if="activeMenu === 'meeting'" />
-    <KnowledgeBaseView v-else-if="activeMenu === 'knowledge'" />
-    <ReimbursementView v-else-if="activeMenu === 'reimbursement'" />
-    <LobsterBaseView v-else-if="activeMenu === 'lobsterbase'" />
-    <SettingsView
-      v-else-if="['config', 'mailconfig', 'skills', 'usermanage', 'mcp'].includes(activeMenu)"
-      :active-menu="activeMenu"
-      @select-menu="selectMenu"
-    />
+    <!-- 已访问的助手保留实例而非卸载：切换页面不取消生成、上传、AI 请求等后台操作。 -->
+    <KeepAlive><AssistantCenterView v-if="activeMenu === 'assistants'" /></KeepAlive>
+    <KeepAlive><WeeklyReportView v-if="activeMenu === 'weekly'" /></KeepAlive>
+    <KeepAlive><TripReportView v-if="activeMenu === 'trip'" /></KeepAlive>
+    <KeepAlive><DiaryView v-if="activeMenu === 'diary'" /></KeepAlive>
+    <KeepAlive><WritingAssistantView v-if="activeMenu === 'writing'" /></KeepAlive>
+    <KeepAlive><ForumView v-if="activeMenu === 'forum'" /></KeepAlive>
+    <KeepAlive><WorkOrderView v-if="activeMenu === 'workorder'" /></KeepAlive>
+    <KeepAlive><NewsView v-if="activeMenu === 'news'" /></KeepAlive>
+    <KeepAlive><MailAssistantView v-if="activeMenu === 'mailassistant'" /></KeepAlive>
+    <KeepAlive><MeetingAssistantView v-if="activeMenu === 'meeting'" /></KeepAlive>
+    <KeepAlive><KnowledgeBaseView v-if="activeMenu === 'knowledge'" /></KeepAlive>
+    <KeepAlive><ProjectAssistantView v-if="activeMenu === 'project'" /></KeepAlive>
+    <KeepAlive><CrmAssistantView v-if="activeMenu === 'crm'" /></KeepAlive>
+    <KeepAlive><LedgerAssistantView v-if="activeMenu === 'ledger'" /></KeepAlive>
+    <KeepAlive><CashflowAssistantView v-if="activeMenu === 'cashflow'" /></KeepAlive>
+    <KeepAlive><WorkflowCenterView v-if="activeMenu === 'workflow'" /></KeepAlive>
+    <KeepAlive><ReimbursementView v-if="activeMenu === 'reimbursement'" /></KeepAlive>
+    <KeepAlive><LobsterBaseView v-if="activeMenu === 'lobsterbase'" /></KeepAlive>
+    <KeepAlive>
+      <SettingsView
+        v-if="['config', 'mailconfig', 'skills', 'usermanage', 'mcp'].includes(activeMenu)"
+        :active-menu="activeMenu"
+        @select-menu="selectMenu"
+      />
+    </KeepAlive>
 
-    <section v-else-if="activeMenu === 'dashboard'" class="workspace-main home-dashboard">
+    <section v-if="activeMenu === 'dashboard'" class="workspace-main home-dashboard">
       <section class="home-hero" aria-label="承希智能办公助手">
         <img :src="homeHeroBanner" alt="" aria-hidden="true" />
         <div class="home-hero__copy">
@@ -192,27 +256,29 @@ async function handleLogout() {
         </div>
         <div class="home-feature-grid">
           <button
-            v-for="item in homeFeatures"
+            v-for="item in pageFeatures"
             :key="item.id"
             :class="['home-feature-card', `home-feature-card--${item.tone}`]"
             type="button"
             @mousemove="updateSpotlightPosition"
             @click="selectMenu(item.menuId)"
           >
-            <img :src="item.image" alt="" aria-hidden="true" />
+            <img v-if="item.image" :src="item.image" alt="" aria-hidden="true" /><el-icon v-else class="home-feature-symbol"><component :is="item.icon || Document" /></el-icon>
             <strong>{{ item.label }}</strong>
             <span>{{ item.description }}</span>
           </button>
         </div>
+        <el-pagination v-if="visibleFeatures.length > 6" v-model:current-page="homePage" :page-size="6" :total="visibleFeatures.length" layout="prev, pager, next" style="margin-top:12px" />
+        <p v-if="!visibleFeatures.length" class="home-record-empty">暂无已显示的助手，可在助手中心选择已获授权的助手。</p>
       </section>
 
-      <section class="home-panel home-record-panel" aria-label="最近编辑">
+      <section v-if="showRecentReports" class="home-panel home-record-panel" aria-label="最近编辑">
         <div class="home-panel-title home-panel-title--between">
           <span><el-icon><Document /></el-icon></span>
           <h2>最近编辑</h2>
         </div>
-        <ul v-if="recentReports.length" class="home-record-list">
-          <li v-for="item in recentReports" :key="item.name">
+        <ul v-if="visibleReports.length" class="home-record-list">
+          <li v-for="item in visibleReports" :key="item.name">
             <div class="home-record-row">
               <span :class="['home-record-icon', `home-record-icon--${reportRecordTone(item)}`]">
                 {{ reportRecordIcon(item) }}
@@ -232,7 +298,7 @@ async function handleLogout() {
       </section>
     </section>
 
-    <section v-else class="workspace-main placeholder-main">
+    <section v-if="!hasActiveAssistantView && activeMenu !== 'dashboard'" class="workspace-main placeholder-main">
       <article class="panel placeholder-panel">
         <h3>{{ menuItems.find((item) => item.id === activeMenu)?.label }}</h3>
         <p>这个功能会接入个人办公助手现有能力，当前先保留入口。</p>
@@ -240,19 +306,16 @@ async function handleLogout() {
     </section>
 
     <aside v-if="activeMenu === 'dashboard'" class="home-side-panel">
-      <section class="home-panel home-capability-panel">
+      <section v-if="visibleCapabilities.length" class="home-panel home-capability-panel">
         <div class="home-side-title">
           <span><el-icon><Setting /></el-icon></span>
           <h2>当前能力</h2>
         </div>
         <ul class="home-capability-list">
-          <li v-for="item in homeCapabilities" :key="item.id" class="home-capability-item">
+          <li v-for="item in visibleCapabilities" :key="item.id" class="home-capability-item">
             <span class="home-capability-icon">
               <el-icon>
-                <Calendar v-if="item.icon === 'report'" />
-                <ChatLineSquare v-else-if="item.icon === 'forum'" />
-                <Notebook v-else-if="item.icon === 'news'" />
-                <Message v-else />
+                <component :is="item.icon || Document" />
               </el-icon>
             </span>
             <div>
@@ -282,7 +345,7 @@ async function handleLogout() {
         </button>
         <div class="home-ai-actions">
           <button
-            v-for="item in homeAssistantActions"
+            v-for="item in visibleActions"
             :key="item.id"
             type="button"
             @click="item.menuId ? selectMenu(item.menuId) : sendAssistantMessage(item.label)"
@@ -293,7 +356,7 @@ async function handleLogout() {
       </section>
     </aside>
 
-    <aside v-else-if="!['weekly', 'trip', 'diary', 'forum', 'news', 'mailassistant', 'meeting', 'knowledge', 'reimbursement', 'lobsterbase', 'config', 'mailconfig', 'skills', 'usermanage', 'mcp'].includes(activeMenu)" class="assistant-panel">
+    <aside v-if="!hasActiveAssistantView && activeMenu !== 'dashboard'" class="assistant-panel">
       <section class="assistant-hero">
         <div class="speech-bubble">
           Hi，{{ user.name || user.username }}！今天想先从哪件事开始呢？
@@ -326,6 +389,6 @@ async function handleLogout() {
       </section>
     </aside>
 
-    <DigitalHumanAssistant ref="deskPetRef" :user-name="user.name || user.username" />
+    <DigitalHumanAssistant ref="deskPetRef" :user-name="user.name || user.username" @weekly-ready="openWeeklyEditor" />
   </AppLayout>
 </template>

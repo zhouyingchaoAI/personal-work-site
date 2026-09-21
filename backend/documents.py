@@ -527,8 +527,11 @@ def generate_weekly(payload, username=None):
     if template.exists() and template.is_file():
         if template.resolve() == output.resolve():
             fallback = newest("weekly", username, fallback_shared=True)
-            if fallback and Path(fallback.get("path", "")).resolve() != output.resolve():
-                template = Path(fallback["path"])
+            fallback_path = Path((fallback or {}).get("path", ""))
+            # 同周期文件已存在时，它是待覆盖的输出而不是模板；没有其他历史模板
+            # 就从空工作簿开始，不能对同一个文件执行 copy2。
+            template = fallback_path if fallback_path.exists() and fallback_path.resolve() != output.resolve() else None
+    if template and template.exists() and template.is_file():
         shutil.copy2(template, output)
     else:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -929,6 +932,9 @@ def generate_document(payload, username=None):
         path = generate_trip(payload, username)
     else:
         raise ValueError("未知生成类型")
+    project_id = str(payload.get("project_id", "") or "").strip()
+    if project_id:
+        project_record_report(project_id, kind, path, username, payload)
     draft = compose_draft(kind, path.name, username)
     return {
         "ok": True,

@@ -230,6 +230,58 @@ def skill_defs():
             "safe": True,
         },
         {
+            "name": "trip.compose",
+            "module": "出差报告",
+            "title": "编写/整理出差报告草稿",
+            "description": "调用配置的大模型，把出差原始描述整理成出差报告结构：目的、行程、工作内容与成果、思路、问题、建议。",
+            "parameters": {
+                "location": "出差地点，可选",
+                "trip_date_text": "出差日期文本，可选",
+                "purpose": "出差目的，可选",
+                "raw_work": "出差原始工作内容",
+                "itinerary": "行程安排，可选",
+                "details": "工作内容，可选",
+                "issues": "问题与不足，可选",
+                "suggestions": "建议，可选",
+                "style": "输出风格，可选",
+            },
+            "safe": True,
+        },
+        {
+            "name": "trip.preview",
+            "module": "出差报告",
+            "title": "生成出差报告预览",
+            "description": "根据已整理的出差报告字段生成正式 Word 文件与邮件草稿，供用户确认后发送。",
+            "parameters": {
+                "department": "部门，可选",
+                "location": "出差地点，可选",
+                "trip_start": "出差开始日期，可选",
+                "trip_end": "出差结束日期，可选",
+                "trip_date_text": "出差日期文本，可选",
+                "purpose": "出差目的",
+                "itinerary": "行程安排",
+                "details": "工作内容与成果",
+                "work_approach": "工作思路/方法，可选",
+                "issues": "问题与不足，可选",
+                "suggestions": "建议与下一步，可选",
+            },
+            "safe": False,
+        },
+        {
+            "name": "trip.send_confirmed",
+            "module": "出差报告",
+            "title": "确认后发送出差报告邮件",
+            "description": "仅在用户确认出差报告预览无误后，使用当前账号邮件配置发送出差报告邮件。",
+            "parameters": {
+                "attachment": "出差报告文件名，通常来自 trip.preview",
+                "to": "收件人，可选",
+                "cc": "抄送，可选",
+                "subject": "主题，可选",
+                "body": "正文，可选",
+            },
+            "safe": False,
+        },
+        {
             "name": "document.generate",
             "module": "报告",
             "title": "生成正式报告文件",
@@ -249,8 +301,14 @@ def skill_defs():
             "name": "diary.save",
             "module": "工作日记",
             "title": "保存工作日记",
-            "description": "保存当前用户指定日期的工作日记。",
-            "parameters": {"date": "YYYY-MM-DD", "today_work": "今日工作", "tomorrow_plan": "明日计划", "thoughts": "想法心得"},
+            "description": "保存或补充当前用户指定日期的工作日记；只提交本次要更新的字段，其他已记录内容会保留。",
+            "parameters": {
+                "date": "YYYY-MM-DD",
+                "today_work": "今日工作（可选）",
+                "tomorrow_plan": "明日计划（可选）",
+                "thoughts": "想法心得（可选）",
+                "clear_fields": "明确清空的字段数组，可选：today_work/tomorrow_plan/thoughts",
+            },
             "safe": False,
         },
         {
@@ -273,13 +331,14 @@ def skill_defs():
             "name": "mailbox.list",
             "module": "邮件",
             "title": "查看收件箱",
-            "description": "通过当前用户 IMAP 配置读取邮件；支持按文件夹、日期范围（since/before）和主题关键词筛选。注意：约1个月前的历史邮件多在“已归档”，发出的邮件在“已发送”——查半年请用对应 folder 或 folder=all。",
+            "description": "通过当前用户 IMAP 配置按固定查询快照读取邮件；支持按文件夹、日期范围（since/before）和主题关键词筛选。返回 total、has_more 和 next_cursor：涉及全部邮件、批量下载附件或合规检索时，只要 has_more=true，就必须携带上一页的 next_cursor 与完全相同的 folder、keyword、since、before 继续查询，直到 next_cursor=null。不要使用 page/offset；每页最大 200 条。注意：约1个月前的历史邮件多在“已归档”，发出的邮件在“已发送”——查半年请用对应 folder 或 folder=all。",
             "parameters": {
-                "limit": "返回条数，默认20；带筛选时最多200，可选",
+                "limit": "每页返回条数，默认20，最大200，可选",
                 "since": "起始日期 YYYY-MM-DD（含当天），可选",
                 "before": "截止日期 YYYY-MM-DD（不含当天），可选",
                 "keyword": "主题关键词，可选",
                 "folder": "文件夹，可选：inbox(默认)/archive(已归档)/sent(已发送)/drafts/trash/spam，或 all(收件箱+已归档合并)",
+                "cursor": "上一页返回的 next_cursor；续页时须保留相同的 folder、keyword、since、before 条件，可选",
             },
             "safe": True,
         },
@@ -335,9 +394,307 @@ def skill_defs():
             "name": "news.latest",
             "module": "资讯",
             "title": "查看每日资讯",
-            "description": "查看系统生成的最新每日资讯。",
+            "description": "查看系统生成的最新每日资讯（全站公共简报）。",
             "parameters": {},
             "safe": True,
+        },
+        {
+            "name": "news.personal",
+            "module": "资讯",
+            "title": "查看我的个人资讯",
+            "description": "查看当前用户个人资讯的最新一期简报、历史列表与订阅配置（含公众号订阅）。",
+            "parameters": {},
+            "safe": True,
+        },
+        {
+            "name": "news.sources",
+            "module": "资讯",
+            "title": "查看我订阅的资讯源",
+            "description": "列出当前用户订阅的资讯源，按微信公众号与网页来源分组返回。",
+            "parameters": {},
+            "safe": True,
+        },
+        {
+            "name": "news.search_wechat",
+            "module": "资讯",
+            "title": "搜索微信公众号",
+            "description": "按名称搜索可订阅的微信公众号候选，优先使用已登录的公众号后台，返回候选供确认后订阅。",
+            "parameters": {"query": "公众号名称关键词，至少两个字"},
+            "safe": True,
+        },
+        {
+            "name": "news.subscribe_wechat",
+            "module": "资讯",
+            "title": "订阅微信公众号",
+            "description": "把一个微信公众号加入当前用户的个人资讯订阅源；可仅凭名称订阅，也可附一篇 mp.weixin.qq.com/s/... 文章链接作为入口。建议先用 news.search_wechat 确认名称。",
+            "parameters": {
+                "name": "公众号名称，必填",
+                "url": "可选，一篇 mp.weixin.qq.com/s/... 的文章链接作为入口回退",
+            },
+            "safe": False,
+        },
+        {
+            "name": "news.unsubscribe",
+            "module": "资讯",
+            "title": "取消订阅资讯源",
+            "description": "按公众号名称或来源链接，从当前用户的个人资讯订阅中移除一个来源。",
+            "parameters": {"target": "要取消订阅的公众号名称或来源链接"},
+            "safe": False,
+        },
+        {
+            "name": "news.generate",
+            "module": "资讯",
+            "title": "立即生成我的个人资讯",
+            "description": "按当前用户的订阅源（含公众号）立即抓取并重新生成一期个人资讯简报。",
+            "parameters": {"auto_search": "是否附加联网关键词检索，布尔，可选，默认按个人配置"},
+            "safe": False,
+        },
+        {
+            "name": "writing.uploads",
+            "module": "智能写作",
+            "title": "查看写作素材",
+            "description": "列出当前用户已上传、可供写作引用的素材文件。",
+            "parameters": {},
+            "safe": True,
+        },
+        {
+            "name": "writing.templates",
+            "module": "智能写作",
+            "title": "查看写作模板",
+            "description": "列出当前用户可用的写作模板。",
+            "parameters": {},
+            "safe": True,
+        },
+        {
+            "name": "writing.outline",
+            "module": "智能写作",
+            "title": "生成写作提纲",
+            "description": "根据主题、要求与素材（可选引用知识库）生成 Markdown 大纲，仅返回文本不落库。",
+            "parameters": {
+                "title": "文稿标题，可选",
+                "writing_type": "文体类型，如 通用文章/工作汇报，可选",
+                "requirements": "写作要求，可选",
+                "file_ids": "引用的素材文件 id 数组，可选",
+                "use_knowledge": "是否引用知识库，布尔，可选",
+                "kb_ids": "指定知识库 id 数组，可选",
+            },
+            "safe": True,
+        },
+        {
+            "name": "writing.generate",
+            "module": "智能写作",
+            "title": "生成文稿",
+            "description": "结合素材、提纲与知识库生成完整中文文稿，并保存为写作历史。",
+            "parameters": {
+                "title": "文稿标题，可选",
+                "writing_type": "文体类型，可选",
+                "requirements": "写作要求，可选",
+                "outline": "提纲，可选",
+                "audience": "目标读者，可选",
+                "length": "篇幅要求，可选",
+                "file_ids": "引用的素材文件 id 数组，可选",
+                "use_knowledge": "是否引用知识库，布尔，可选",
+                "kb_ids": "指定知识库 id 数组，可选",
+            },
+            "safe": False,
+        },
+        {
+            "name": "writing.rewrite",
+            "module": "智能写作",
+            "title": "改写文稿",
+            "description": "按要求对给定正文进行润色、扩写、缩写或语气调整，并保存为写作历史。",
+            "parameters": {
+                "content": "待改写正文，必填",
+                "rewrite_instruction": "改写要求，可选",
+                "title": "标题，可选",
+            },
+            "safe": False,
+        },
+        {
+            "name": "writing.history",
+            "module": "智能写作",
+            "title": "查看写作历史",
+            "description": "列出当前用户的写作历史（带正文摘要）。",
+            "parameters": {},
+            "safe": True,
+        },
+        {
+            "name": "writing.get",
+            "module": "智能写作",
+            "title": "读取写作历史详情",
+            "description": "按 id 读取一条写作历史的完整正文与元数据。",
+            "parameters": {"id": "写作历史 id"},
+            "safe": True,
+        },
+        {
+            "name": "writing.export",
+            "module": "智能写作",
+            "title": "导出文稿",
+            "description": "把写作正文导出为 Markdown 或 Word 文件，返回下载信息。",
+            "parameters": {
+                "id": "写作历史 id，可选（与 content 二选一）",
+                "content": "直接导出的正文，可选（与 id 二选一）",
+                "title": "文件标题，可选",
+                "format": "导出格式：md 或 docx，默认 md",
+            },
+            "safe": False,
+        },
+        {
+            "name": "meeting.list",
+            "module": "会议",
+            "title": "查看会议列表",
+            "description": "列出当前用户已保存的会议记录（含时长、段落数、是否有纪要）。",
+            "parameters": {},
+            "safe": True,
+        },
+        {
+            "name": "meeting.get",
+            "module": "会议",
+            "title": "查看会议详情",
+            "description": "按 id 读取一场会议的转写段落、翻译与纪要。",
+            "parameters": {"id": "会议 id"},
+            "safe": True,
+        },
+        {
+            "name": "meeting.summarize",
+            "module": "会议",
+            "title": "生成会议纪要",
+            "description": "根据提供的会议转写文本生成结构化会议纪要，仅返回文本不落库。",
+            "parameters": {"transcript": "会议转写全文，必填", "title": "会议标题，可选"},
+            "safe": True,
+        },
+        {
+            "name": "meeting.translate",
+            "module": "会议",
+            "title": "翻译会议文本",
+            "description": "把一段会议文本翻译为目标语言。",
+            "parameters": {"text": "待翻译文本，必填", "target": "目标语言代码，如 en/zh，默认 en"},
+            "safe": True,
+        },
+        {
+            "name": "meeting.save",
+            "module": "会议",
+            "title": "保存会议记录",
+            "description": "新建或更新一场会议记录（标题、段落、纪要等）。",
+            "parameters": {
+                "id": "会议 id，可选；不传则新建",
+                "title": "会议标题，可选",
+                "segments": "转写段落数组，可选",
+                "summary": "会议纪要，可选",
+            },
+            "safe": False,
+        },
+        {
+            "name": "meeting.delete",
+            "module": "会议",
+            "title": "删除会议记录",
+            "description": "按 id 删除一场会议记录。",
+            "parameters": {"id": "会议 id"},
+            "safe": False,
+        },
+        {
+            "name": "knowledge.datasets",
+            "module": "知识库",
+            "title": "查看知识库列表",
+            "description": "列出当前用户可用的知识库（含文档数、切片数）。",
+            "parameters": {},
+            "safe": True,
+        },
+        {
+            "name": "knowledge.docs",
+            "module": "知识库",
+            "title": "查看知识库文档",
+            "description": "按范围列出知识库中的文档。",
+            "parameters": {"scope": "范围：mine(默认)/shared/all，可选"},
+            "safe": True,
+        },
+        {
+            "name": "knowledge.search",
+            "module": "知识库",
+            "title": "检索知识库",
+            "description": "在知识库中做语义检索，返回命中片段与来源，用于引用溯源。",
+            "parameters": {
+                "query": "检索关键词，必填",
+                "top_k": "返回片段数，默认 5，可选",
+                "kb_ids": "限定知识库 id 数组，可选",
+            },
+            "safe": True,
+        },
+        {
+            "name": "knowledge.ask",
+            "module": "知识库",
+            "title": "知识库问答",
+            "description": "基于知识库检索结果回答问题，返回答案与引用来源。",
+            "parameters": {
+                "question": "问题，必填",
+                "top_k": "检索片段数，默认 5，可选",
+                "kb_ids": "限定知识库 id 数组，可选",
+            },
+            "safe": True,
+        },
+        {
+            "name": "knowledge.delete",
+            "module": "知识库",
+            "title": "删除知识库文档",
+            "description": "按 id 删除一篇知识库文档（共享库需管理员）。",
+            "parameters": {"id": "文档 id", "scope": "范围，可选"},
+            "safe": False,
+        },
+        {
+            "name": "reimbursement.searches",
+            "module": "报销",
+            "title": "查看报销搜索记录",
+            "description": "列出当前用户保存的报销发票扫描记录。",
+            "parameters": {},
+            "safe": True,
+        },
+        {
+            "name": "reimbursement.search_detail",
+            "module": "报销",
+            "title": "查看报销记录详情",
+            "description": "按记录 id 读取一次报销扫描的发票明细与切片状态。",
+            "parameters": {"id": "报销搜索记录 id"},
+            "safe": True,
+        },
+        {
+            "name": "reimbursement.outputs",
+            "module": "报销",
+            "title": "查看报销输出文件",
+            "description": "列出当前用户已生成的报销合并/打包文件。",
+            "parameters": {},
+            "safe": True,
+        },
+        {
+            "name": "reimbursement.scan",
+            "module": "报销",
+            "title": "扫描邮箱发票",
+            "description": "在指定日期范围内扫描邮箱附件，识别并归集发票（联网 IMAP，耗时较长）。",
+            "parameters": {
+                "start": "起始日期 YYYY-MM-DD，必填",
+                "end": "截止日期 YYYY-MM-DD，必填",
+                "account": "邮箱账号：company(默认)/personal，可选",
+            },
+            "safe": False,
+        },
+        {
+            "name": "reimbursement.merge",
+            "module": "报销",
+            "title": "合并报销 PDF",
+            "description": "把选中的发票合并为一个 PDF 报销材料，返回生成文件信息。",
+            "parameters": {
+                "items": "选中的发票项数组，必填",
+                "output_name": "输出文件名，可选",
+                "merge_train_tickets": "是否将火车票拼版合并，布尔，可选",
+            },
+            "safe": False,
+        },
+        {
+            "name": "reimbursement.download_zip",
+            "module": "报销",
+            "title": "打包下载发票",
+            "description": "把选中的发票打包为 ZIP，返回下载文件信息。",
+            "parameters": {"items": "选中的发票项数组，必填", "output_name": "输出文件名，可选"},
+            "safe": False,
         },
         {
             "name": "memory.remember",
@@ -708,8 +1065,26 @@ def compose_weekly_skill(arguments):
             60,
         )
         content = data["choices"][0]["message"]["content"].strip()
-        rows = normalize_weekly_rows(parse_json_object(content))
-        return {"ok": True, "mode": "api", "model": settings["model"], "draft": rows}
+        try:
+            rows = normalize_weekly_rows(parse_json_object(content))
+            if any(rows.values()):
+                return {"ok": True, "mode": "api", "model": settings["model"], "draft": rows}
+            raise ValueError("模型返回的周报 JSON 没有有效条目")
+        except Exception as exc:
+            # 模型偶尔会在长中文内容中漏掉转义，不能让一次格式问题中断整个
+            # 审核流程。保留原始工作项并降级为规则草稿，用户仍可在审核卡完善。
+            optimized = local_optimize_text(source_text)
+            summary = [
+                {"category": "工作推进", "content": line, "status": "已推进", "plan": ""}
+                for line in optimized.splitlines()
+                if line.strip()
+            ]
+            return {
+                "ok": True,
+                "mode": "local_fallback",
+                "warning": f"模型返回格式异常，已保留原始工作内容生成基础草稿：{str(exc)[:120]}",
+                "draft": {"weekly_summary": summary, "weekly_follow": [], "weekly_next": []},
+            }
 
     optimized = local_optimize_text(source_text)
     summary = [
@@ -760,6 +1135,136 @@ def weekly_send_confirmed_skill(arguments, username):
     return send_mail(payload, username)
 
 
+def compose_trip_skill(arguments):
+    """把出差原始材料整理成系统可写入的出差报告 JSON 字段（与周报 compose 同构）。"""
+    args = arguments or {}
+    source_text = "\n".join(
+        str(args.get(key, "") or "").strip()
+        for key in ("raw_work", "itinerary", "details", "purpose", "issues", "suggestions", "work_approach")
+        if str(args.get(key, "") or "").strip()
+    )
+    if not source_text:
+        raise ValueError("请提供 raw_work / purpose / itinerary 等至少一项出差内容")
+
+    settings = assistant_settings()
+    prompt = (
+        "你是企业出差报告 Skill，负责把出差原始描述整理成系统可写入的出差报告 JSON。"
+        "要求：1、如实反映行程与工作成果，不编造未提供事项；2、语言简洁、书面、条理清晰；"
+        "3、修正错别字；4、输出严格 JSON，不要 Markdown。"
+        "JSON 格式："
+        "{\"purpose\":\"出差目的\",\"itinerary\":\"行程安排\",\"details\":\"工作内容与成果\","
+        "\"work_approach\":\"工作思路/方法\",\"issues\":\"问题与不足\",\"suggestions\":\"建议与下一步\"}"
+    )
+    user_content = json.dumps(
+        {
+            "location": args.get("location", ""),
+            "date_text": args.get("trip_date_text", ""),
+            "purpose": args.get("purpose", ""),
+            "raw_work": args.get("raw_work", ""),
+            "itinerary": args.get("itinerary", ""),
+            "details": args.get("details", ""),
+            "issues": args.get("issues", ""),
+            "suggestions": args.get("suggestions", ""),
+            "style": args.get("style", "简洁、具体、体现出差成果"),
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+    if settings["url"] and settings["key"]:
+        data = request_json(
+            settings["url"] + "/v1/chat/completions",
+            settings["key"],
+            {
+                "model": settings["model"],
+                "messages": [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": user_content},
+                ],
+                "temperature": 0.25,
+            },
+            "POST",
+            60,
+        )
+        content = data["choices"][0]["message"]["content"].strip()
+        draft = parse_json_object(content)
+        return {"ok": True, "mode": "api", "model": settings["model"], "draft": draft}
+
+    optimized = local_optimize_text(source_text)
+    return {
+        "ok": True,
+        "mode": "local_fallback",
+        "warning": "未配置大模型 API，已使用本地规则生成基础出差报告草稿。",
+        "draft": {
+            "purpose": str(args.get("purpose", "") or ""),
+            "itinerary": str(args.get("itinerary", "") or ""),
+            "details": optimized,
+            "work_approach": str(args.get("work_approach", "") or ""),
+            "issues": str(args.get("issues", "") or ""),
+            "suggestions": str(args.get("suggestions", "") or ""),
+        },
+    }
+
+
+def trip_preview_skill(arguments, username):
+    """按已整理的出差报告字段生成正式 Word 文件与邮件草稿，供确认后发送。"""
+    args = arguments or {}
+    payload = {
+        "department": args.get("department", ""),
+        "location": args.get("location", ""),
+        "trip_start": args.get("trip_start", ""),
+        "trip_end": args.get("trip_end", ""),
+        "trip_date_text": args.get("trip_date_text", ""),
+        "purpose": args.get("purpose", ""),
+        "itinerary": args.get("itinerary", ""),
+        "details": args.get("details", ""),
+        "work_approach": args.get("work_approach", ""),
+        "issues": args.get("issues", ""),
+        "suggestions": args.get("suggestions", ""),
+    }
+    path = generate_trip(payload, username)
+    draft = compose_draft("trip", path.name, username)
+    return {
+        "ok": True,
+        "file": path.name,
+        "download_url": "/download?file=" + urllib.parse.quote(path.name),
+        "mail_draft": draft,
+        "message": "出差报告已生成，请确认 Word 文件与邮件草稿；确认无误后再调用 trip.send_confirmed。",
+    }
+
+
+def trip_send_confirmed_skill(arguments, username):
+    """确认无误后，用当前账号邮件配置发送出差报告邮件（与 weekly.send_confirmed 同构）。"""
+    args = arguments or {}
+    attachment = str(args.get("attachment", "") or "").strip()
+    if not attachment:
+        raise ValueError("请提供 trip.preview 生成的 attachment 文件名")
+    draft = compose_draft("trip", attachment, username)
+    payload = {
+        "to": args.get("to") or draft.get("to", ""),
+        "cc": args.get("cc") or draft.get("cc", ""),
+        "subject": args.get("subject") or draft.get("subject", ""),
+        "body": args.get("body") or draft.get("body", ""),
+        "body_html": args.get("body_html") or draft.get("body_html", ""),
+        "attachment": attachment,
+    }
+    return send_mail(payload, username)
+
+
+def weekly_reporting_range(reference):
+    """Return the workweek a newly created weekly report should cover.
+
+    A Monday submission normally covers the workweek that just ended. On the
+    other days, the calendar week's Monday–Friday range remains the default.
+    """
+    from datetime import timedelta
+
+    monday = reference - timedelta(days=reference.weekday())
+    if reference.weekday() == 0:
+        monday -= timedelta(days=7)
+    return monday, monday + timedelta(days=4)
+
+
 def get_date_skill(args):
     from datetime import datetime, timedelta
 
@@ -775,9 +1280,8 @@ def get_date_skill(args):
     weekday_names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
     weekday = weekday_names[today.weekday()]
 
-    # 工作周起止（周一到周五），与周报页面默认时段保持一致。
-    monday = today - timedelta(days=today.weekday())
-    friday = monday + timedelta(days=4)
+    # 工作周起止（周一到周五），与周报页面默认时段保持一致；周一默认上个完整工作周。
+    monday, friday = weekly_reporting_range(today)
     week_start = monday.strftime(date_fmt)
     week_end = friday.strftime(date_fmt)
 
@@ -869,7 +1373,8 @@ def execute_skill(name, arguments, username):
         return get_date_skill(args)
     if name == "reports.list":
         kind = str(args.get("kind", "all") or "all")
-        reports = all_files(username)
+        permissions = assistant_permissions(find_user(username) or {})
+        reports = [item for item in all_files(username) if permissions.get(item.get("kind"), False)]
         if kind in ("weekly", "trip"):
             reports = [item for item in reports if item.get("kind") == kind]
         return {"ok": True, "reports": reports[:50]}
@@ -883,6 +1388,12 @@ def execute_skill(name, arguments, username):
         return weekly_send_confirmed_skill(args, username)
     if name == "trip.prefill":
         return trip_prefill(username)
+    if name == "trip.compose":
+        return compose_trip_skill(args)
+    if name == "trip.preview":
+        return trip_preview_skill(args, username)
+    if name == "trip.send_confirmed":
+        return trip_send_confirmed_skill(args, username)
     if name == "document.generate":
         return generate_document(args, username)
     if name == "text.optimize":
@@ -894,15 +1405,7 @@ def execute_skill(name, arguments, username):
     if name == "diary.list":
         return list_diaries(args, username)
     if name == "mailbox.list":
-        return list_inbox_messages(
-            username,
-            args.get("limit", 20),
-            bool(args.get("refresh", False)),
-            since=args.get("since"),
-            before=args.get("before"),
-            keyword=args.get("keyword"),
-            folder=args.get("folder"),
-        )
+        return list_mailbox_mcp(username, args)
     if name == "mailbox.detail":
         return get_inbox_message(
             username,
@@ -923,6 +1426,85 @@ def execute_skill(name, arguments, username):
         return forum_add_comment(args, username)
     if name == "news.latest":
         return news_latest(False)
+    if name == "news.personal":
+        return personal_news_latest(username)
+    if name == "news.sources":
+        return personal_news_sources_skill(username)
+    if name == "news.search_wechat":
+        return search_wechat_accounts(str(args.get("query", "") or ""))
+    if name == "news.subscribe_wechat":
+        return subscribe_personal_wechat(username, args.get("name", ""), args.get("url", ""))
+    if name == "news.unsubscribe":
+        return unsubscribe_personal_source(username, args.get("target", ""))
+    if name == "news.generate":
+        gen_payload = {}
+        if "auto_search" in args:
+            gen_payload["auto_search"] = bool(args.get("auto_search"))
+        return generate_personal_news_issue(gen_payload, username)
+    if name == "writing.uploads":
+        return writing_uploads(username)
+    if name == "writing.templates":
+        return writing_templates(username)
+    if name == "writing.outline":
+        return writing_generate_outline(args, username)
+    if name == "writing.generate":
+        return writing_generate(args, username)
+    if name == "writing.rewrite":
+        return writing_rewrite(args, username)
+    if name == "writing.history":
+        return writing_history(username)
+    if name == "writing.get":
+        return writing_get_history(str(args.get("id", "") or ""), username)
+    if name == "writing.export":
+        return writing_export(args, username)
+    if name == "meeting.list":
+        return meeting_list(username)
+    if name == "meeting.get":
+        return meeting_get(str(args.get("id", "") or ""), username)
+    if name == "meeting.summarize":
+        return meeting_summarize(args, username)
+    if name == "meeting.translate":
+        return meeting_translate(args)
+    if name == "meeting.save":
+        return meeting_save(args, username)
+    if name == "meeting.delete":
+        return meeting_delete(args, username)
+    if name == "knowledge.datasets":
+        return kb_datasets(username)
+    if name == "knowledge.docs":
+        return kb_list(str(args.get("scope", "mine") or "mine"), username)
+    if name == "knowledge.search":
+        return kb_search(args, username)
+    if name == "knowledge.ask":
+        return kb_ask(args, username)
+    if name == "knowledge.delete":
+        return kb_delete(args, username)
+    if name == "reimbursement.searches":
+        return {"ok": True, "records": list_reimbursement_searches(username)}
+    if name == "reimbursement.search_detail":
+        return get_reimbursement_search(username, str(args.get("id", "") or ""))
+    if name == "reimbursement.outputs":
+        return {"ok": True, "outputs": list_reimbursement_outputs(username)}
+    if name == "reimbursement.scan":
+        return scan_invoice_attachments(
+            username,
+            str(args.get("start", "") or ""),
+            str(args.get("end", "") or ""),
+            str(args.get("account", "company") or "company"),
+        )
+    if name == "reimbursement.merge":
+        return merge_reimbursement_pdf(
+            username,
+            args.get("items") or [],
+            str(args.get("output_name", "合并发票") or "合并发票"),
+            bool(args.get("merge_train_tickets", False)),
+        )
+    if name == "reimbursement.download_zip":
+        return download_reimbursement_invoices_zip(
+            username,
+            args.get("items") or [],
+            str(args.get("output_name", "发票批量下载") or "发票批量下载"),
+        )
     if name == "memory.remember":
         return globals().get("memory_remember_skill", lambda a, u: {"ok": False, "error": "memory 模块未加载"})(args, username)
     if name == "memory.search":

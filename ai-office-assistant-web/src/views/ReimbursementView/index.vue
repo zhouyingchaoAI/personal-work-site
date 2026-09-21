@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Delete, Download, Message, Plus, Refresh, UploadFilled, View } from '@element-plus/icons-vue'
 import {
@@ -8,19 +8,27 @@ import {
   fetchReimbursementUrl,
   fetchReimbursementEmail,
   mergeReimbursementPdf,
+  downloadReimbursementInvoicesZip,
   reimbursementAttachmentUrl,
   reimbursementOfdPreviewUrl,
   reimbursementOutputUrl,
+  listReimbursementSearches,
+  loadReimbursementSearch,
+  saveReimbursementSearch,
   type ReimbursementItem,
+  type ReimbursementSearchRecord,
+  type ReimbursementSearchSummary,
 } from '../../services/personalWorkApi'
 import './index.scss'
 
 type ListItem = ReimbursementItem & { included: boolean }
+type FilteredListItem = ListItem & { originalIndex: number }
 type ScanChunkState = { start: string; end: string; status: 'pending' | 'scanning' | 'done' | 'failed'; total_scanned: number; item_count: number; message: string }
+type SearchRecordWithChunks = ReimbursementSearchRecord & { scan_chunks?: ScanChunkState[] }
 
-const INVOICE_TYPES = ['住宿', '火车', '机票', '餐饮', '出租车', '通讯费', '其他']
+const INVOICE_TYPES = ['住宿', '火车', '机票', '餐饮', '市内交通', '通讯费', '其他']
 const TYPE_COLORS: Record<string, string> = {
-  住宿: 'purple', 火车: 'green', 机票: 'blue', 餐饮: 'orange', 出租车: 'yellow', 通讯费: 'teal', 其他: 'gray',
+  住宿: 'purple', 火车: 'green', 机票: 'blue', 餐饮: 'orange', 市内交通: 'yellow', 通讯费: 'teal', 其他: 'gray',
 }
 
 function defaultDateRange(): [string, string] {
@@ -38,7 +46,9 @@ const scanStatus = ref('')
 const scanChunks = ref<ScanChunkState[]>([])
 const retryingChunkKey = ref('')
 const merging = ref(false)
+const batchDownloading = ref(false)
 const items = ref<ListItem[]>([])
+const invoiceTypeFilter = ref("")
 const outputName = ref('')
 const mergeResult = ref<{ filename: string; pages: number; train_ticket_groups?: number } | null>(null)
 const mergeTrainTickets = ref(true)
@@ -54,12 +64,21 @@ const emailAttachments = ref<string[]>([])
 // 行内"上传PDF"（针对缺少附件、仅有金额等信息的占位条目）
 const rowUploadTarget = ref<ListItem | null>(null)
 const rowFileInput = ref<HTMLInputElement | null>(null)
+const searchRecords = ref<ReimbursementSearchSummary[]>([])
+const currentSearchId = ref('')
+const selectedSearchId = ref('')
+const searchLoading = ref(false)
+const searchSaving = ref(false)
 
 // 拖拽状态
 const dragIndex = ref<number | null>(null)
 const dragOverIndex = ref<number | null>(null)
 
 const selectedItems = computed(() => items.value.filter((i) => i.included))
+const filteredItems = computed<FilteredListItem[]>(() => items.value
+  .map((item, index) => Object.assign(item, { originalIndex: index }))
+  .filter((item) => !invoiceTypeFilter.value || item.invoice_type === invoiceTypeFilter.value))
+const filteredSelectedCount = computed(() => filteredItems.value.filter((i) => i.included).length)
 
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
@@ -72,6 +91,7 @@ function defaultOutputName() {
   return `报销附件_${dateRange.value[0]}_${dateRange.value[1]}`
 }
 
+// 先按 7 天切片扫描；某段失败时再拆成按日切片重扫
 const SCAN_CHUNK_DAYS = 7
 
 function splitDateRange(startText: string, endText: string, chunkDays = SCAN_CHUNK_DAYS): [string, string][] {
@@ -102,10 +122,23 @@ function scanErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : '扫描失败'
 }
 
+async function scanInvoiceAttachmentsWithRetry(start: string, end: string, scanAccount: 'company' | 'personal', retry = 1) {
+  let lastError: unknown = null
+  for (let attempt = 0; attempt <= retry; attempt += 1) {
+    try {
+      return await scanInvoiceAttachments(start, end, scanAccount)
+    } catch (error) {
+      lastError = error
+      if (attempt >= retry) break
+    }
+  }
+  throw lastError
+}
+
 function toListItems(rawItems: ReimbursementItem[]): ListItem[] {
   return rawItems.map((item) => ({
     ...item,
-    included: !item.is_stub,   // stub 默认不勾选
+    included: item.included ?? !item.is_stub,   // stub 默认不勾选
     source: item.source ?? 'mail',
   }))
 }
@@ -114,6 +147,90 @@ function appendScannedItems(rawItems: ReimbursementItem[]) {
   items.value.push(...toListItems(rawItems))
   if (items.value.length && !outputName.value) outputName.value = defaultOutputName()
 }
+
+function applySearchRecord(record: SearchRecordWithChunks) {
+  currentSearchId.value = record.id
+  selectedSearchId.value = record.id
+  account.value = record.account || account.value
+  items.value = toListItems(record.items || [])
+  scanChunks.value = (record.scan_chunks || []).map((chunk) => chunk.status === "scanning" ? { ...chunk, status: "failed" as const, message: "上次扫描中断，可重扫" } : chunk)
+  const ranges = record.ranges || []
+  if (ranges.length) {
+    const first = ranges[0]
+    const last = ranges[ranges.length - 1]
+    if (first.start && last.end) dateRange.value = [first.start, last.end]
+  }
+  if (items.value.length && !outputName.value) outputName.value = defaultOutputName()
+}
+
+async function refreshSearchRecords() {
+  try {
+    const result = await listReimbursementSearches()
+    searchRecords.value = result.records || []
+    if (!selectedSearchId.value && currentSearchId.value) selectedSearchId.value = currentSearchId.value
+  } catch {
+    searchRecords.value = []
+  }
+}
+
+async function persistCurrentSearch(start?: string, end?: string, totalScanned = 0, forceSave = false) {
+  if (!forceSave && !items.value.length) return
+  searchSaving.value = true
+  try {
+    const result = await saveReimbursementSearch({
+      id: currentSearchId.value || undefined,
+      account: account.value,
+      start,
+      end,
+      total_scanned: totalScanned,
+      items: items.value,
+      scan_chunks: scanChunks.value,
+    })
+    // 只记录 id，不能用服务端快照覆盖运行中的切片状态（会导致界面停在"扫描中"）
+    if (result.record?.id) {
+      currentSearchId.value = result.record.id
+      selectedSearchId.value = result.record.id
+    }
+    await refreshSearchRecords()
+  } catch (error) {
+    ElMessage.warning(error instanceof Error ? error.message : "搜索记录保存失败")
+  } finally {
+    searchSaving.value = false
+  }
+}
+
+async function handleLoadSearch() {
+  if (!selectedSearchId.value) return
+  searchLoading.value = true
+  try {
+    const result = await loadReimbursementSearch(selectedSearchId.value)
+    applySearchRecord(result.record)
+    mergeResult.value = null
+    scanStatus.value = '已加载搜索记录，可继续补充搜索或直接生成 PDF。'
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载搜索记录失败')
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+function handleNewSearch() {
+  currentSearchId.value = ''
+  selectedSearchId.value = ''
+  items.value = []
+  scanChunks.value = []
+  scanStatus.value = ''
+  mergeResult.value = null
+  outputName.value = defaultOutputName()
+}
+
+function searchRecordLabel(record: ReimbursementSearchSummary) {
+  return record.title + ' · ' + record.item_count + '张'
+}
+
+onMounted(async () => {
+  await refreshSearchRecords()
+})
 
 function chunkKey(chunk: Pick<ScanChunkState, 'start' | 'end'>) {
   return `${chunk.start}_${chunk.end}`
@@ -128,78 +245,133 @@ function updateScanStatus() {
 }
 
 // ──────────── 扫描 ────────────
+function replaceScanChunk(chunk: ScanChunkState, replacements: ScanChunkState[]) {
+  const index = scanChunks.value.findIndex((item) => chunkKey(item) === chunkKey(chunk))
+  if (index >= 0) scanChunks.value.splice(index, 1, ...replacements)
+}
+
+async function scanSingleChunk(chunk: ScanChunkState, index: number, labelPrefix = "正在扫描") {
+  chunk.status = "scanning"
+  chunk.message = "扫描中"
+  scanStatus.value = scanChunks.value.length === 1
+    ? labelPrefix + "邮件..."
+    : labelPrefix + "第 " + (index + 1) + "/" + scanChunks.value.length + " 段：" + chunk.start + " 至 " + chunk.end
+  try {
+    const result = await scanInvoiceAttachmentsWithRetry(chunk.start, chunk.end, account.value, 0)
+    const rawItems = result.items || []
+    appendScannedItems(rawItems)
+    chunk.status = "done"
+    chunk.total_scanned = result.total_scanned || 0
+    chunk.item_count = rawItems.length
+    chunk.message = "完成，找到 " + rawItems.length + " 张"
+  } catch (error) {
+    chunk.message = "正在重试"
+    try {
+      const result = await scanInvoiceAttachmentsWithRetry(chunk.start, chunk.end, account.value, 1)
+      const rawItems = result.items || []
+      appendScannedItems(rawItems)
+      chunk.status = "done"
+      chunk.total_scanned = result.total_scanned || 0
+      chunk.item_count = rawItems.length
+      chunk.message = "重试完成，找到 " + rawItems.length + " 张"
+    } catch (retryError) {
+      chunk.status = "failed"
+      chunk.message = scanErrorMessage(retryError)
+    }
+  }
+  updateScanStatus()
+  await persistCurrentSearch(chunk.start, chunk.end, chunk.total_scanned || 0, true)
+}
+
+async function scanDailySubChunks(chunk: ScanChunkState) {
+  const dailyRanges = splitDateRange(chunk.start, chunk.end, 1)
+  const dailyChunks: ScanChunkState[] = dailyRanges.map(([start, end]) => ({ start, end, status: "pending", total_scanned: 0, item_count: 0, message: "等待扫描" }))
+  replaceScanChunk(chunk, dailyChunks)
+  updateScanStatus()
+  await persistCurrentSearch(chunk.start, chunk.end, 0, true)
+  for (let index = 0; index < dailyChunks.length; index += 1) {
+    const liveIndex = scanChunks.value.findIndex((item) => chunkKey(item) === chunkKey(dailyChunks[index]))
+    const liveChunk = liveIndex >= 0 ? scanChunks.value[liveIndex] : dailyChunks[index]
+    await scanSingleChunk(liveChunk, liveIndex, "正在重扫")
+  }
+}
+
 async function handleScan() {
   if (!dateRange.value?.[0] || !dateRange.value?.[1]) {
-    ElMessage.warning('请先选择日期范围')
+    ElMessage.warning("请先选择日期范围")
     return
   }
   const chunks = splitDateRange(dateRange.value[0], dateRange.value[1])
   if (!chunks.length) {
-    ElMessage.warning('日期范围不正确')
+    ElMessage.warning("日期范围不正确")
     return
   }
+  const appendToCurrentRecord = Boolean(currentSearchId.value)
   scanning.value = true
-  scanStatus.value = '正在连接邮箱扫描...'
-  scanChunks.value = chunks.map(([start, end]) => ({ start, end, status: 'pending', total_scanned: 0, item_count: 0, message: '' }))
-  items.value = []
+  scanStatus.value = "正在连接邮箱扫描..."
+  const nextChunks: ScanChunkState[] = chunks.map(([start, end]) => ({ start, end, status: "pending", total_scanned: 0, item_count: 0, message: "" }))
+  if (appendToCurrentRecord) scanChunks.value.push(...nextChunks)
+  else scanChunks.value = nextChunks
+  if (!appendToCurrentRecord) items.value = []
   mergeResult.value = null
   try {
-    for (let index = 0; index < scanChunks.value.length; index += 1) {
-      const chunk = scanChunks.value[index]
-      chunk.status = 'scanning'
-      chunk.message = '扫描中'
-      scanStatus.value = scanChunks.value.length === 1
-        ? '正在扫描邮件...'
-        : `正在扫描第 ${index + 1}/${scanChunks.value.length} 段：${chunk.start} 至 ${chunk.end}`
-      try {
-        const result = await scanInvoiceAttachments(chunk.start, chunk.end, account.value)
-        const rawItems = result.items || []
-        appendScannedItems(rawItems)
-        chunk.status = 'done'
-        chunk.total_scanned = result.total_scanned || 0
-        chunk.item_count = rawItems.length
-        chunk.message = `完成，找到 ${rawItems.length} 张`
-      } catch (error) {
-        chunk.status = 'failed'
-        chunk.message = scanErrorMessage(error)
-      }
-      updateScanStatus()
-    }
-    if (scanChunks.value.some((chunk) => chunk.status === 'failed')) ElMessage.warning('部分日期分段扫描失败，可点击重扫。')
+    await persistCurrentSearch(dateRange.value[0], dateRange.value[1], 0, true)
+    await scanChunkQueue(nextChunks)
+    await finishScanRun(dateRange.value[0], dateRange.value[1])
   } finally {
     scanning.value = false
   }
 }
 
-async function retryScanChunk(chunk: ScanChunkState) {
-  const key = chunkKey(chunk)
-  retryingChunkKey.value = key
-  chunk.status = 'scanning'
-  chunk.message = '重扫中'
-  try {
-    scanStatus.value = `正在重扫：${chunk.start} 至 ${chunk.end}`
-    const result = await scanInvoiceAttachments(chunk.start, chunk.end, account.value)
-    const rawItems = result.items || []
-    appendScannedItems(rawItems)
-    chunk.status = 'done'
-    chunk.total_scanned = result.total_scanned || 0
-    chunk.item_count = rawItems.length
-    chunk.message = `重扫完成，新增 ${rawItems.length} 张`
-    updateScanStatus()
-    ElMessage.success('该分段已重扫完成')
-  } catch (error) {
-    chunk.status = 'failed'
-    chunk.message = scanErrorMessage(error)
-    updateScanStatus()
-    ElMessage.error(chunk.message)
-  } finally {
-    retryingChunkKey.value = ''
+// 依次扫描一批切片；始终操作 scanChunks 里的响应式对象，保证界面状态实时更新
+async function scanChunkQueue(chunks: ScanChunkState[], labelPrefix = "正在扫描") {
+  for (const chunk of chunks) {
+    const liveIndex = scanChunks.value.findIndex((item) => chunkKey(item) === chunkKey(chunk))
+    const liveChunk = liveIndex >= 0 ? scanChunks.value[liveIndex] : chunk
+    await scanSingleChunk(liveChunk, liveIndex, labelPrefix)
+    // 7 天切片失败时，自动拆成按日切片重扫
+    if (liveChunk.status === "failed" && splitDateRange(liveChunk.start, liveChunk.end, 1).length > 1) {
+      await scanDailySubChunks(liveChunk)
+    }
   }
 }
 
-function toggleAll() {
-  const allIncluded = items.value.every((i) => i.included)
-  items.value.forEach((i) => (i.included = !allIncluded))
+// 全部切片扫完后：自动保存最终状态并给出结果提示
+async function finishScanRun(start: string, end: string) {
+  const totalScanned = scanChunks.value.reduce((sum, chunk) => sum + chunk.total_scanned, 0)
+  await persistCurrentSearch(start, end, totalScanned, true)
+  const failed = scanChunks.value.filter((chunk) => chunk.status === "failed").length
+  if (failed) ElMessage.warning(`扫描完成，${failed} 段失败可点击重扫，记录已自动保存。`)
+  else ElMessage.success("全部分段扫描完成，扫描记录已自动保存。")
+}
+
+async function retryScanChunk(chunk: ScanChunkState) {
+  const key = chunkKey(chunk)
+  retryingChunkKey.value = key
+  try {
+    if (splitDateRange(chunk.start, chunk.end, 1).length > 1) {
+      await scanDailySubChunks(chunk)
+      // replaceScanChunk is applied inside scanDailySubChunks before each daily retry.
+      ElMessage.success("该分段已拆成按日切片重扫")
+      return
+    }
+    await scanSingleChunk(chunk, scanChunks.value.findIndex((item) => chunkKey(item) === key), "正在重扫")
+    ElMessage.success("该分段已重扫完成")
+  } catch (error) {
+    chunk.status = "failed"
+    chunk.message = scanErrorMessage(error)
+    updateScanStatus()
+    await persistCurrentSearch(chunk.start, chunk.end, chunk.total_scanned || 0, true)
+    ElMessage.error(chunk.message)
+  } finally {
+    retryingChunkKey.value = ""
+  }
+}
+
+function toggleFilteredItems() {
+  if (!filteredItems.value.length) return
+  const allIncluded = filteredItems.value.every((i) => i.included)
+  filteredItems.value.forEach((i) => (i.included = !allIncluded))
 }
 
 // ──────────── 拖拽排序 ────────────
@@ -285,7 +457,12 @@ async function handleMerge() {
   mergeResult.value = null
   try {
     const result = await mergeReimbursementPdf(
-      selectedItems.value.map((i) => ({ key: i.key })),
+      selectedItems.value.map((i) => ({
+        key: i.key,
+        invoice_type: i.invoice_type,
+        invoice_date: i.invoice_date,
+        invoice_amount: i.invoice_amount,
+      })),
       outputName.value.trim(),
       mergeTrainTickets.value,
     )
@@ -296,6 +473,36 @@ async function handleMerge() {
     ElMessage.error(error instanceof Error ? error.message : '生成失败')
   } finally {
     merging.value = false
+  }
+}
+
+async function handleBatchDownload() {
+  if (!selectedItems.value.length) { ElMessage.warning('请至少勾选一个附件'); return }
+  batchDownloading.value = true
+  try {
+    const result = await downloadReimbursementInvoicesZip(
+      selectedItems.value.map((i) => ({
+        key: i.key,
+        invoice_type: i.invoice_type,
+        invoice_date: i.invoice_date,
+        invoice_amount: i.invoice_amount,
+        invoice_location: i.invoice_location,
+        invoice_from: i.invoice_from,
+        invoice_to: i.invoice_to,
+      })),
+      (outputName.value.trim() || defaultOutputName()) + '_原始发票',
+    )
+    const link = document.createElement('a')
+    link.href = reimbursementOutputUrl(result.filename)
+    link.download = result.filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    ElMessage.success('已打包 ' + result.count + ' 张发票')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '批量下载失败')
+  } finally {
+    batchDownloading.value = false
   }
 }
 
@@ -467,13 +674,6 @@ async function handleStubFileSelect(event: Event) {
 
 <template>
   <section class="workspace-main reimbursement-main">
-    <header class="reimbursement-header">
-      <div>
-        <h1>报销助手</h1>
-        <p>扫描邮件中的发票附件，排版后生成报销 PDF</p>
-      </div>
-    </header>
-
     <div class="reimbursement-body">
       <!-- 扫描控制栏 -->
       <div class="reimbursement-scan-bar">
@@ -512,6 +712,27 @@ async function handleStubFileSelect(event: Event) {
           <input ref="rowFileInput" type="file" accept=".pdf,.ofd,.jpg,.jpeg,.png,.zip" style="display:none" @change="handleRowFileSelect" />
         </div>
       </div>
+      <div class="reimbursement-search-records">
+        <label class="search-record-field">
+          <span>搜索记录</span>
+          <select v-model="selectedSearchId" :disabled="searchLoading || scanning">
+            <option value="">未选择记录</option>
+            <option v-for="record in searchRecords" :key="record.id" :value="record.id">
+              {{ searchRecordLabel(record) }}
+            </option>
+          </select>
+        </label>
+        <button class="reimb-btn reimb-btn--ghost reimb-btn--sm" type="button" :disabled="!selectedSearchId || searchLoading || scanning" @click="handleLoadSearch">
+          加载记录
+        </button>
+        <button class="reimb-btn reimb-btn--ghost reimb-btn--sm" type="button" :disabled="searchSaving || !items.length" @click="persistCurrentSearch()">
+          {{ searchSaving ? '保存中...' : '保存当前' }}
+        </button>
+        <button class="reimb-btn reimb-btn--ghost reimb-btn--sm" type="button" :disabled="scanning" @click="handleNewSearch">
+          新搜索
+        </button>
+        <span v-if="currentSearchId" class="search-record-current">当前记录将用于补充搜索</span>
+      </div>
       <p v-if="scanStatus" class="reimbursement-scan-status">{{ scanStatus }}</p>
       <div v-if="scanChunks.length > 1" class="reimbursement-chunk-list">
         <div
@@ -522,7 +743,7 @@ async function handleStubFileSelect(event: Event) {
           <span>{{ chunk.start }} 至 {{ chunk.end }}</span>
           <em>{{ chunk.message || '等待扫描' }}</em>
           <button
-            v-if="chunk.status === 'failed'"
+            v-if="chunk.status === 'failed' || chunk.status === 'scanning'"
             class="reimb-btn reimb-btn--ghost reimb-btn--sm"
             type="button"
             :disabled="scanning || retryingChunkKey === chunkKey(chunk)"
@@ -537,10 +758,20 @@ async function handleStubFileSelect(event: Event) {
       <!-- 发票列表 -->
       <div v-if="items.length > 0" class="reimbursement-list-section">
         <div class="reimbursement-list-head">
-          <span>共 {{ items.length }} 张，已选 {{ selectedItems.length }} 张，拖拽调整顺序</span>
-          <button class="reimb-btn reimb-btn--ghost reimb-btn--sm" type="button" @click="toggleAll">
-            {{ items.every((i) => i.included) ? '取消全选' : '全选' }}
-          </button>
+          <span>共 {{ items.length }} 张，当前 {{ filteredItems.length }} 张，已选 {{ selectedItems.length }} 张，拖拽调整顺序</span>
+          <div class="reimbursement-list-tools">
+            <label class="invoice-type-filter">
+              <span>指定类型</span>
+              <select v-model="invoiceTypeFilter">
+                <option value="">全部类型</option>
+                <option v-for="type in INVOICE_TYPES" :key="type" :value="type">{{ type }}</option>
+              </select>
+            </label>
+            <span class="filtered-select-count">当前已选 {{ filteredSelectedCount }} 张</span>
+            <button class="reimb-btn reimb-btn--ghost reimb-btn--sm" type="button" :disabled="filteredItems.length === 0" @click="toggleFilteredItems">
+              {{ filteredItems.every((i) => i.included) ? "取消当前类型" : "全选当前类型" }}
+            </button>
+          </div>
         </div>
 
         <div class="reimbursement-table">
@@ -558,17 +789,18 @@ async function handleStubFileSelect(event: Event) {
           </div>
 
           <div
-            v-for="(item, index) in items"
+            v-for="(item, index) in filteredItems"
             :key="item.key"
+            :data-row-index="index"
             :class="[
               'reimbursement-table__row',
-              { 'row--excluded': !item.included, 'row--dragging': dragIndex === index, 'row--dragover': dragOverIndex === index },
+              { 'row--excluded': !item.included, 'row--dragging': dragIndex === item.originalIndex, 'row--dragover': dragOverIndex === item.originalIndex },
             ]"
             draggable="true"
-            @dragstart="onDragStart(index, $event)"
-            @dragover="onDragOver(index, $event)"
+            @dragstart="onDragStart(item.originalIndex, $event)"
+            @dragover="onDragOver(item.originalIndex, $event)"
             @dragleave="onDragLeave"
-            @drop="onDrop(index)"
+            @drop="onDrop(item.originalIndex)"
             @dragend="onDragEnd"
           >
             <div class="col-check">
@@ -691,7 +923,7 @@ async function handleStubFileSelect(event: Event) {
                   <el-icon><Download /></el-icon>
                 </a>
               </template>
-              <button class="reimb-btn reimb-btn--danger reimb-btn--sm" type="button" title="移除" @click="removeItem(index)">
+              <button class="reimb-btn reimb-btn--danger reimb-btn--sm" type="button" title="移除" @click="removeItem(item.originalIndex)">
                 <el-icon><Delete /></el-icon>
               </button>
             </div>
@@ -717,6 +949,10 @@ async function handleStubFileSelect(event: Event) {
         <button class="reimb-btn reimb-btn--primary" type="button" :disabled="merging || selectedItems.length === 0" @click="handleMerge">
           <el-icon><Plus /></el-icon>
           {{ merging ? '生成中...' : `生成报销 PDF（${selectedItems.length} 张）` }}
+        </button>
+        <button class="reimb-btn reimb-btn--ghost" type="button" :disabled="batchDownloading || selectedItems.length === 0" @click="handleBatchDownload">
+          <el-icon><Download /></el-icon>
+          {{ batchDownloading ? '打包中...' : '批量下载发票（' + selectedItems.length + ' 张）' }}
         </button>
         <div v-if="mergeResult" class="reimb-result">
           <span>{{ mergeResult.filename }}（{{ mergeResult.pages }} 页<span v-if="mergeResult.train_ticket_groups">，火车票 {{ mergeResult.train_ticket_groups }} 组</span>）</span>

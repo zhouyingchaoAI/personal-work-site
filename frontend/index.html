@@ -500,6 +500,15 @@
         </div>
         <label>手动模型名称</label>
         <input id="configModel" placeholder="MiniMax-M2.7" />
+        <label>深度思考</label>
+        <select id="configReasoningEffort">
+          <option value="off">关闭（推荐，常规办公）</option>
+          <option value="minimal">最小</option>
+          <option value="low">低</option>
+          <option value="medium">中</option>
+          <option value="high">高（响应较慢）</option>
+        </select>
+        <div class="hint">该设置会应用于周报、写作、日记、数字人、会议纪要、资讯、报销和 Skill 等平台大模型调用。</div>
         <label>API Key</label>
         <input id="configApiKey" type="password" placeholder="留空则保持原 Key 不变" />
         <div class="hint" id="configKeyHint"></div>

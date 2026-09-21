@@ -1,6 +1,7 @@
 """报销助手：扫描邮件发票附件/链接、合并生成报销 PDF。"""
 
 import io
+import json
 import re
 import imaplib
 import uuid
@@ -18,11 +19,11 @@ _IMAP_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 _NETEASE_IMAP_HOSTS = {'imap.163.com', 'imap.126.com', 'imap.yeah.net', 'imap.188.com'}
 
 _TYPE_KEYWORDS = {
+    '市内交通': ['市内交通', '地铁', '轨道交通', '出租', '滴滴', '打车', '网约', 'taxi', '公交'],
     '火车': ['火车', '高铁', '动车', '铁路', 'train'],
     '机票': ['机票', '航班', '航空', '飞机', '行程单', 'flight', 'airline'],
     '住宿': ['住宿', '酒店', '宾馆', '旅馆', '民宿', 'hotel'],
     '餐饮': ['餐', '饭', '餐厅', '餐饮', 'restaurant'],
-    '出租车': ['出租', '滴滴', '打车', '网约', 'taxi'],
     '通讯费': ['话费', '通讯', '通信', '流量', '宽带', '移动', '电信', '联通',
               '中国移动', '中国电信', '中国联通', '手机费', '电话费', '10086', '10000'],
 }
@@ -83,10 +84,21 @@ def _imap_connect_safe(settings):
     """建立 IMAP 连接，网易系服务器自动发送 ID 命令。"""
     validate_imap_ready(settings)
     timeout = int(settings.get("timeout") or 20)
-    if settings["use_ssl"]:
-        box = imaplib.IMAP4_SSL(settings["host"], settings["port"], timeout=timeout)
-    else:
-        box = imaplib.IMAP4(settings["host"], settings["port"], timeout=timeout)
+    import socket
+    original_getaddrinfo = socket.getaddrinfo
+
+    def _ipv4_first_getaddrinfo(*args, **kwargs):
+        infos = original_getaddrinfo(*args, **kwargs)
+        return sorted(infos, key=lambda item: 0 if item[0] == socket.AF_INET else 1)
+
+    socket.getaddrinfo = _ipv4_first_getaddrinfo
+    try:
+        if settings["use_ssl"]:
+            box = imaplib.IMAP4_SSL(settings["host"], settings["port"], timeout=timeout)
+        else:
+            box = imaplib.IMAP4(settings["host"], settings["port"], timeout=timeout)
+    finally:
+        socket.getaddrinfo = original_getaddrinfo
     box.login(settings["user"], settings["password"])
     if settings["host"].lower() in _NETEASE_IMAP_HOSTS:
         imaplib.Commands['ID'] = ('AUTH',)
@@ -106,6 +118,173 @@ def reimbursement_cache_dir(username):
 
 def reimbursement_output_dir(username):
     return _reimbursement_dir(username, "output")
+
+def reimbursement_search_dir(username):
+    return _reimbursement_dir(username, "searches")
+
+def _reimbursement_search_path(username, record_id):
+    safe = re.sub(r"[^a-zA-Z0-9_-]+", "", str(record_id or ""))
+    if not safe:
+        raise ValueError("搜索记录 ID 无效")
+    return reimbursement_search_dir(username) / f"{safe}.json"
+
+def _now_iso():
+    return datetime.now().isoformat(timespec="seconds")
+
+def _clean_reimbursement_record_item(item):
+    allowed = {
+        "key", "email_uid", "email_subject", "email_date", "email_from",
+        "filename", "size", "content_type", "is_pdf", "is_image", "is_ofd",
+        "is_stub", "source_url", "email_body", "source", "included",
+        "invoice_type", "invoice_date", "invoice_amount", "invoice_location",
+        "invoice_from", "invoice_to",
+    }
+    cleaned = {key: value for key, value in dict(item or {}).items() if key in allowed}
+    if "key" in cleaned:
+        cleaned["key"] = str(cleaned.get("key") or "")
+    return cleaned
+
+def _repair_reimbursement_record_item_amount(username, item):
+    cleaned = dict(item or {})
+    if not cleaned.get("key") or not _is_missing_invoice_amount(cleaned.get("invoice_amount", "")):
+        return cleaned
+    path = _cache_path_for_key(username, cleaned.get("key"))
+    if not path:
+        return cleaned
+    amount = _fill_missing_invoice_amount_from_vision(cleaned, path)
+    if amount:
+        cleaned["invoice_amount"] = amount
+    elif _is_zero_invoice_amount(cleaned.get("invoice_amount", "")):
+        cleaned["invoice_amount"] = ""
+    return cleaned
+
+def _search_range(start, end):
+    start = str(start or "").strip()
+    end = str(end or "").strip()
+    return {"start": start, "end": end} if start or end else None
+
+
+def _clean_scan_chunk(chunk):
+    chunk = dict(chunk or {})
+    start = str(chunk.get("start") or "").strip()
+    end = str(chunk.get("end") or "").strip()
+    if not start and not end:
+        return None
+    status = str(chunk.get("status") or "pending").strip()
+    if status not in {"pending", "scanning", "done", "failed"}:
+        status = "pending"
+    return {
+        "start": start,
+        "end": end,
+        "status": status,
+        "total_scanned": int(chunk.get("total_scanned") or 0),
+        "item_count": int(chunk.get("item_count") or 0),
+        "message": str(chunk.get("message") or ""),
+    }
+
+def _merge_scan_chunks(existing, incoming):
+    by_key = {}
+    order = []
+    for chunk in list(existing or []) + list(incoming or []):
+        cleaned = _clean_scan_chunk(chunk)
+        if not cleaned:
+            continue
+        key = (cleaned["start"], cleaned["end"])
+        if key not in by_key:
+            order.append(key)
+        by_key[key] = {**by_key.get(key, {}), **cleaned}
+    return [by_key[key] for key in order]
+
+def _search_record_summary(record):
+    return {
+        "id": record.get("id", ""),
+        "title": record.get("title", ""),
+        "account": record.get("account", "company"),
+        "created_at": record.get("created_at", ""),
+        "updated_at": record.get("updated_at", ""),
+        "ranges": record.get("ranges", []),
+        "scan_chunks": record.get("scan_chunks", []),
+        "item_count": len(record.get("items", []) or []),
+        "total_scanned": int(record.get("total_scanned") or 0),
+    }
+
+def list_reimbursement_searches(username):
+    records = []
+    for path in reimbursement_search_dir(username).glob("*.json"):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            records.append(_search_record_summary(record))
+        except Exception:
+            continue
+    records.sort(key=lambda item: item.get("updated_at", ""), reverse=True)
+    return {"ok": True, "records": records}
+
+def get_reimbursement_search(username, record_id):
+    path = _reimbursement_search_path(username, record_id)
+    if not path.exists():
+        raise ValueError("搜索记录不存在")
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["item_count"] = len(record.get("items", []) or [])
+    record["scan_chunks"] = [_clean_scan_chunk(chunk) for chunk in record.get("scan_chunks", []) if _clean_scan_chunk(chunk)]
+    return {"ok": True, "record": record}
+
+def save_reimbursement_search(username, payload):
+    payload = dict(payload or {})
+    record_id = str(payload.get("id") or uuid.uuid4().hex)
+    now = _now_iso()
+    path = _reimbursement_search_path(username, record_id)
+    if path.exists():
+        record = json.loads(path.read_text(encoding="utf-8"))
+    else:
+        title = str(payload.get("title") or "").strip()
+        if not title:
+            start = str(payload.get("start") or "").strip()
+            end = str(payload.get("end") or "").strip()
+            title = f"发票搜索 {start} 至 {end}" if start or end else f"发票搜索 {now}"
+        record = {
+            "id": record_id,
+            "title": title,
+            "created_at": now,
+            "ranges": [],
+            "scan_chunks": [],
+            "items": [],
+            "total_scanned": 0,
+        }
+    record["account"] = str(payload.get("account") or record.get("account") or "company")
+    if payload.get("title"):
+        record["title"] = str(payload.get("title")).strip()
+    next_range = _search_range(payload.get("start"), payload.get("end"))
+    if next_range and next_range not in record.get("ranges", []):
+        record.setdefault("ranges", []).append(next_range)
+    incoming_chunks = [_clean_scan_chunk(chunk) for chunk in payload.get("scan_chunks", []) or []]
+    incoming_chunks = [chunk for chunk in incoming_chunks if chunk]
+    if incoming_chunks:
+        record["scan_chunks"] = incoming_chunks
+        for chunk in incoming_chunks:
+            chunk_range = _search_range(chunk.get("start"), chunk.get("end"))
+            if chunk_range and chunk_range not in record.get("ranges", []):
+                record.setdefault("ranges", []).append(chunk_range)
+    by_key = {}
+    for item in record.get("items", []) or []:
+        cleaned = _clean_reimbursement_record_item(item)
+        key = cleaned.get("key")
+        if key:
+            by_key[key] = cleaned
+    for item in payload.get("items", []) or []:
+        cleaned = _clean_reimbursement_record_item(item)
+        cleaned = _repair_reimbursement_record_item_amount(username, cleaned)
+        key = cleaned.get("key")
+        if key:
+            by_key[key] = {**by_key.get(key, {}), **cleaned}
+    record["items"] = _sort_reimbursement_items(by_key.values())
+    record["item_count"] = len(record["items"])
+    if record.get("scan_chunks"):
+        record["total_scanned"] = sum(int(chunk.get("total_scanned") or 0) for chunk in record.get("scan_chunks", []) if chunk.get("status") in {"done", "failed"})
+    else:
+        record["total_scanned"] = int(record.get("total_scanned") or 0) + int(payload.get("total_scanned") or 0)
+    record["updated_at"] = now
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "record": record}
 
 def _cache_path_for_key(username, key):
     for p in reimbursement_cache_dir(username).glob(f"{key}__*"):
@@ -249,11 +428,21 @@ _SCAN_SKIP_FOLDERS = ['已发送', '草稿', '垃圾', '病毒', '已删除', '�
 
 
 def _select_folder(box, folder_raw):
-    """选择 IMAP 文件夹。139 邮箱不接受 SELECT "INBOX"，优先原始名再回退带引号。"""
-    status, data = box.select(folder_raw)
-    if status == "OK":
-        return status, data
-    return _select_folder(box, folder_raw)
+    """只读选择 IMAP 文件夹。139 邮箱不接受 SELECT "INBOX"，优先原始名再回退带引号。"""
+    attempts = [folder_raw]
+    if folder_raw and not str(folder_raw).startswith('"') and str(folder_raw).upper() != "INBOX":
+        attempts.append(f'"{folder_raw}"')
+    last_status, last_data = "NO", []
+    for candidate in attempts:
+        try:
+            status, data = box.select(candidate, readonly=True)
+        except Exception as exc:
+            last_status, last_data = "NO", [str(exc).encode("utf-8", "ignore")]
+            continue
+        if status == "OK":
+            return status, data
+        last_status, last_data = status, data
+    return last_status, last_data
 
 
 def _scan_folders(box):
@@ -557,6 +746,149 @@ def _format_invoice_amount(value):
         return ''
 
 
+def _is_zero_invoice_amount(value):
+    text = str(value or '').strip()
+    if not text:
+        return False
+    numbers = re.findall(r'[0-9][0-9,]*(?:\.[0-9]{1,2})?', text)
+    if not numbers:
+        return False
+    try:
+        return all(float(n.replace(',', '')) == 0 for n in numbers)
+    except ValueError:
+        return False
+
+
+def _is_missing_invoice_amount(value):
+    text = str(value or "").strip()
+    return not text or _is_zero_invoice_amount(text)
+
+
+def _normalize_positive_invoice_amount(value):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    matches = re.findall(r"[0-9][0-9,]*(?:\.[0-9]{1,2})?", text)
+    for raw in matches:
+        try:
+            amount = float(raw.replace(",", ""))
+        except ValueError:
+            continue
+        if 0 < amount < 100000:
+            return _format_invoice_amount(amount)
+    return ""
+
+
+def _invoice_vision_image_data(path):
+    path = Path(path)
+    ext = path.suffix.lower()
+    if ext == ".pdf":
+        import fitz
+        doc = fitz.open(str(path))
+        try:
+            if len(doc) == 0:
+                return None
+            pix = doc[0].get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            return "image/png", pix.tobytes("png")
+        finally:
+            doc.close()
+    if ext in _IMAGE_EXTENSIONS:
+        mime = "image/png" if ext == ".png" else "image/jpeg"
+        return mime, path.read_bytes()
+    return None
+
+
+def _vision_amount_from_content(content):
+    text = str(content or "").strip()
+    if not text:
+        return ""
+    try:
+        import json as _json
+        match = re.search(r"\{.+\}", text, re.DOTALL)
+        parsed = _json.loads(match.group(0) if match else text)
+        if isinstance(parsed, dict):
+            for key in ("amount", "invoice_amount", "price", "fare"):
+                amount = _normalize_positive_invoice_amount(parsed.get(key, ""))
+                if amount:
+                    return amount
+    except Exception:
+        pass
+    return _normalize_positive_invoice_amount(text)
+
+
+def _fill_missing_invoice_amount_from_vision(candidate, path):
+    if not _is_missing_invoice_amount((candidate or {}).get("invoice_amount", "")):
+        return str((candidate or {}).get("invoice_amount") or "").strip()
+    if not path:
+        return ""
+    try:
+        image = _invoice_vision_image_data(path)
+    except Exception:
+        return ""
+    if not image:
+        return ""
+    cfg = merged_assistant_config()
+    if not cfg.get("url") or not cfg.get("key"):
+        return ""
+    mime, data = image
+    image_url = "data:" + mime + ";base64," + base64.b64encode(data).decode("ascii")
+    prompts = [
+        "识别这张发票或铁路电子客票的票价/价税合计金额。只返回包含 amount 字段的 JSON；无法确定则 amount 为空。",
+        "请放大查看票面中的“票价”“金额”“￥”附近数字，只返回包含 amount 字段的 JSON；不要返回车次、日期、票号或身份证数字。",
+    ]
+    model = str(read_config().get("reimbursement_vision_model") or "MiniMax-M3")
+    for prompt in prompts:
+        try:
+            payload = {
+                "model": model,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": image_url}},
+                    ],
+                }],
+                "temperature": 0,
+                "max_tokens": 100,
+            }
+            resp = request_json(cfg["url"] + "/v1/chat/completions", cfg["key"], payload, "POST", 60)
+            content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
+            amount = _vision_amount_from_content(content)
+            if amount:
+                return amount
+        except Exception:
+            continue
+    return ""
+
+
+def _parse_reimbursement_sort_datetime(value):
+    text = str(value or "").strip()
+    if not text:
+        return datetime.max
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, fmt)
+        except Exception:
+            pass
+    m = re.search(r"(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})", text)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return datetime.max
+    return datetime.max
+
+
+def _reimbursement_item_sort_key(item):
+    primary = _parse_reimbursement_sort_datetime((item or {}).get("invoice_date") or (item or {}).get("email_date"))
+    email_dt = _parse_reimbursement_sort_datetime((item or {}).get("email_date"))
+    return (primary, email_dt, str((item or {}).get("filename") or ""), str((item or {}).get("key") or ""))
+
+
+def _sort_reimbursement_items(items):
+    return sorted(list(items or []), key=_reimbursement_item_sort_key)
+
+
 def _extract_invoice_date_by_rule(text):
     text = text or ''
     for pat in [
@@ -616,16 +948,21 @@ def _extract_invoice_amount_by_rule(text):
         if 0 < value < 100000:
             return f"${value:.2f} USD"
     label_patterns = [
-        (r'价税合计.{0,180}', 'max'),
+        (r'价税合计.{0,500}', 'max'),
         (r'总价.{0,80}', 'first'),
         (r'总金额.{0,80}', 'first'),
-        (r'合\s*计.{0,120}', 'max'),
+        (r'合\s*计.{0,500}', 'max'),
     ]
     for pat, mode in label_patterns:
         m = re.search(pat, text, re.DOTALL)
         if not m:
             continue
-        values = _currency_amounts_in_text(m.group(0)) or _amounts_in_text(m.group(0))
+        currency_values = _currency_amounts_in_text(m.group(0))
+        # “合计”在 PDF 文本层中常与票价表头分离；若附近没有货币符号，
+        # 不能把身份证尾号、票号等普通数字当成金额。总价/总金额保留
+        # 无货币符号的兜底，以兼容行程校验单里的“总价: 900.0”。
+        allow_plain_numbers = '总价' in pat or '总金额' in pat
+        values = currency_values or (_amounts_in_text(m.group(0)) if allow_plain_numbers else [])
         if values:
             return _format_invoice_amount(values[0] if mode == 'first' else max(values))
 
@@ -640,12 +977,39 @@ def _extract_invoice_amount_by_rule(text):
     return ''
 
 
+def _is_city_transport_ticket_text(text):
+    text = text or ''
+    if any(kw in text for kw in ('地铁', '轨道交通', '出租', '滴滴', '网约车', '公交')):
+        return True
+    if re.search(r'\bS\d{3,5}\b', text) and '不对号入座' in text:
+        return True
+    city_pairs = (('尖山', '开福寺'),)
+    return any(a in text and b in text for a, b in city_pairs)
+
+
 def _extract_route_by_rule(text):
     text = text or ''
     bad = {
         '出发', '到达', '出发到达', '姓名', '类别', '面价',
         '客票级别', '客票类别', '网上购票系统', '电子发票通知',
     }
+    station_tail = re.search(r'[A-Za-z]{2,20}\s+([一-龥]{2,12})\s*站\s*([一-龥]{2,12})\s*站', text)
+    station_head = re.search(r'([一-龥]{2,12})\s*站\s*([一-龥]{2,12})\s*站\s+[A-Za-z]{2,20}', text)
+    train_start = re.search(r'\b([A-Za-z]{2,20})\s+[GDCZTKY]\d{1,5}\s+20\d{2}', text)
+    if (station_tail or station_head) and train_start:
+        first = (station_tail or station_head).group(1).strip()
+        second = (station_tail or station_head).group(2).strip()
+        start_en = train_start.group(1).lower()
+        pinyin = {
+            'wuxi': '无锡', 'suzhou': '苏州', 'changsha': '长沙', 'changshanan': '长沙南',
+            'shaoyangbei': '邵阳北', 'xiangtanbei': '湘潭北', 'jianshan': '尖山', 'kaifusi': '开福寺',
+        }
+        start_cn = pinyin.get(start_en)
+        if start_cn == first:
+            return first, second
+        if start_cn == second:
+            return second, first
+        return second, first
     patterns = [
         r'自[:：]\s*(?:[A-Z]{3}\s*)?([\u4e00-\u9fa5]{2,12})\s+至[:：]\s*(?:[A-Z]{3}\s*)?([\u4e00-\u9fa5]{2,12})',
         r'([\u4e00-\u9fa5]{2,6})\s+[\u4e00-\u9fa5]{2,6}\s+T\d\s+([\u4e00-\u9fa5]{2,6})\s+[\u4e00-\u9fa5]{2,6}\s+T\d',
@@ -679,14 +1043,19 @@ def _extract_location_by_rule(text, invoice_type):
 
 def _rule_analyze_candidate(candidate):
     text = _invoice_text_for_rules(candidate)
+    content_text = ' '.join([candidate.get('filename') or '', candidate.get('_content') or ''])
     lowered = text.lower()
     invoice_type = _keyword_type(lowered)
-    invoice_date = _extract_invoice_date_by_rule(text) or (candidate.get('email_date') or '')
-    invoice_amount = _extract_invoice_amount_by_rule(text)
+    if _is_city_transport_ticket_text(content_text or text):
+        invoice_type = '市内交通'
+    invoice_date = _extract_invoice_date_by_rule(content_text) or _extract_invoice_date_by_rule(text) or (candidate.get('email_date') or '')
+    invoice_amount = _extract_invoice_amount_by_rule(content_text) or _extract_invoice_amount_by_rule(text)
     invoice_from = ''
     invoice_to = ''
     if invoice_type in ('火车', '机票'):
-        invoice_from, invoice_to = _extract_route_by_rule(text)
+        invoice_from, invoice_to = _extract_route_by_rule(content_text)
+        if not invoice_from or not invoice_to:
+            invoice_from, invoice_to = _extract_route_by_rule(text)
     return {
         'is_invoice': True,
         'invoice_type': invoice_type,
@@ -716,8 +1085,12 @@ def _merge_rule_meta(candidate, meta):
         value = merged.get(key)
         if isinstance(value, str):
             value = value.strip()
+        if prefer_rule and key == 'invoice_amount' and _is_zero_invoice_amount(value):
+            value = ''
         fallback_value = fallback.get(key, '')
-        if prefer_rule and fallback_value and key in ('invoice_type', 'invoice_date', 'invoice_amount', 'invoice_from', 'invoice_to'):
+        if rule_type == '市内交通' and key in ('invoice_type', 'invoice_from', 'invoice_to'):
+            merged[key] = fallback_value or ''
+        elif prefer_rule and fallback_value and key in ('invoice_type', 'invoice_date', 'invoice_amount', 'invoice_from', 'invoice_to'):
             merged[key] = fallback_value
         elif not value or (key == 'invoice_type' and value == '其他'):
             merged[key] = fallback_value or value or ''
@@ -879,11 +1252,18 @@ def scan_invoice_attachments(username, start_date, end_date, account="company"):
     all_candidates = []
     total_scanned  = 0
     downloaded_urls = set()
+    seen_candidate_fingerprints = set()
 
     def _make_candidate(key, cached_path, filename, subject, from_addr, date_str, uid, email_body):
         ext = Path(filename.lower()).suffix
+        try:
+            import hashlib
+            fingerprint = "file:" + hashlib.sha256(cached_path.read_bytes()).hexdigest()
+        except Exception:
+            fingerprint = f"meta:{subject}|{from_addr}|{date_str}|{filename}|{cached_path.stat().st_size if cached_path.exists() else 0}"
         return {
             "key": key,
+            "_fingerprint": fingerprint,
             "email_uid": uid,
             "email_subject": subject,
             "email_date": date_str,
@@ -1080,6 +1460,9 @@ def scan_invoice_attachments(username, start_date, end_date, account="company"):
                         "invoice_to": "",
                         "_content":    "",
                         "_email_body": email_body,
+                        "_fingerprint": "stub:" + __import__("hashlib").sha256(
+                            f"{subject}|{from_addr}|{date_str}|{spa_urls[0] if spa_urls else ''}|{email_body}".encode("utf-8", "ignore")
+                        ).hexdigest(),
                     })
 
                 # ── 4. PDF 优先：有 PDF 则丢弃同邮件的 OFD ───
@@ -1097,7 +1480,15 @@ def scan_invoice_attachments(username, start_date, end_date, account="company"):
                         if c.get('is_stub') or Path(c['filename'].lower()).suffix != '.ofd'
                     ]
 
-                all_candidates.extend(email_candidates)
+                deduped_candidates = []
+                for candidate in email_candidates:
+                    fingerprint = candidate.get("_fingerprint") or ""
+                    if fingerprint and fingerprint in seen_candidate_fingerprints:
+                        continue
+                    if fingerprint:
+                        seen_candidate_fingerprints.add(fingerprint)
+                    deduped_candidates.append(candidate)
+                all_candidates.extend(deduped_candidates)
 
     finally:
         try:
@@ -1108,25 +1499,45 @@ def scan_invoice_attachments(username, start_date, end_date, account="company"):
     if all_candidates:
         analysis = _llm_analyze(all_candidates)
         results  = []
+        result_fingerprints = set()
         for c in all_candidates:
             meta = analysis.get(c["key"], {})
             if meta.get("is_invoice", True):
+                invoice_amount = meta.get("invoice_amount", "")
+                if _is_missing_invoice_amount(invoice_amount):
+                    vision_amount = _fill_missing_invoice_amount_from_vision({**c, **meta}, _cache_path_for_key(username, c["key"]))
+                    if vision_amount:
+                        invoice_amount = vision_amount
                 c.update({
                     "invoice_type":     meta.get("invoice_type", "其他"),
                     "invoice_date":     meta.get("invoice_date", ""),
-                    "invoice_amount":   meta.get("invoice_amount", ""),
+                    "invoice_amount":   invoice_amount if not _is_zero_invoice_amount(invoice_amount) else "",
                     "invoice_location": meta.get("invoice_location", ""),
                     "invoice_from":     meta.get("invoice_from", ""),
                     "invoice_to":       meta.get("invoice_to", ""),
                 })
                 c.pop("_content", None)
+                c.pop("_fingerprint", None)
+                result_fingerprint = (
+                    c.get("email_subject", ""),
+                    c.get("email_date", ""),
+                    c.get("filename", ""),
+                    c.get("invoice_type", ""),
+                    c.get("invoice_date", ""),
+                    c.get("invoice_amount", ""),
+                    c.get("invoice_from", ""),
+                    c.get("invoice_to", ""),
+                )
+                if result_fingerprint in result_fingerprints:
+                    continue
+                result_fingerprints.add(result_fingerprint)
                 # 所有邮件来源条目都保留正文，供前端"邮件内容"弹框查看原始邮件
                 c["email_body"] = c.pop("_email_body", "")
                 results.append(c)
     else:
         results = []
 
-    results.sort(key=lambda x: x["email_date"], reverse=True)
+    results = _sort_reimbursement_items(results)
     return {"ok": True, "items": results, "total_scanned": total_scanned}
 
 
@@ -1392,6 +1803,68 @@ def fetch_and_save_url(username, url, hint_subject="", hint_body=""):
     }
 
 
+# ── 批量下载 ───────────────────────────────────────────────────
+
+def _safe_invoice_filename_part(value):
+    text = str(value or '').strip()
+    forbidden = set('/:*?"<>|') | {chr(10), chr(13), chr(92)}
+    text = ''.join('_' if ch in forbidden else ch for ch in text)
+    text = re.sub(r'\s+', '', text)
+    return text.strip('._ ')
+
+def _invoice_download_base_name(item):
+    item = item or {}
+    parts = [
+        _safe_invoice_filename_part(item.get('invoice_type') or '发票'),
+        _safe_invoice_filename_part(item.get('invoice_date') or '未知日期'),
+        _safe_invoice_filename_part(item.get('invoice_amount') or '未知金额'),
+    ]
+    route = ''
+    if item.get('invoice_from') or item.get('invoice_to'):
+        route = f"{item.get('invoice_from') or ''}-{item.get('invoice_to') or ''}".strip('-')
+    location = item.get('invoice_location') or route
+    if location:
+        parts.append(_safe_invoice_filename_part(location))
+    return '_'.join(part for part in parts if part) or '发票'
+
+def download_reimbursement_invoices_zip(username, items, output_name='发票批量下载'):
+    if not items:
+        raise ValueError('没有选中任何发票')
+    safe_output = _safe_invoice_filename_part(output_name) or '发票批量下载'
+    filename = safe_output if safe_output.lower().endswith('.zip') else safe_output + '.zip'
+    output_path = reimbursement_output_dir(username) / filename
+    counter = 1
+    while output_path.exists():
+        output_path = reimbursement_output_dir(username) / f"{Path(filename).stem}_{counter}{Path(filename).suffix}"
+        counter += 1
+
+    used_names = {}
+    added = 0
+    with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for item in items or []:
+            key = str((item or {}).get('key') or '').strip()
+            if not key:
+                continue
+            path = _cache_path_for_key(username, key)
+            if not path or not path.exists():
+                continue
+            ext = path.suffix or Path(path.name.split('__', 1)[-1]).suffix or '.dat'
+            base = _invoice_download_base_name(item)
+            arcname = base + ext.lower()
+            count = used_names.get(arcname, 0) + 1
+            used_names[arcname] = count
+            if count > 1:
+                arcname = f"{base}_{count}{ext.lower()}"
+            zf.write(path, arcname)
+            added += 1
+    if not added:
+        try:
+            output_path.unlink()
+        except Exception:
+            pass
+        raise ValueError('没有可下载的发票文件')
+    return {'ok': True, 'filename': output_path.name, 'count': added}
+
 # ── 合并 PDF ───────────────────────────────────────────────────
 
 def merge_reimbursement_pdf(username, items, output_name, merge_train_tickets=False):
@@ -1494,24 +1967,14 @@ def merge_reimbursement_pdf(username, items, output_name, merge_train_tickets=Fa
         page = pypdf.PageObject.create_blank_page(width=a4_landscape_width, height=a4_landscape_height)
         margin = 20
         gap = 12
-        count = len(rendered)
-        if count == 1:
-            cells = [(margin, margin, a4_landscape_width - margin * 2, a4_landscape_height - margin * 2)]
-        elif count == 2:
-            cell_w = (a4_landscape_width - margin * 2 - gap) / 2
-            cells = [
-                (margin, margin, cell_w, a4_landscape_height - margin * 2),
-                (margin + cell_w + gap, margin, cell_w, a4_landscape_height - margin * 2),
-            ]
-        else:
-            cell_w = (a4_landscape_width - margin * 2 - gap) / 2
-            cell_h = (a4_landscape_height - margin * 2 - gap) / 2
-            cells = [
-                (margin, margin + cell_h + gap, cell_w, cell_h),
-                (margin + cell_w + gap, margin + cell_h + gap, cell_w, cell_h),
-                (margin, margin, cell_w, cell_h),
-                (margin + cell_w + gap, margin, cell_w, cell_h),
-            ]
+        cell_w = (a4_landscape_width - margin * 2 - gap) / 2
+        cell_h = (a4_landscape_height - margin * 2 - gap) / 2
+        cells = [
+            (margin, margin + cell_h + gap, cell_w, cell_h),
+            (margin + cell_w + gap, margin + cell_h + gap, cell_w, cell_h),
+            (margin, margin, cell_w, cell_h),
+            (margin + cell_w + gap, margin, cell_w, cell_h),
+        ]
         for (_, source), cell in zip(rendered, cells):
             merge_page_into_cell(page, source, *cell)
         writer.add_page(page)
@@ -1546,6 +2009,9 @@ def merge_reimbursement_pdf(username, items, output_name, merge_train_tickets=Fa
                 normal_entries.append(entry)
         except Exception:
             normal_entries.append(entry)
+
+    train_entries = sorted(train_entries, key=lambda entry: _reimbursement_item_sort_key(entry.get("item", {})))
+    normal_entries = sorted(normal_entries, key=lambda entry: _reimbursement_item_sort_key(entry.get("item", {})))
 
     for i in range(0, len(train_entries), 4):
         add_train_group_page(train_entries[i:i + 4])

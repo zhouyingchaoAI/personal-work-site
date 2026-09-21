@@ -792,7 +792,8 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
 
 .news-field input,
 .news-field textarea,
-.news-source-row input {
+.news-source-row input,
+.news-source-row select {
   width: 100%;
   min-width: 0;
   border: 1px solid #d5e2f5;
@@ -814,7 +815,8 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
 }
 
 .news-field input,
-.news-source-row input {
+.news-source-row input,
+.news-source-row select {
   height: 36px;
   padding: 0 10px;
 }
@@ -860,6 +862,25 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
   }
 }
 
+.news-source-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.news-source-title .news-source-add-wechat {
+  border-color: #a9dccc;
+  color: #087d58;
+  background: #effbf6;
+
+  &:hover,
+  &:focus-visible {
+    border-color: #57b99c;
+    background: #e4f8f0;
+  }
+}
+
 .news-source-list {
   display: grid;
   gap: 10px;
@@ -867,9 +888,342 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
 
 .news-source-row {
   display: grid;
-  grid-template-columns: minmax(76px, 0.42fr) minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(112px, 0.34fr) minmax(112px, 0.34fr) minmax(0, 1fr) 34px;
   gap: 8px;
   align-items: end;
+}
+
+.news-source-row--web {
+  grid-template-columns: minmax(150px, 0.34fr) minmax(0, 1fr) 34px;
+}
+
+.news-source-help {
+  margin: -2px 0 10px;
+  color: $text-muted;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.news-wechat-subscribe {
+  display: grid;
+  gap: 9px;
+  padding: 13px;
+  border: 1px solid #b9e2d4;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f4fcf8, #ffffff);
+
+  > strong { color: #087d58; font-size: 13px; }
+}
+
+.news-wechat-subscribed {
+  display: grid;
+  gap: 11px;
+  padding: 14px;
+  border: 1px solid #d8e8e1;
+  border-radius: 11px;
+  background: #fbfefc;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+
+    > div {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    strong {
+      color: $text-strong;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    span {
+      padding: 2px 7px;
+      border-radius: 999px;
+      color: #087d58;
+      background: #ddf5ea;
+      font-size: 11px;
+      font-weight: 850;
+    }
+
+    p {
+      margin: 0;
+      color: $text-muted;
+      font-size: 12px;
+      line-height: 1.5;
+      text-align: right;
+    }
+  }
+
+  &__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+  }
+
+  button {
+    display: flex;
+    height: 36px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    padding: 0 10px 0 12px;
+    border: 1px solid #c5e6d9;
+    border-radius: 8px;
+    color: #087d58;
+    background: #f1fbf6;
+    font-size: 12px;
+    font-weight: 800;
+
+    span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .el-icon {
+      flex: 0 0 auto;
+      color: #54a78c;
+    }
+
+    &:hover,
+    &:focus-visible {
+      border-color: #55b798;
+      color: #006f4d;
+      background: #e2f7ed;
+
+      .el-icon { color: #d84f45; }
+    }
+  }
+}
+
+.news-simple-schedule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #dbe5f4;
+  border-radius: 10px;
+  background: #f9fbff;
+
+  > span {
+    color: $text-strong;
+    font-size: 13px;
+    font-weight: 900;
+  }
+
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: $text-main;
+    font-size: 13px;
+    font-weight: 760;
+  }
+
+  input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    accent-color: $primary;
+  }
+
+  input[type='time'] {
+    width: 112px;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid #d5e2f5;
+    border-radius: 7px;
+    color: $text-main;
+    background: #fff;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 750;
+
+    &:disabled { color: #9aa9bc; background: #f2f5f9; }
+  }
+
+  button {
+    margin-left: auto;
+    padding: 4px 0;
+    border: 0;
+    color: $primary;
+    background: transparent;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 850;
+
+    &:hover,
+    &:focus-visible { color: #0c377e; text-decoration: underline; }
+  }
+}
+
+.news-advanced-settings {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px dashed #c8d8ed;
+  border-radius: 10px;
+  background: #fcfdff;
+}
+
+.news-wechat-exporter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 15px;
+  border: 1px solid #c9d8ef;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 92% 12%, rgba(51, 105, 190, 0.14), transparent 34%),
+    linear-gradient(135deg, #f3f7ff, #fbfdff);
+  box-shadow: 0 8px 18px rgba(21, 73, 156, 0.06);
+
+  strong, span { display: block; }
+  strong { margin-top: 5px; color: $text-strong; font-size: 14px; font-weight: 900; }
+  span { margin-top: 5px; color: $text-muted; font-size: 12px; line-height: 1.55; }
+  a {
+    display: inline-flex;
+    height: 32px;
+    flex: 0 0 auto;
+    align-items: center;
+    padding: 0 12px;
+    border: 1px solid #adc4ea;
+    border-radius: 8px;
+    color: $primary;
+    background: #ffffff;
+    font-size: 12px;
+    font-weight: 900;
+    text-decoration: none;
+
+    &:hover,
+    &:focus-visible { border-color: $primary; background: #edf4ff; }
+  }
+}
+
+.news-wechat-exporter__copy {
+  min-width: 0;
+}
+
+.news-wechat-exporter__badge {
+  display: inline-flex !important;
+  width: fit-content;
+  margin: 0 !important;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #315a9c !important;
+  background: #dce9ff;
+  font-size: 11px !important;
+  font-weight: 900;
+}
+
+.news-wechat-label {
+  display: block;
+  margin: 2px 0 -2px;
+  color: $text-muted;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.news-wechat-search-row {
+  display: flex;
+  gap: 8px;
+
+  input {
+    min-width: 0;
+    flex: 1;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid #c7dfd5;
+    border-radius: 8px;
+    color: $text-main;
+    font: inherit;
+    outline: none;
+  }
+}
+
+.news-wechat-manual {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed #d8ebe4;
+
+  &__hint {
+    color: $text-muted;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  &__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+
+    input {
+      min-width: 0;
+      flex: 1 1 160px;
+      height: 36px;
+      padding: 0 10px;
+      border: 1px solid #c7dfd5;
+      border-radius: 8px;
+      color: $text-main;
+      font: inherit;
+      outline: none;
+    }
+
+    button {
+      flex: 0 0 auto;
+      padding: 7px 16px;
+      border: 1px solid #57b99c;
+      border-radius: 7px;
+      color: #087d58;
+      background: #effbf6;
+      font-weight: 800;
+      cursor: pointer;
+
+      &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+    }
+  }
+}
+
+.news-wechat-candidates {
+  display: grid;
+  gap: 8px;
+
+  article {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px;
+    border: 1px solid #d8ebe4;
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  strong, span, p { display: block; }
+  strong { color: $text-strong; font-size: 13px; }
+  span, p { color: $text-muted; font-size: 12px; line-height: 1.5; }
+  p { margin: 3px 0 0; }
+
+  button {
+    flex: 0 0 auto;
+    padding: 7px 12px;
+    border: 1px solid #57b99c;
+    border-radius: 7px;
+    color: #087d58;
+    background: #effbf6;
+    font-weight: 800;
+  }
 }
 
 .news-source-remove {
@@ -1004,6 +1358,30 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
 
   .news-source-remove {
     width: 100%;
+  }
+
+  .news-simple-schedule {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .news-wechat-subscribed__head {
+    align-items: flex-start;
+    flex-direction: column;
+
+    p { text-align: left; }
+  }
+
+  .news-wechat-subscribed__list {
+    grid-template-columns: 1fr;
+  }
+
+  .news-simple-schedule {
+    gap: 10px;
+
+    button {
+      margin-left: 0;
+    }
   }
 }
 

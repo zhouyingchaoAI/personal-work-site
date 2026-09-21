@@ -52,10 +52,10 @@ PERSONAL_WORK_SITE_PUBLIC_URL = os.getenv("PERSONAL_WORK_SITE_PUBLIC_URL", "http
 SESSIONS = {}
 DEFAULT_ASSISTANT_PROMPT = (
     "请帮我优化下面的工作内容，要求：\n"
-    "1、拆分成1、2、3、4这样的编号要点，每点单独换行。\n"
-    "2、语言简洁明了，体现实际工作量和推进成果。\n"
+    "1、严格保留原有段落、编号、列表、表格和字段顺序，不拆分、合并或重新编号。\n"
+    "2、语言准确、清晰，体现已有的实际工作量和推进成果。\n"
     "3、修正错别字、病句和不通顺表达。\n"
-    "4、不要编造不存在的事项，不要写空话套话。"
+    "4、不要编造不存在的事项、数据、计划或结论，不写空话套话。"
 )
 
 DEFAULT_EMAIL_SIGNATURE = """\n
@@ -129,6 +129,19 @@ def user_forum_dir(username):
     return user_root(username) / "forum"
 
 
+# 请求级用户上下文：Handler 在每个请求入口写入当前登录用户，
+# 供 assistant_settings 等深层函数按用户取配置，避免逐层传参。
+_REQUEST_CONTEXT = threading.local()
+
+
+def set_request_username(username):
+    _REQUEST_CONTEXT.username = username or ""
+
+
+def request_username():
+    return getattr(_REQUEST_CONTEXT, "username", "")
+
+
 def read_config():
     config = {
         "leader_email": "",
@@ -142,6 +155,9 @@ def read_config():
         "assistant_api_url": "",
         "assistant_api_key": "",
         "assistant_model": "MiniMax-M2.7",
+        # OpenAI-compatible reasoning models can spend a long time on hidden
+        # reasoning.  Office tasks default to normal response speed.
+        "assistant_reasoning_effort": "off",
         "smtp_host": "smtp.263.net",
         "imap_host": "imap.263.net",
         "news_sources": [],
@@ -201,7 +217,7 @@ def openclaw_sync_user(user, action="upsert"):
     if not user:
         return {"ok": False, "skipped": True}
     target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
-    secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "openclaw-office-sso-dev")
+    secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "")
     info = public_user(user)
     payload = {
         "action": action,
@@ -241,7 +257,7 @@ def openclaw_sync_user(user, action="upsert"):
 
 def openclaw_sync_deleted_username(username):
     target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
-    secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "openclaw-office-sso-dev")
+    secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "")
     payload = {"action": "delete", "username": username}
     parsed_target = urllib.parse.urlparse(target)
     targets = [target + "/api/auth/office-user-sync"]
@@ -280,8 +296,16 @@ def public_user(user):
         "avatar_url": avatar_url,
         "bio": user.get("bio", ""),
         "hobbies": user.get("hobbies", ""),
+        "employee_id": user.get("employee_id", ""),
+        "company": user.get("company", ""),
+        "department": user.get("department", ""),
+        "position": user.get("position", ""),
+        "organization_check": user.get("organization_check") or None,
+        "email": user.get("email", ""),
         "is_admin": role in ("admin", "superadmin"),
         "is_superadmin": role == "superadmin",
+        "assistant_permissions": assistant_permissions(user),
+        "crm_capabilities": crm_capabilities(user),
     }
 
 
@@ -591,6 +615,7 @@ def admin_config_payload():
     return {
         "assistant_api_url": config.get("assistant_api_url", ""),
         "assistant_model": config.get("assistant_model", "MiniMax-M2.7"),
+        "assistant_reasoning_effort": config.get("assistant_reasoning_effort", "off"),
         "assistant_prompt": config.get("assistant_prompt", DEFAULT_ASSISTANT_PROMPT),
         "assistant_api_key_masked": "已配置" if config.get("assistant_api_key") else "未配置",
         "smtp_host": config.get("smtp_host", "smtp.263.net"),
@@ -608,12 +633,19 @@ def save_admin_config(payload):
     config = read_config()
     config["assistant_api_url"] = str(payload.get("assistant_api_url", "") or "").strip()
     config["assistant_model"] = str(payload.get("assistant_model", "") or "MiniMax-M2.7").strip()
+    reasoning_effort = str(payload.get("assistant_reasoning_effort", "off") or "off").strip().lower()
+    config["assistant_reasoning_effort"] = reasoning_effort if reasoning_effort in {"off", "minimal", "low", "medium", "high"} else "off"
     config["assistant_prompt"] = str(payload.get("assistant_prompt", "") or DEFAULT_ASSISTANT_PROMPT).strip()
     api_key = str(payload.get("assistant_api_key", "") or "").strip()
     if api_key:
         config["assistant_api_key"] = api_key
     write_config(config)
-    return {"ok": True, "config": admin_config_payload()}
+    # 同一个配置入口同时更新 FastGPT，避免模型地址/Key/模型名在两套系统漂移。
+    try:
+        fastgpt = sync_fastgpt("admin")
+    except Exception as exc:
+        fastgpt = {"ok": False, "error": str(exc)}
+    return {"ok": True, "config": admin_config_payload(), "fastgpt_sync": fastgpt}
 
 
 def save_server_config(payload):
@@ -650,24 +682,89 @@ def user_list(caller_username):
     return []
 
 
+def _gateway_admin_endpoint(config):
+    token = str(config.get("gateway_admin_token", "") or "").strip()
+    base = str(config.get("gateway_admin_url", "") or config.get("assistant_api_url", "") or "").strip().rstrip("/")
+    if not token or not base:
+        return None, None
+    return base, token
+
+
+def _provision_gateway_key(config, username):
+    """到安全网关给新用户开专属 sgk 密钥（尽力而为，失败则回落平台共享密钥）。"""
+    base, token = _gateway_admin_endpoint(config)
+    if not base:
+        return None
+    try:
+        tenants = request_json(base + "/admin/api/tenants", token).get("items", [])
+        tenant_id = next((t["id"] for t in tenants if t.get("name") == "default"), None) or tenants[0]["id"]
+        created = request_json(
+            base + "/admin/api/client-keys", token,
+            {"tenant_id": tenant_id, "name": username}, "POST",
+        )
+        return {"key": created["plaintext_key"], "key_id": created["id"]}
+    except Exception as exc:
+        print(f"[gateway] 为用户 {username} 开通网关密钥失败（将使用平台共享密钥）: {exc}")
+        return None
+
+
+def _revoke_gateway_key(config, key_id, username):
+    base, token = _gateway_admin_endpoint(config)
+    if not base or not key_id:
+        return
+    try:
+        request_json(base + f"/admin/api/client-keys/{key_id}", token, method="DELETE")
+    except Exception as exc:
+        print(f"[gateway] 吊销用户 {username} 的网关密钥失败: {exc}")
+
+
 def add_user(payload, caller_username):
     caller_role = _caller_role(caller_username)
+    if caller_role != "superadmin":
+        raise PermissionError("只有超级管理员可以管理用户和助手权限")
     new_username = str(payload.get("username", "") or "").strip()
     password = str(payload.get("password", "") or "").strip()
     name = str(payload.get("name", "") or "").strip() or new_username
     role = str(payload.get("role", "") or "member").strip()
+    account_email = str(payload.get("email", "") or "").strip().lower()[:254]
     if caller_role == "admin" and role != "member":
         raise ValueError("管理员只能添加普通成员")
     if not re.match(r"^[A-Za-z0-9_@.-]{2,40}$", new_username):
         raise ValueError("用户名只能包含字母、数字、下划线、点、@ 或横线，长度 2-40 位")
+    if not account_email:
+        account_email = default_company_email(new_username)
     if len(password) < 4:
         raise ValueError("密码至少 4 位")
+    if account_email and not _valid_email(account_email):
+        raise ValueError("邮箱格式不正确")
     config = read_config()
     users = config.setdefault("users", [])
     if any(u.get("username") == new_username for u in users):
         raise ValueError("该用户名已存在")
-    new_user = {"username": new_username, "password": hash_password(password), "role": role, "name": name}
+    if account_email and any(str(u.get("email", "") or "").strip().lower() == account_email for u in users):
+        raise ValueError("该邮箱已被绑定")
+    new_user = {
+        "username": new_username,
+        "password": hash_password(password),
+        "role": role,
+        "name": name,
+        "employee_id": str(payload.get("employee_id", "") or "").strip()[:80],
+        "company": str(payload.get("company", "") or "").strip()[:200],
+        "department": str(payload.get("department", "") or "").strip()[:500],
+        "position": str(payload.get("position", "") or "").strip()[:200],
+        "email": account_email,
+    }
+    if role not in ("member", "admin", "superadmin"):
+        raise ValueError("无效的用户角色")
+    if "assistant_permissions" in payload:
+        new_user["assistant_permissions"] = validate_assistant_permissions(payload["assistant_permissions"])
     users.append(new_user)
+    provisioned = _provision_gateway_key(config, new_username)
+    if provisioned:
+        config.setdefault("user_assistant_api", {})[new_username] = {
+            "key": provisioned["key"],
+            "key_id": provisioned["key_id"],
+        }
     write_config(config)
     ensure_user_space(new_username)
     openclaw_sync_user(new_user, "upsert")
@@ -676,6 +773,8 @@ def add_user(payload, caller_username):
 
 def delete_user(payload, caller_username):
     caller_role = _caller_role(caller_username)
+    if caller_role != "superadmin":
+        raise PermissionError("只有超级管理员可以管理用户和助手权限")
     target_username = str(payload.get("username", "") or "").strip()
     config = read_config()
     users = config.get("users", [])
@@ -687,8 +786,11 @@ def delete_user(payload, caller_username):
         raise ValueError("管理员只能删除普通成员")
     if caller_role == "superadmin" and target_role == "superadmin":
         raise ValueError("不能删除超级管理员")
+    crm_security_grant({"username":target_username,"role":"disabled"}, find_user(caller_username), mode="delete")
     config["users"] = [u for u in users if u.get("username") != target_username]
+    user_api = (config.get("user_assistant_api") or {}).pop(target_username, None) or {}
     write_config(config)
+    _revoke_gateway_key(config, user_api.get("key_id"), target_username)
     openclaw_sync_deleted_username(target_username)
     return {"ok": True, "users": user_list(caller_username)}
 
@@ -712,6 +814,8 @@ def change_password(payload, username):
 
 def update_user(payload, caller_username):
     caller_role = _caller_role(caller_username)
+    if caller_role != "superadmin":
+        raise PermissionError("只有超级管理员可以管理用户和助手权限")
     target_username = str(payload.get("username", "") or "").strip()
     config = read_config()
     users = config.get("users", [])
@@ -722,6 +826,7 @@ def update_user(payload, caller_username):
     new_role = payload.get("role")
     new_name = str(payload.get("name", "") or "").strip()
     new_password = str(payload.get("password", "") or "").strip()
+    new_email = str(payload.get("email", "") or "").strip().lower()[:254]
     if caller_role == "admin":
         if target_role != "member":
             raise ValueError("管理员只能修改普通成员")
@@ -730,15 +835,108 @@ def update_user(payload, caller_username):
     if caller_role == "superadmin" and target_role == "superadmin" and new_role is not None and new_role != "superadmin":
         # 防止超级管理员降级自己后系统没有超级管理员？暂不限制
         pass
+    if new_role is not None and new_role not in ("member", "admin", "superadmin"):
+        raise ValueError("无效的用户角色")
+    if "email" in payload:
+        if new_email and not _valid_email(new_email):
+            raise ValueError("邮箱格式不正确")
+        if new_email and any(u is not target and str(u.get("email", "") or "").strip().lower() == new_email for u in users):
+            raise ValueError("该邮箱已被绑定")
+    if target_role == "superadmin" and new_role not in (None, "superadmin") and sum(u.get("role") == "superadmin" for u in users) <= 1:
+        raise ValueError("必须保留至少一位超级管理员")
+    if "assistant_permissions" in payload:
+        target["assistant_permissions"] = validate_assistant_permissions(payload["assistant_permissions"])
     if new_name:
         target["name"] = new_name
     if new_password:
         target["password"] = hash_password(new_password)
+    if "email" in payload:
+        target["email"] = new_email
     if new_role is not None and caller_role == "superadmin":
         target["role"] = new_role
     write_config(config)
     openclaw_sync_user(target, "upsert")
     return {"ok": True, "users": user_list(caller_username)}
+
+
+def batch_update_assistant_permissions(payload, caller_username):
+    """Apply non-CRM assistant entitlements to a company or selected departments."""
+    if _caller_role(caller_username) != "superadmin":
+        raise PermissionError("只有超级管理员可以批量管理助手权限")
+    company = str(payload.get("company", "") or "").strip()
+    departments = payload.get("departments", [])
+    assistant_ids = payload.get("assistant_ids", [])
+    enabled = payload.get("enabled")
+    if not company:
+        raise ValueError("请选择公司")
+    if not isinstance(departments, list) or not all(isinstance(item, str) for item in departments):
+        raise ValueError("部门选择格式无效")
+    if not isinstance(assistant_ids, list) or not all(isinstance(item, str) for item in assistant_ids):
+        raise ValueError("助手选择格式无效")
+    if type(enabled) is not bool:
+        raise ValueError("请选择开通或关闭")
+    permitted_ids = [item for item in dict.fromkeys(assistant_ids) if item in ASSISTANT_IDS]
+    if not permitted_ids:
+        raise ValueError("请选择至少一个可批量管理的助手")
+    selected_departments = {item.strip() for item in departments if item.strip()}
+    config = read_config()
+    targets = [
+        user for user in config.get("users", [])
+        if user.get("role") != "superadmin"
+        and str(user.get("company", "") or "").strip() == company
+        and (not selected_departments or str(user.get("department", "") or "").strip() in selected_departments)
+    ]
+    if not targets:
+        raise ValueError("所选组织范围内没有可授权的非超级管理员账号")
+    if 'crm' in permitted_ids:
+        # CRM has its own data-scope policy; batch setup grants/revokes module
+        # access without bypassing the CRM security model.
+        crm_security_batch_grant({
+            'company': company, 'departments': departments,
+            'role': 'viewer' if enabled else 'disabled', 'expires_on': '',
+        }, find_user(caller_username))
+    for target in targets:
+        permissions = target.get("assistant_permissions")
+        if not isinstance(permissions, dict):
+            permissions = {}
+            target["assistant_permissions"] = permissions
+        permissions.update({assistant_id: enabled for assistant_id in permitted_ids if assistant_id != 'crm'})
+    write_config(config)
+    for target in targets:
+        openclaw_sync_user(target, "upsert")
+    return {"ok": True, "updated": len(targets), "assistant_ids": permitted_ids, "enabled": enabled, "users": user_list(caller_username)}
+
+
+def batch_update_assistant_users(payload, caller_username):
+    """Change one assistant for explicitly selected accounts from the admin view."""
+    if _caller_role(caller_username) != "superadmin":
+        raise PermissionError("只有超级管理员可以批量管理助手权限")
+    assistant_id = str(payload.get('assistant_id', '') or '').strip()
+    usernames = payload.get('usernames', [])
+    enabled = payload.get('enabled')
+    if assistant_id not in ASSISTANT_IDS: raise ValueError('请选择可管理的助手')
+    if not isinstance(usernames, list) or not usernames or any(not isinstance(item, str) for item in usernames): raise ValueError('请选择至少一位用户')
+    if type(enabled) is not bool: raise ValueError('请选择开通或关闭')
+    selected = set(usernames)
+    config = read_config()
+    targets = [item for item in config.get('users', []) if item.get('username') in selected and item.get('role') != 'superadmin']
+    if not targets: raise ValueError('未找到可修改的普通用户')
+    if assistant_id == 'crm':
+        policies = crm_security_policies()
+        caller = find_user(caller_username)
+        for target in targets:
+            previous = policies.get(target['username'], {})
+            crm_security_grant({
+                'username': target['username'], 'role': 'viewer' if enabled else 'disabled',
+                'expires_on': '', 'data_scope': previous.get('data_scope', 'self'),
+                'scope_company': previous.get('scope_company', ''), 'scope_departments': previous.get('scope_departments', []),
+                'regions': previous.get('regions', []),
+            }, caller)
+    else:
+        for target in targets: target.setdefault('assistant_permissions', {})[assistant_id] = enabled
+    write_config(config)
+    for target in targets: openclaw_sync_user(target, 'upsert')
+    return {'ok': True, 'updated': len(targets), 'assistant_id': assistant_id, 'enabled': enabled, 'users': user_list(caller_username)}
 
 
 def save_user_profile(payload, username):
@@ -782,18 +980,108 @@ def save_user_profile(payload, username):
     return {"ok": True, "user": public_user(target)}
 
 
-def merged_assistant_config(payload=None):
-    config = read_config()
-    payload = payload or {}
-    api_key = str(payload.get("assistant_api_key", "") or "").strip() or config.get("assistant_api_key", "")
+def _sanitize_nav_ids(values, limit=64):
+    """导航偏好里的菜单 id 列表清洗：仅保留小写短横线标识，去重防注入。"""
+    ids = []
+    for value in values if isinstance(values, list) else []:
+        if not isinstance(value, str):
+            continue
+        text = value.strip()[:40]
+        if text and re.fullmatch(r"[a-z0-9_-]+", text) and text not in ids:
+            ids.append(text)
+        if len(ids) >= limit:
+            break
+    return ids
+
+
+def nav_prefs_path(username):
+    return user_profile_dir(username) / "nav_prefs.json"
+
+
+def load_nav_prefs(username):
+    empty = {"order": [], "hidden": []}
+    if not username:
+        return empty
+    path = nav_prefs_path(username)
+    if not path.exists():
+        return empty
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return empty
+    if not isinstance(data, dict):
+        return empty
     return {
-        "url": str(payload.get("assistant_api_url", "") or config.get("assistant_api_url", "")).strip().rstrip("/"),
-        "key": api_key,
-        "model": str(payload.get("assistant_model", "") or config.get("assistant_model", "MiniMax-M2.7")).strip(),
+        "order": _sanitize_nav_ids(data.get("order")),
+        "hidden": _sanitize_nav_ids(data.get("hidden")),
     }
 
 
+def save_nav_prefs(payload, username):
+    if not username:
+        raise ValueError("请先登录")
+    payload = payload if isinstance(payload, dict) else {}
+    prefs = {
+        "order": _sanitize_nav_ids(payload.get("order")),
+        "hidden": _sanitize_nav_ids(payload.get("hidden")),
+    }
+    path = nav_prefs_path(username)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(prefs, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "prefs": prefs}
+
+
+def user_assistant_overrides(config, username):
+    """当前登录用户的专属 AI 接口配置（user_assistant_api[username]）。
+
+    key 存的是安全网关给每个用户签发的 sgk_ 密钥，让审计/限流/用量都归因到人；
+    没有专属配置的用户（以及定时任务等无登录上下文）回落到全局平台密钥。
+    """
+    if not username:
+        return {}
+    return (config.get("user_assistant_api") or {}).get(username) or {}
+
+
+def merged_assistant_config(payload=None):
+    config = read_config()
+    payload = payload or {}
+    user_api = user_assistant_overrides(config, request_username())
+    api_key = (
+        str(payload.get("assistant_api_key", "") or "").strip()
+        or str(user_api.get("key", "") or "").strip()
+        or config.get("assistant_api_key", "")
+    )
+    url = (
+        str(payload.get("assistant_api_url", "") or "").strip()
+        or str(user_api.get("url", "") or "").strip()
+        or str(config.get("assistant_api_url", "")).strip()
+    )
+    model = (
+        str(payload.get("assistant_model", "") or "").strip()
+        or str(user_api.get("model", "") or "").strip()
+        or str(config.get("assistant_model", "MiniMax-M2.7")).strip()
+    )
+    reasoning_effort = str(
+        payload.get("assistant_reasoning_effort", "") or user_api.get("reasoning_effort", "")
+        or config.get("assistant_reasoning_effort", "off")
+    ).strip().lower()
+    if reasoning_effort not in {"off", "minimal", "low", "medium", "high"}:
+        reasoning_effort = "off"
+    return {"url": url.rstrip("/"), "key": api_key, "model": model, "reasoning_effort": reasoning_effort}
+
+
+def assistant_generation_payload(settings, payload):
+    """Attach the platform-wide reasoning level to any chat-completions payload."""
+    result = dict(payload or {})
+    result.setdefault("reasoning_effort", str((settings or {}).get("reasoning_effort") or "off"))
+    return result
+
+
 def request_json(url, api_key, body=None, method="GET", timeout=20):
+    # Most office modules share this transport.  Keep the reasoning flag in one
+    # place so all normal chat calls honour the UI setting.
+    if body is not None and "/chat/completions" in str(url) and isinstance(body, dict):
+        body = assistant_generation_payload(merged_assistant_config(), body)
     data = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         url,

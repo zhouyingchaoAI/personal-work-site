@@ -1006,6 +1006,15 @@ $shadow-panel: 0 14px 34px rgba(79, 112, 170, 0.08);
   min-height: 0;
 }
 
+.trip-mail-body-editor {
+  cursor: text;
+
+  &:focus {
+    border-color: rgba(21, 73, 156, 0.7);
+    outline: 3px solid rgba(21, 73, 156, 0.12);
+  }
+}
+
 .trip-mail-body-fullscreen {
   position: absolute;
   z-index: 3;
@@ -1042,6 +1051,24 @@ $shadow-panel: 0 14px 34px rgba(79, 112, 170, 0.08);
   box-sizing: border-box;
   font-size: 13px;
   line-height: 1.75;
+
+  .email-signature {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+
+    img {
+      display: block;
+      width: auto !important;
+      max-width: 100% !important;
+      height: auto !important;
+      margin: 8px 0 !important;
+      box-sizing: border-box;
+    }
+
+    table { width: 100% !important; min-width: 0; max-width: 100%; table-layout: auto; }
+  }
 }
 
 .trip-mail-body-dialog {
@@ -1062,6 +1089,15 @@ $shadow-panel: 0 14px 34px rgba(79, 112, 170, 0.08);
   background: #ffffff;
   font-size: 14px;
   line-height: 1.75;
+
+  .email-signature {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+
+    img { display: block; width: auto !important; max-width: 100% !important; height: auto !important; margin: 8px 0 !important; }
+    table { width: 100% !important; min-width: 0; max-width: 100%; table-layout: auto; }
+  }
 }
 
 .trip-mail-attachment-status {

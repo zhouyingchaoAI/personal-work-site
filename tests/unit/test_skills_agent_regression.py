@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 
 import backend.runtime as rt
 
@@ -38,6 +39,19 @@ class SkillDefinitionRegressionTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         for key in ("today", "weekday", "week_range", "week_start", "week_end", "year"):
             self.assertIn(key, result)
+
+    def test_first_monday_weekly_reporting_range_uses_previous_completed_week(self):
+        start, end = rt.weekly_reporting_range(datetime(2025, 8, 10, 10, 0, 0))  # Sunday
+        self.assertEqual(start.date().isoformat(), "2025-08-04")
+        self.assertEqual(end.date().isoformat(), "2025-08-08")
+
+        start, end = rt.weekly_reporting_range(datetime(2025, 8, 11, 10, 0, 0))  # Monday
+        self.assertEqual(start.date().isoformat(), "2025-08-04")
+        self.assertEqual(end.date().isoformat(), "2025-08-08")
+
+        start, end = rt.weekly_reporting_range(datetime(2025, 8, 12, 10, 0, 0))  # Tuesday
+        self.assertEqual(start.date().isoformat(), "2025-08-11")
+        self.assertEqual(end.date().isoformat(), "2025-08-15")
 
     def test_unknown_skill_raises_clear_error(self):
         with self.assertRaisesRegex(ValueError, "未知 Skill"):

@@ -58,5 +58,46 @@ class FloatingAgentFrontendRegressionTests(unittest.TestCase):
         self.assertNotIn("el('agentSend').addEventListener('click'", self.source)
         self.assertNotIn("el('agentInput').addEventListener('keydown'", self.source)
 
+
+class DeskPetAssistantRegressionTests(unittest.TestCase):
+    def setUp(self):
+        self.source = (ROOT / "数字人" / "index.html").read_text(encoding="utf-8")
+        self.wrapper = (ROOT / "ai-office-assistant-web" / "src" / "components" / "DigitalHumanAssistant" / "index.scss").read_text(encoding="utf-8")
+
+    def test_dialog_has_central_modal_and_file_upload(self):
+        self.assertIn('id="fileInput"', self.source)
+        self.assertIn('"/api/writing/upload"', self.source)
+        self.assertIn('file_ids: attachedFiles.map', self.source)
+        self.assertIn('position: fixed', self.wrapper)
+
+    def test_dialog_offers_report_shortcuts_and_new_session(self):
+        self.assertIn('请生成本周周报', self.source)
+        self.assertIn('请写一份出差报告', self.source)
+        self.assertIn('chatHistory', self.source)
+
+    def test_avatar_and_voice_are_opt_in_and_upload_is_not_blocked_by_reply(self):
+        self.assertIn('avatar-hidden', self.source)
+        self.assertIn('let voiceEnabled = false', self.source)
+        self.assertIn('fileBtn.disabled = false', self.source)
+
+    def test_completed_weekly_draft_can_open_the_weekly_editor(self):
+        self.assertIn('chengxi.weekly-ready', self.source)
+        workspace = (ROOT / "ai-office-assistant-web" / "src" / "views" / "WorkspaceView" / "index.vue").read_text(encoding="utf-8")
+        weekly = (ROOT / "ai-office-assistant-web" / "src" / "views" / "WeeklyReportView" / "index.vue").read_text(encoding="utf-8")
+        self.assertIn('@weekly-ready="openWeeklyEditor"', workspace)
+        self.assertIn('pendingWeeklyAgentDraft', workspace)
+        self.assertIn('takePendingAgentDraft', weekly)
+
+    def test_weekly_draft_requires_explicit_review_confirmation_before_handoff(self):
+        self.assertIn('weekly_draft_review', self.source)
+        self.assertIn('确认写入周报编辑页', self.source)
+        self.assertIn('weeklyDraftReviewText', self.source)
+
+    def test_long_weekly_history_is_compacted_before_follow_up_chat(self):
+        backend = (ROOT / "backend" / "digital_human.py").read_text(encoding="utf-8")
+        self.assertIn('history[-4:]', backend)
+        self.assertIn('content[:220]', backend)
+        self.assertIn('对话模型返回 {exc.code}', backend)
+
 if __name__ == "__main__":
     unittest.main()

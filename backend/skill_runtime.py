@@ -101,6 +101,19 @@ def skill_by_name(name):
 
 def execute_skill_raw(name, arguments, username):
     """Execute the legacy Skill handler without audit side effects."""
+    assistant = {"mail": "mailassistant", "mailbox": "mailassistant", "contract": "ledger", "contracts": "ledger", "projects": "project"}.get(name.split(".")[0], name.split(".")[0])
+    if name == "document.generate":
+        assistant = "trip" if (arguments or {}).get("kind") == "trip" else "weekly"
+    if assistant in ASSISTANT_IDS:
+        require_assistant_access(username, assistant)
+    if assistant == 'crm':
+        operation = 'read' if name.split('.')[-1] in ('list','get','overview','search','path') else 'write'
+        if 'import' in name: operation = 'import'
+        user = find_user(username) or {}
+        if not crm_capabilities(user).get(operation, False):
+            crm_audit(username, operation, 'skill:' + name, 403)
+            raise PermissionError('没有该客户数据操作权限')
+        crm_audit(username, operation, 'skill:' + name, 200)
     if not callable(_LEGACY_EXECUTE_SKILL):
         raise ValueError("Skill Runtime 未找到旧版 Skill 执行器")
     return _LEGACY_EXECUTE_SKILL(name, arguments or {}, username)

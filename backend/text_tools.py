@@ -89,27 +89,28 @@ def local_optimize_text(text):
 
 
 def normalize_assistant_output(text):
-    text = normalize_numbered_text(text)
-    if not text:
-        return ""
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    normalized = []
-    for idx, line in enumerate(lines, start=1):
-        line = re.sub(r"^\s*\d+\s*[、.．]\s*", f"{idx}、", line)
-        if not re.match(r"^\d+、", line):
-            line = f"{idx}、{line.strip(' 。；;')}。"
-        normalized.append(line)
-    return "\n".join(normalized)
+    # 字段润色必须保留用户已有结构，不能再把标题、编号或表格行强制改写为连续编号。
+    return str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
 def assistant_settings():
     config = read_config()
-    return {
+    settings = {
         "url": os.getenv("ASSISTANT_API_URL", config.get("assistant_api_url", "")).rstrip("/"),
         "key": os.getenv("ASSISTANT_API_KEY", config.get("assistant_api_key", "")),
         "model": os.getenv("ASSISTANT_MODEL", config.get("assistant_model", "MiniMax-M2.7")),
         "prompt": os.getenv("ASSISTANT_PROMPT", config.get("assistant_prompt", DEFAULT_ASSISTANT_PROMPT)),
     }
+    # 当前登录用户若配置了自己的 AI 接口（user_assistant_api），逐字段覆盖；
+    # 未配置的字段回退全局默认。
+    username = request_username()
+    if username:
+        user_api = (config.get("user_assistant_api") or {}).get(username) or {}
+        for field in ("url", "key", "model", "prompt"):
+            value = str(user_api.get(field, "") or "").strip()
+            if value:
+                settings[field] = value.rstrip("/") if field == "url" else value
+    return settings
 
 
 def optimize_text(payload):
@@ -122,7 +123,7 @@ def optimize_text(payload):
     if settings["url"] and settings["key"]:
         try:
             body = json.dumps(
-                {
+                assistant_generation_payload(settings, {
                     "model": settings["model"],
                     "messages": [
                         {
@@ -138,7 +139,7 @@ def optimize_text(payload):
                         },
                     ],
                     "temperature": 0.2,
-                },
+                }),
                 ensure_ascii=False,
             ).encode("utf-8")
             request = urllib.request.Request(
@@ -234,7 +235,7 @@ DEFAULT_AGENT_WORKFLOWS = {
     "weekly": "1) weekly.compose 规范化并填入周报结构 → 2) weekly.preview 生成周报文件、预览图片和邮件草稿 → 3) 用户确认后 weekly.send_confirmed 发送邮件",
     "trip": "1) trip.prefill 获取历史出差报告预填 → 2) 用户补充信息后 document.generate 生成正式报告 → 3) 发送邮件",
     "diary": "1) diary.save 保存工作日记 → 可随时 diary.get / diary.list 查看",
-    "mailassistant": "1) mailbox.list 查看邮件 → 2) text.optimize 优化正文或起草回复",
+    "mailassistant": "1) mailbox.list 查看邮件；涉及全部邮件、批量附件或合规检索时，若 has_more=true，必须携带 next_cursor 和原 folder、keyword、since、before 循环续页，直到 next_cursor=null，并按 uid 去重（不可使用 page/offset） → 2) 对需处理的邮件调用 mailbox.detail（保留返回项的 folder）；下载附件时再用 detail 返回的 part 调用 mailbox.attachment → 3) text.optimize 优化正文或起草回复",
     "forum": "1) forum.list 查看话题 → 2) forum.add_comment 发表评论或 forum.create 发起话题",
     "news": "1) news.list 查看每日资讯 → 2) text.optimize 提炼重点和影响",
 }
@@ -250,4 +251,3 @@ AGENT_SYSTEM_PROMPTS = {
 }
 
 AGENT_WORKFLOWS = dict(DEFAULT_AGENT_WORKFLOWS)
-

@@ -169,10 +169,75 @@ $panel-shadow: 0 10px 28px rgba(16, 24, 40, 0.07);
   gap: 10px;
 }
 
+.forum-topic-search {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 2px;
+  padding: 0 11px;
+  border: 1px solid #d4deec;
+  border-radius: 7px;
+  color: #6a7a91;
+  background: #fbfdff;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease;
+
+  .el-icon {
+    flex: 0 0 auto;
+    font-size: 17px;
+  }
+
+  input {
+    width: 100%;
+    height: 36px;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    color: $text-strong;
+    background: transparent;
+    font-size: 14px;
+    font-weight: 700;
+
+    &::placeholder {
+      color: #9aa7b9;
+      font-weight: 650;
+    }
+  }
+
+  button {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 auto;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    color: #708099;
+    background: transparent;
+
+    &:hover {
+      color: $primary;
+      background: #eaf2ff;
+    }
+  }
+
+  &:focus-within {
+    border-color: $primary;
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(21, 73, 156, 0.1);
+  }
+}
+
 .forum-primary-button,
 .forum-outline-button,
 .forum-ghost-button,
 .forum-like-cta,
+.forum-pin-cta,
 .forum-pagination button,
 .forum-comment-footer button,
 .forum-create-head button,
@@ -791,6 +856,28 @@ $panel-shadow: 0 10px 28px rgba(16, 24, 40, 0.07);
   &:hover:not(:disabled),
   &.liked {
     background: $primary-soft;
+  }
+}
+
+.forum-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.forum-pin-cta {
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid #d99a22;
+  color: #9a6200;
+  background: #fffaf0;
+
+  &:hover:not(:disabled),
+  &.pinned {
+    border-color: #c47c00;
+    color: #7a4b00;
+    background: #fff0cc;
   }
 }
 

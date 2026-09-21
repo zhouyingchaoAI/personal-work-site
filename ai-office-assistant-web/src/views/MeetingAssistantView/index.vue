@@ -599,10 +599,6 @@ onBeforeUnmount(() => {
 <template>
   <section class="meeting-main">
     <header class="meeting-head">
-      <div>
-        <h1>会议助手</h1>
-        <p>实时录音识别、同步翻译，会后一键生成 AI 纪要。</p>
-      </div>
       <button class="meeting-btn meeting-btn--ghost" type="button" @click="resetMeeting">
         <el-icon><Plus /></el-icon> 新会议
       </button>

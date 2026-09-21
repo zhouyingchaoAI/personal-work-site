@@ -8,12 +8,15 @@ defineProps<{
   userName: string
 }>()
 
+const emit = defineEmits<{
+  (event: 'weekly-ready', draft: Record<string, unknown>): void
+}>()
+
 const POSITION_KEY = 'digital-human-position'
 const BUTTON_SIZE = 64
 
 const rootRef = ref<HTMLElement | null>(null)
 const open = ref(false)
-const chatHidden = ref(false)
 const frameLoaded = ref(false)
 const frameRef = ref<HTMLIFrameElement | null>(null)
 const pageUrl = resourceUrl('/digital-human/')
@@ -41,7 +44,6 @@ const rootStyle = computed(() => {
 const panelClass = computed(() => [
   'digital-human-panel',
   {
-    'digital-human-panel--mini': chatHidden.value,
     'digital-human-panel--below': panelBelow.value,
     'digital-human-panel--left': panelLeftAlign.value,
   },
@@ -177,14 +179,16 @@ function handleFrameLoad() {
   }
 }
 
-// 数字人页面隐藏对话框时同步收窄悬浮区，避免透明 iframe 挡住页面操作。
-function handleFrameMessage(event: MessageEvent) {
-  const data = event.data
-  if (data && data.type === 'chengxi.layout') chatHidden.value = !!data.chatHidden
-}
-
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && open.value) close()
+}
+
+function handleFrameMessage(event: MessageEvent) {
+  const data = event.data
+  if (data?.type === 'chengxi.weekly-ready' && data.draft && typeof data.draft === 'object') {
+    emit('weekly-ready', data.draft as Record<string, unknown>)
+    close()
+  }
 }
 
 // 桌宠形态没有关闭按钮：点击页面其他位置收起（iframe 内部点击不会冒泡到这里，不受影响）。
@@ -198,15 +202,15 @@ onMounted(() => {
   restorePosition()
   updatePanelPlacement()
   window.addEventListener('keydown', handleKeydown)
-  window.addEventListener('pointerdown', handleOutsidePointerDown)
   window.addEventListener('message', handleFrameMessage)
+  window.addEventListener('pointerdown', handleOutsidePointerDown)
   window.addEventListener('resize', handleResize)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
-  window.removeEventListener('pointerdown', handleOutsidePointerDown)
   window.removeEventListener('message', handleFrameMessage)
+  window.removeEventListener('pointerdown', handleOutsidePointerDown)
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('pointermove', onDrag)
   window.removeEventListener('pointerup', stopDrag)
@@ -221,6 +225,7 @@ defineExpose({
 
 <template>
   <section ref="rootRef" class="digital-human-assistant" :style="rootStyle" aria-label="犇犇 3D 数字人助手">
+    <div v-show="open" class="digital-human-backdrop" aria-hidden="true" @click="close"></div>
     <Transition name="digital-human-pop">
       <section v-show="open" :class="panelClass">
         <iframe

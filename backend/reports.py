@@ -119,11 +119,20 @@ def generated_files(username=None):
 
 
 def all_files(username=None):
-    return generated_files(username) + report_files(username)
+    # 同名报告可能同时存在于“新生成”目录和历史/模板目录。邮件发送时两者
+    # 指向同一份内容，展示两次既容易误选也会让用户误以为要发送两封邮件。
+    # 保留新生成版本（它是当前编辑流程的实际附件），其余同名版本隐藏。
+    merged = {}
+    for item in report_files(username) + generated_files(username):
+        key = (item.get("kind"), item.get("name"))
+        previous = merged.get(key)
+        if previous is None or item.get("generated") or not previous.get("generated"):
+            merged[key] = item
+    return list(merged.values())
 
 
 def newest(kind, username=None, fallback_shared=False):
-    items = [item for item in report_files(username) if item["kind"] == kind]
+    items = [item for item in all_files(username) if item["kind"] == kind]
     if not items:
         return None
     return sorted(items, key=lambda item: (item["sort_key"], item["mtime"]), reverse=True)[0]

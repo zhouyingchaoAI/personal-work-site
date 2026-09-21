@@ -36,7 +36,8 @@ $layout-gap: 24px;
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 1fr);
     align-items: stretch;
-    overflow-y: hidden;
+    // 全宽业务页（含工单）在窄屏或内容换行时仍须可滚动，避免页头操作被裁切。
+    overflow-y: auto;
   }
 }
 
@@ -132,6 +133,37 @@ $layout-gap: 24px;
       background: linear-gradient(135deg, #1d5cab 0%, #15499c 100%);
       box-shadow: 0 8px 18px rgba(21, 73, 156, 0.2);
     }
+  }
+
+  // 拖拽调整导航顺序时的插入位置反馈：蓝色插入线 + 拖动项半透明。
+  .nav-item--dragging {
+    opacity: 0.45;
+  }
+
+  .nav-item--drop-before,
+  .nav-item--drop-after {
+    position: relative;
+    background: #edf4ff;
+
+    &::after {
+      content: '';
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      height: 3px;
+      border-radius: 2px;
+      background: #15499c;
+      box-shadow: 0 0 0 2px rgba(21, 73, 156, 0.18);
+      pointer-events: none;
+    }
+  }
+
+  .nav-item--drop-before::after {
+    top: -2px;
+  }
+
+  .nav-item--drop-after::after {
+    bottom: -2px;
   }
 
   .nav-item__icon {
@@ -249,6 +281,24 @@ $layout-gap: 24px;
     justify-content: flex-end;
     gap: 18px;
   }
+
+  .header-task-button .header-task-spinner {
+    animation: header-task-spin 1.1s linear infinite;
+  }
+
+  .background-task-popover {
+    color: #233b68;
+
+    > strong { display: block; margin-bottom: 0.75rem; }
+    ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+    li { display: flex; align-items: center; gap: 0.45rem; font-size: 0.88rem; }
+    li .el-icon { color: #2464be; animation: header-task-spin 1.1s linear infinite; }
+    li span { flex: 1; }
+    li em { color: #7890b3; font-style: normal; white-space: nowrap; }
+    > p { margin: 0.75rem 0 0; color: #7890b3; font-size: 0.8rem; }
+  }
+
+  @keyframes header-task-spin { to { transform: rotate(360deg); } }
 
   .header-tool-button.el-button {
     width: 42px;
@@ -758,5 +808,140 @@ $layout-gap: 24px;
   .profile-editor__actions .profile-action-button,
   .password-editor__actions .profile-action-button {
     flex: 1 1 0;
+  }
+}
+
+// 手机端使用抽屉导航，避免横向滚动菜单遮住入口或需要左右滑动才能操作。
+.mobile-nav-toggle,
+.mobile-nav-backdrop,
+.mobile-sidebar-close {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .app-layout {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .mobile-nav-toggle {
+    position: fixed;
+    z-index: 102;
+    top: calc(env(safe-area-inset-top) + 14px);
+    left: 14px;
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+    gap: 5px;
+    padding: 0 10px;
+    border: 1px solid #c9daf3;
+    border-radius: 11px;
+    color: #15499c;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 6px 18px rgba(42, 87, 152, 0.18);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .mobile-nav-toggle .el-icon { font-size: 19px; }
+  .mobile-nav-toggle.is-open { visibility: hidden; }
+
+  .mobile-nav-backdrop {
+    position: fixed;
+    z-index: 100;
+    inset: 0;
+    display: block;
+    background: rgba(8, 24, 53, 0.38);
+  }
+
+  .app-sidebar {
+    position: fixed;
+    z-index: 101;
+    top: 0;
+    left: 0;
+    width: min(82vw, 320px);
+    height: 100dvh;
+    grid-row: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+    overflow: hidden;
+    padding: calc(env(safe-area-inset-top) + 18px) 14px calc(env(safe-area-inset-bottom) + 18px);
+    border: 0;
+    border-radius: 0 18px 18px 0;
+    box-shadow: 12px 0 30px rgba(10, 38, 84, 0.25);
+    transform: translateX(-110%);
+    transition: transform 0.22s ease;
+    pointer-events: none;
+
+    &.is-mobile-open {
+      transform: translateX(0);
+      pointer-events: auto;
+    }
+
+    .sidebar-brand {
+      display: flex;
+      min-height: 42px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 6px 4px;
+    }
+
+    .brand-logo { width: 146px; }
+
+    .mobile-sidebar-close {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border: 0;
+      border-radius: 9px;
+      color: #31517d;
+      background: #edf4ff;
+      font-size: 25px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .sidebar-menu-scroll {
+      width: 100%;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    .sidebar-nav {
+      display: grid;
+      width: 100%;
+      min-width: 0;
+      gap: 7px;
+    }
+
+    .sidebar-nav--footer {
+      margin: 0;
+      padding: 14px 0 0;
+      border-top: 1px solid #dce7f6;
+      border-left: 0;
+    }
+
+    .nav-item {
+      width: 100%;
+      min-height: 46px;
+      grid-template-columns: 30px minmax(0, 1fr) 8px;
+      padding: 0 12px;
+    }
+  }
+
+  .app-header {
+    grid-row: 1;
+  }
+
+  .app-header .toolbar-search {
+    box-sizing: border-box;
+    padding-left: 58px;
+  }
+
+  .app-layout__content {
+    grid-row: 2;
   }
 }

@@ -152,6 +152,65 @@ class ReportStorageTests(unittest.TestCase):
             rt.read_config = old_read_config
             rt.newest_any = old_newest_any
 
+    def test_generate_weekly_reuses_same_period_output_without_copying_file_onto_itself(self):
+        """再次生成同一周期周报时，已生成文件不能同时充当复制源和目标。"""
+        from openpyxl import Workbook
+
+        old_read_config = rt.read_config
+        old_newest_any = rt.newest_any
+        old_newest = rt.newest
+        try:
+            rt.read_config = lambda: {
+                "users": [{"username": "zhouyingchao", "password": "x", "role": "member", "name": "周颖超"}],
+                "user_mail_settings": {},
+            }
+            output = rt.generated_report_path("周颖超工作周报2026.8.17-2026.8.21.xlsx", "zhouyingchao", "weekly")
+            Workbook().save(output)
+            # 报告列表只剩当前已经生成的同名文件，正是邮件发送页再次生成会遇到的情况。
+            rt.newest_any = lambda *args, **kwargs: {"path": str(output)}
+            rt.newest = lambda *args, **kwargs: {"path": str(output)}
+
+            result = rt.generate_weekly(
+                {"period": "2026.8.17-2026.8.21", "weekly_summary": [], "weekly_follow": [], "weekly_next": []},
+                "zhouyingchao",
+            )
+
+            self.assertEqual(result, output)
+            self.assertTrue(result.exists())
+        finally:
+            rt.read_config = old_read_config
+            rt.newest_any = old_newest_any
+            rt.newest = old_newest
+
+    def test_generated_weekly_mail_contains_only_current_editor_rows(self):
+        old_read_config = rt.read_config
+        old_newest_any = rt.newest_any
+        try:
+            rt.read_config = lambda: {
+                "users": [{"username": "newuser", "password": "x", "role": "member", "name": "新用户"}],
+                "user_mail_settings": {},
+            }
+            rt.newest_any = lambda *args, **kwargs: None
+
+            path = rt.generate_weekly(
+                {
+                    "period": "2026.09.07-2026.09.11",
+                    # “已删除项目任务”模拟已在编辑页移除，因此不出现在提交数组中。
+                    "weekly_summary": [{"category": "保留项目", "content": "完成联调", "status": "完成", "plan": ""}],
+                    "weekly_follow": [],
+                    "weekly_next": [],
+                },
+                "newuser",
+            )
+            draft = rt.compose_draft("weekly", path.name, "newuser")
+            mail_content = f"{draft.get('body', '')}\n{draft.get('body_html', '')}"
+
+            self.assertIn("保留项目", mail_content)
+            self.assertNotIn("已删除项目任务", mail_content)
+        finally:
+            rt.read_config = old_read_config
+            rt.newest_any = old_newest_any
+
     def test_generate_trip_without_existing_template_creates_initial_docx(self):
         old_read_config = rt.read_config
         old_newest = rt.newest

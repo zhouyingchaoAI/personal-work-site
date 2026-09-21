@@ -14,6 +14,10 @@ export default defineConfig(({ mode }) => {
   const proxyTarget = isAbsolute ? backend.origin : devProxyFallback
   const backendBasePath = backend.pathname === '/' ? '' : backend.pathname
 
+  // 静态资源仍放在后端子路径下（/personal-office-assistant/assets/…），避免与
+  // 同源内嵌的龙虾平台静态资源（根 /assets/）冲突；而浏览器地址栏的路由 base
+  // 由 router 单独设为 '/'（见 router/index.ts），因此公开 URL 不再带
+  // /personal-office-assistant 前缀，二者解耦。
   const appBase = backendBasePath ? backendBasePath + '/' : '/'
 
   return {

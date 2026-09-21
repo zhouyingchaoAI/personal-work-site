@@ -7,6 +7,8 @@ import { Calendar, ChatDotRound, Lock, Reading, UserFilled } from '@element-plus
 import loginBackground from '../../assets/login-background.jpeg'
 import chencyLogo from '../../assets/logo.png'
 import { loginSession } from '../../services/authSession'
+import { confirmPasswordReset, requestPasswordReset, requestPasswordResetCaptcha } from '../../services/personalWorkApi'
+import { lastVisitedMenu } from '../../layout/menu'
 import './index.scss'
 
 interface LoginForm {
@@ -24,6 +26,14 @@ const rememberedUsernameKey = 'ai-office-assistant.username'
 const rememberedPasswordKey = 'ai-office-assistant.password'
 const loginFormRef = ref<FormInstance>()
 const loading = ref(false)
+const resetVisible = ref(false)
+const resetSending = ref(false)
+const resetSubmitting = ref(false)
+const resetSent = ref(false)
+const captchaSvg = ref('')
+const captchaId = ref('')
+const captchaLoading = ref(false)
+const resetForm = reactive({ identifier: '', captcha: '', code: '', password: '', confirm: '' })
 const route = useRoute()
 const router = useRouter()
 const loginTitle = '承希智能办公助手'
@@ -63,7 +73,7 @@ async function handleLogin() {
       localStorage.removeItem(rememberedUsernameKey)
       localStorage.removeItem(rememberedPasswordKey)
     }
-    await router.replace(String(route.query.redirect || '/workspace/weekly'))
+    await router.replace(String(route.query.redirect || `/workspace/${lastVisitedMenu()}`))
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '登录失败')
   } finally {
@@ -71,8 +81,65 @@ async function handleLogin() {
   }
 }
 
+async function loadResetCaptcha() {
+  captchaLoading.value = true
+  try {
+    const result = await requestPasswordResetCaptcha()
+    captchaId.value = result.captcha_id
+    captchaSvg.value = result.svg
+    resetForm.captcha = ''
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '动态验证码加载失败')
+  } finally {
+    captchaLoading.value = false
+  }
+}
+
 function handleForgotPassword() {
-  ElMessage.info('请联系管理员重置密码')
+  resetForm.identifier = form.username.trim()
+  resetForm.code = ''
+  resetForm.captcha = ''
+  resetForm.password = ''
+  resetForm.confirm = ''
+  resetSent.value = false
+  resetVisible.value = true
+  void loadResetCaptcha()
+}
+
+async function handleSendResetCode() {
+  const identifier = resetForm.identifier.trim()
+  if (!identifier) return ElMessage.warning('请输入账号或已绑定邮箱')
+  if (!resetForm.captcha.trim()) return ElMessage.warning('请输入动态验证码')
+  if (!captchaId.value) return ElMessage.warning('请刷新动态验证码后重试')
+  resetSending.value = true
+  try {
+    const result = await requestPasswordReset(identifier, captchaId.value, resetForm.captcha)
+    resetSent.value = true
+    ElMessage.success(result.message)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '验证码发送失败')
+    void loadResetCaptcha()
+  } finally {
+    resetSending.value = false
+  }
+}
+
+async function handleResetPassword() {
+  if (!resetSent.value) return ElMessage.warning('请先获取验证码')
+  if (!resetForm.code.trim()) return ElMessage.warning('请输入邮件中的验证码')
+  if (resetForm.password.length < 8) return ElMessage.warning('新密码至少 8 位')
+  if (resetForm.password !== resetForm.confirm) return ElMessage.warning('两次输入的新密码不一致')
+  resetSubmitting.value = true
+  try {
+    const result = await confirmPasswordReset(resetForm.identifier.trim(), resetForm.code.trim(), resetForm.password)
+    ElMessage.success(result.message)
+    resetVisible.value = false
+    if (!resetForm.identifier.includes('@')) form.username = resetForm.identifier.trim()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '密码重置失败')
+  } finally {
+    resetSubmitting.value = false
+  }
 }
 
 function handleLoginCardMouseMove(event: MouseEvent) {
@@ -210,4 +277,26 @@ function typeLoginCopy(text: string, target: Ref<string>, interval: number, done
       </section>
     </div>
   </main>
+  <el-dialog v-model="resetVisible" title="邮件找回密码" width="min(92vw, 440px)" destroy-on-close>
+    <form class="reset-password-form" @submit.prevent="handleResetPassword">
+      <p>输入账号或公司邮箱。验证码将发送至绑定邮箱；未单独设置时，默认使用「账号@chencytech.com」。验证码 10 分钟内有效。</p>
+      <el-input v-model="resetForm.identifier" autocomplete="username" placeholder="账号或绑定邮箱" :disabled="resetSent" />
+      <div v-if="!resetSent" class="reset-captcha-row">
+        <el-input v-model="resetForm.captcha" autocomplete="off" maxlength="5" placeholder="动态验证码" @keyup.enter="handleSendResetCode" />
+        <button class="reset-captcha-image" type="button" :disabled="captchaLoading" title="点击更换动态验证码" @click="loadResetCaptcha" v-html="captchaSvg"></button>
+        <el-button text type="primary" :loading="captchaLoading" @click="loadResetCaptcha">换一张</el-button>
+      </div>
+      <div class="reset-code-row">
+        <el-input v-model="resetForm.code" inputmode="numeric" maxlength="6" placeholder="6 位验证码" :disabled="!resetSent" />
+        <el-button type="primary" plain :loading="resetSending" :disabled="resetSent" @click="handleSendResetCode">{{ resetSent ? '已发送' : '发送验证码' }}</el-button>
+      </div>
+      <el-input v-model="resetForm.password" autocomplete="new-password" type="password" show-password placeholder="新密码（至少 8 位）" :disabled="!resetSent" />
+      <el-input v-model="resetForm.confirm" autocomplete="new-password" type="password" show-password placeholder="确认新密码" :disabled="!resetSent" />
+      <p class="reset-password-tip">超级管理员可在「系统设置 → 用户管理」修改默认公司邮箱。</p>
+      <div class="reset-password-actions">
+        <el-button @click="resetVisible = false">取消</el-button>
+        <el-button type="primary" native-type="submit" :loading="resetSubmitting" :disabled="!resetSent">重置密码</el-button>
+      </div>
+    </form>
+  </el-dialog>
 </template>

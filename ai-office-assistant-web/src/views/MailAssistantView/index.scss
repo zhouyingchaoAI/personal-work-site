@@ -246,6 +246,59 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
   }
 }
 
+// 收件箱较窄时，缓存说明不再与三个筛选标签争夺同一行空间。
+.mailbox-card .mail-section-head {
+  flex-wrap: wrap;
+
+  .mail-section-title {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .mail-read-tabs {
+    margin-left: auto;
+  }
+}
+
+.mail-read-tabs {
+  display: inline-flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid #d3def0;
+  border-radius: 9px;
+  background: #f7faff;
+
+  button {
+    min-width: 58px;
+    height: 28px;
+    padding: 0 8px;
+    border: 0;
+    color: #66758c;
+    background: transparent;
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+
+    &.active {
+      color: $primary;
+      background: #ffffff;
+      box-shadow: 0 1px 5px rgba(21, 73, 156, 0.12);
+    }
+  }
+}
+
+.mail-reply-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 4px;
+
+  .mail-button {
+    height: 32px;
+    padding: 0 12px;
+  }
+}
+
 .mailbox-list {
   display: grid;
   min-height: 0;
@@ -283,6 +336,28 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
   &:hover {
     transform: translateY(-1px);
   }
+
+  &.unread {
+    border-left: 4px solid #1d6fd8;
+    background: #edf5ff;
+    box-shadow: 0 6px 16px rgba(38, 112, 206, 0.1);
+
+    .mailbox-subject,
+    .mailbox-meta {
+      color: #123f87;
+      font-weight: 900;
+    }
+
+    .mailbox-preview,
+    .mailbox-bottom {
+      color: #47658c;
+    }
+
+    &:hover,
+    &.active {
+      background: #e2efff;
+    }
+  }
 }
 
 .mailbox-subject {
@@ -318,6 +393,25 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
   em {
     color: $primary;
     font-style: normal;
+  }
+}
+
+.mail-load-more {
+  min-height: 40px;
+  border: 1px dashed #9db9e5;
+  border-radius: 10px;
+  color: $primary;
+  background: #f7faff;
+  font-weight: 800;
+
+  &:hover:not(:disabled) {
+    border-style: solid;
+    background: #edf4ff;
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.65;
   }
 }
 

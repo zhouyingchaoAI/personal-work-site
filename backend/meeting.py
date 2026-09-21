@@ -140,14 +140,14 @@ def _meeting_llm_chat(system: str, user: str, temperature: float = 0.2) -> str:
     if not settings["url"] or not settings["key"]:
         raise ValueError("尚未配置智能助手接口")
     body = json.dumps(
-        {
+        assistant_generation_payload(settings, {
             "model": settings["model"],
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
             "temperature": temperature,
-        },
+        }),
         ensure_ascii=False,
     ).encode("utf-8")
     request = urllib.request.Request(

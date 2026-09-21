@@ -15,6 +15,11 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
   min-height: 0;
   overflow: hidden;
   color: $text-main;
+
+  // Keep hover targets stationary so pointer edges cannot toggle hover repeatedly.
+  button:hover:not(:disabled) {
+    transform: none;
+  }
 }
 
 .kb-head {
@@ -208,6 +213,7 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
   flex-direction: column;
   gap: 14px;
   min-height: 0;
+  min-width: 0;
   padding: 16px;
   overflow-y: auto;
   border: 1px solid $border-soft;
@@ -764,6 +770,22 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
   padding: 9px 11px;
 }
 
+.kb-btn--danger {
+  border-color: #f3c3c3;
+  color: #c45656;
+
+  &:hover:not(:disabled) {
+    border-color: #f56c6c;
+    background: #fef0f0;
+    color: #f56c6c;
+  }
+}
+
+.kb-clear-chat {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 // AI 回答的 Markdown 渲染样式
 .kb-markdown {
   > :first-child {
@@ -1025,10 +1047,36 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
     }
   }
 
+  .kb-kbs-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .kb-kbs-upload,
   .kb-kbs-add {
-    padding: 3px 9px;
-    border: 1px solid $border;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px 8px;
     border-radius: 6px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .kb-kbs-upload {
+    border: 1px solid $primary;
+    background: $primary;
+    color: #fff;
+
+    &:hover { background: #0f3c82; }
+    &:disabled { border-color: #aac0e6; background: #aac0e6; cursor: wait; }
+  }
+
+  .kb-kbs-add {
+    border: 1px solid $border;
     background: #fff;
     color: $primary;
     font: inherit;
@@ -1038,6 +1086,21 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
     &:hover {
       border-color: $primary;
       background: #eaf2ff;
+    }
+  }
+
+  .kb-upload-target {
+    margin: 0 0 2px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    color: $text-muted;
+    background: #f7faff;
+    font-size: 11.5px;
+    line-height: 1.4;
+
+    strong {
+      color: $primary;
+      font-weight: 750;
     }
   }
 
@@ -1115,6 +1178,87 @@ $panel-shadow: 0 14px 34px rgba(64, 93, 134, 0.08);
     color: $text-strong;
     font-size: 15px;
   }
+}
+
+.kb-external-guide {
+  display: grid;
+  gap: 16px;
+  color: $text-main;
+  font-size: 13px;
+  line-height: 1.65;
+
+  .kb-external-intro,
+  .kb-external-note {
+    margin: 0;
+    padding: 11px 13px;
+    border: 1px solid #d6e5fa;
+    border-radius: 8px;
+    background: #f5f9ff;
+  }
+
+  .kb-external-status {
+    margin: 0;
+    color: $text-muted;
+    font-size: 12px;
+  }
+
+  .kb-ragflow-endpoint {
+    display: grid;
+    grid-template-columns: 140px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    padding: 7px 9px;
+    border: 1px solid #dce6f4;
+    border-radius: 7px;
+    background: #fbfdff;
+
+    span { color: $text-muted; font-size: 12px; font-weight: 700; }
+    code { overflow: auto; white-space: nowrap; }
+  }
+
+  .kb-external-note {
+    color: $text-muted;
+    background: #fafcff;
+  }
+
+  section {
+    display: grid;
+    gap: 7px;
+
+    h4,
+    p,
+    ol,
+    ul { margin: 0; }
+
+    h4 { color: $text-strong; font-size: 14px; }
+    ol, ul { padding-left: 21px; }
+  }
+
+  code {
+    padding: 1px 4px;
+    border-radius: 4px;
+    color: #174b91;
+    background: #edf3fc;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 12px;
+  }
+
+  pre {
+    max-height: 190px;
+    margin: 0;
+    padding: 11px 12px;
+    overflow: auto;
+    border-radius: 8px;
+    color: #dbeafe;
+    background: #152540;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  section > .kb-btn { justify-self: start; }
 }
 
 .kb-doc {

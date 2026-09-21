@@ -169,7 +169,7 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
 }
 
 .settings-grid label,
-.user-card label,
+.user-profile-fields > label,
 .agent-config-editor label,
 .skill-test-panel label {
   display: grid;
@@ -191,7 +191,7 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
 .settings-grid input,
 .settings-grid textarea,
 .skill-toolbar input,
-.user-card input,
+.user-profile-fields > label > input,
 .agent-config-editor textarea,
 .skill-test-panel textarea {
   width: 100%;
@@ -219,7 +219,7 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
 
 .settings-grid input,
 .skill-toolbar input,
-.user-card input {
+.user-profile-fields > label > input {
   height: 42px;
   padding: 0 12px;
 }
@@ -275,6 +275,141 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
 
 .settings-field-full {
   grid-column: 1 / -1;
+}
+
+.signature-settings-field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  color: $text-strong;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.signature-editor-shell {
+  overflow: hidden;
+  border: 1px solid $border;
+  border-radius: 12px;
+  background: #fff;
+  transition: border-color .18s ease, box-shadow .18s ease;
+
+  &:focus-within { border-color: $primary; box-shadow: 0 0 0 3px rgba(21, 73, 156, .12); }
+}
+
+.signature-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 46px;
+  padding: 7px 10px;
+  border-bottom: 1px solid $border;
+  background: linear-gradient(180deg, #fbfdff 0%, #f2f6fc 100%);
+
+  button {
+    min-width: 30px;
+    height: 29px;
+    padding: 0 7px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: $text-strong;
+    background: transparent;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  button:hover {
+    border-color: #cfe0fb;
+    background: #e7f0ff;
+    color: $primary;
+  }
+
+  select {
+    height: 29px;
+    padding: 0 23px 0 8px;
+    border: 1px solid #d5deeb;
+    border-radius: 6px;
+    color: $text-main;
+    background: #fff;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    outline: none;
+    cursor: pointer;
+
+    &:focus { border-color: $primary; }
+  }
+}
+
+.signature-toolbar-divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 2px;
+  background: #d7e0ec;
+}
+
+.signature-color-button {
+  position: relative;
+  display: inline-grid !important;
+  width: 30px;
+  height: 29px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: $text-strong;
+  cursor: pointer;
+
+  span {
+    display: block;
+    margin: 0;
+    padding-bottom: 1px;
+    border-bottom: 3px solid #172554;
+    color: inherit;
+    font-size: 14px;
+    line-height: 15px;
+    font-weight: 900;
+  }
+
+  input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  &:hover { border-color: #cfe0fb; background: #e7f0ff; color: $primary; }
+}
+
+.signature-editor {
+  min-height: 178px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 14px;
+  color: $text-main;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.6;
+  outline: none;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+
+  // 富文本模板里原有的 span、图片等节点也应当与编辑区一样可选择、可删除。
+  * {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  img { max-width: 100%; height: auto; cursor: text; }
+  table { max-width: 100%; border-collapse: collapse; }
+  td, th { min-width: 48px; }
+
+  &:empty::before { content: attr(data-placeholder); color: $text-muted; pointer-events: none; }
 }
 
 .settings-info-box {
@@ -547,7 +682,7 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
 
 .skill-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
 }
 
@@ -618,6 +753,31 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
   }
 }
 
+.user-organization-summary {
+  display: block;
+  margin-top: 3px;
+  color: $text-muted;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.user-organization-profile {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  span {
+    padding: 5px 9px;
+    border-radius: 8px;
+    color: #315175;
+    background: #f0f6ff;
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.35;
+  }
+}
+
 .skill-card-head > em {
   flex: 0 0 auto;
   margin-top: 0;
@@ -634,8 +794,84 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
 
 .user-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
+}
+
+.organization-user-list {
+  display: grid;
+  gap: 16px;
+}
+
+.organization-company,
+.organization-department {
+  overflow: hidden;
+  border: 1px solid $border;
+  border-radius: 14px;
+  background: #fff;
+
+  > summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    color: $text-main;
+    cursor: pointer;
+    list-style: none;
+
+    &::-webkit-details-marker { display: none; }
+    &::after {
+      content: '›';
+      margin-left: auto;
+      color: $primary;
+      font-size: 20px;
+      line-height: 1;
+      transition: transform .18s ease;
+    }
+  }
+
+  &[open] > summary::after { transform: rotate(90deg); }
+}
+
+.organization-company {
+  border-color: $primary-border;
+
+  > summary {
+    background: linear-gradient(100deg, #f2f7ff, #fbfdff);
+
+    strong { font-size: 15px; }
+    em { color: $text-muted; font-size: 12px; font-style: normal; }
+  }
+}
+
+.organization-company__icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  color: #fff;
+  background: linear-gradient(135deg, #1d5cab, $primary);
+  font-weight: 900;
+}
+
+.organization-company__body {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.organization-department {
+  > summary {
+    padding: 11px 13px;
+    background: #fbfcfe;
+
+    span { color: #315175; font-size: 13px; font-weight: 750; }
+    em { margin-left: auto; color: $text-muted; font-size: 12px; font-style: normal; }
+    &::after { margin-left: 0; font-size: 17px; }
+  }
+
+  .user-list { padding: 10px; }
 }
 
 .user-card {
@@ -662,6 +898,173 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
     background: linear-gradient(135deg, #1d5cab, $primary);
     font-size: 19px;
   }
+}
+
+// Compact user directory; only the selected account shows its editor.
+.user-search-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+
+  .el-input { max-width: 420px; }
+  > span { color: $text-muted; font-size: 13px; }
+}
+
+.organization-status-filter {
+  .el-radio-button__inner { font-weight: 750; }
+  .el-radio-button:last-child .el-radio-button__inner { color: #b45309; }
+  .el-radio-button:last-child.is-active .el-radio-button__inner {
+    color: #ffffff;
+    border-color: #d97706;
+    background: #d97706;
+    box-shadow: -1px 0 0 0 #d97706;
+  }
+}
+
+.batch-permission-panel {
+  display: grid;
+  gap: 13px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid $primary-border;
+  border-radius: 14px;
+  background: linear-gradient(125deg, #f3f7ff, #fff);
+
+  > div:first-child {
+    display: grid;
+    gap: 4px;
+    strong { color: $text-strong; font-size: 15px; }
+    span { color: $text-muted; font-size: 12px; }
+  }
+}
+
+.batch-permission-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.5fr) auto;
+  gap: 10px;
+}
+
+.batch-permission-action { align-self: center; }
+
+.batch-permission-assistants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.batch-permission-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: $text-muted;
+  font-size: 12px;
+}
+
+.user-card {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+
+  &.is-expanded { border-color: $primary-border; }
+
+  &.is-roster-missing {
+    border-color: #f3b65f;
+    background: linear-gradient(105deg, #fffaf0, #ffffff 56%);
+    box-shadow: inset 4px 0 0 #e99a25;
+
+    .user-card-head > span { background: linear-gradient(135deg, #d97706, #f3ad3d); }
+    .user-card-head:hover { background: #fff6e7; }
+  }
+
+  .user-card-head {
+    width: 100%;
+    padding: 14px 18px;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+
+    &:hover { background: $primary-soft; }
+    &:focus-visible { outline: 2px solid $primary; outline-offset: -3px; }
+    > span { margin-top: 0; }
+    > div { min-width: 0; flex: 1; }
+  }
+}
+
+.user-card-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.user-roster-status {
+  display: inline-flex;
+  margin: 0;
+  padding: 3px 8px;
+  border: 1px solid #f2c477;
+  border-radius: 999px;
+  color: #a65708;
+  background: #fff1d7;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.3;
+}
+
+.user-roster-warning {
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid #f2c477;
+  border-radius: 11px;
+  color: #7c3f08;
+  background: #fff8e8;
+
+  strong { font-size: 13px; }
+  span, small { color: #9a5a19; font-size: 12px; line-height: 1.5; }
+}
+
+.user-expand-label {
+  flex-shrink: 0;
+  color: $primary;
+  font-size: 12px;
+}
+
+.user-card-details {
+  display: grid;
+  gap: 20px;
+  padding: 20px;
+  border-top: 1px solid $border;
+}
+
+.user-profile-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 16px;
+}
+
+.user-assistant-permissions {
+  > strong { font-size: 13px; color: $text-strong; }
+  > p { color: $text-muted; font-size: 12px; }
+}
+
+.user-permission-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 4px 16px;
+  margin-top: 10px;
+
+  .el-checkbox {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 0;
+    min-width: 0;
+  }
+  .el-checkbox__label { white-space: normal; line-height: 1.4; }
 }
 
 .user-card-actions {
@@ -812,7 +1215,7 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
 
 .settings-mcp-connect-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: 14px;
 }
 
@@ -838,6 +1241,27 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
     font-size: 12px;
     line-height: 1.65;
     font-family: "SFMono-Regular", Consolas, monospace;
+  }
+}
+
+.settings-mcp-install-steps {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  color: $text-muted;
+  font-size: 12px;
+  line-height: 1.55;
+  font-weight: 680;
+
+  code {
+    color: #1b559e;
+    font-family: "SFMono-Regular", Consolas, monospace;
+  }
+
+  strong {
+    color: $text-strong;
+    font-weight: 900;
   }
 }
 
@@ -1138,6 +1562,35 @@ $panel-shadow: 0 12px 30px rgba(74, 113, 175, 0.09);
   .el-select__wrapper.is-focused {
     box-shadow: 0 0 0 1px $primary inset, 0 0 0 3px rgba(21, 73, 156, 0.12);
   }
+}
+
+.new-user-organization-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 15px;
+  border: 1px solid $primary-border;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #f4f8ff, #ffffff);
+
+  > strong,
+  > p { grid-column: 1 / -1; margin: 0; }
+  > strong { color: $text-strong; font-size: 14px; }
+  > p { color: $text-muted; font-size: 12px; line-height: 1.5; }
+}
+
+.organization-excel-dialog {
+  display: grid;
+  gap: 8px;
+
+  p { margin: 0; color: $text-muted; font-size: 13px; line-height: 1.6; }
+}
+
+.organization-excel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
 }
 
 .agent-config-editor {

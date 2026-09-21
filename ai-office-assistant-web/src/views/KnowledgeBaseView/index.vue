@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChatDotRound, Delete, Document, Link, RefreshRight, Search, Setting, UploadFilled } from '@element-plus/icons-vue'
 import {
@@ -8,6 +8,7 @@ import {
   deleteKnowledgeDoc,
   getDigitalHumanKbConfig,
   getKnowledgeConfig,
+  getKnowledgeExternalApiInfo,
   getKnowledgeDocChunks,
   getKnowledgeChatHistory,
   getKnowledgeChatSession,
@@ -30,13 +31,17 @@ import {
   type KnowledgeAskSource,
   type KnowledgeChatSession,
   type KnowledgeDoc,
+  type KnowledgeExternalApiInfo,
   type KnowledgeKb,
   type KnowledgeSearchResult,
   type RagflowStatus,
 } from '../../services/personalWorkApi'
 import { authState, ensureSession } from '../../services/authSession'
 import { htmlToText, renderChunk, renderMarkdown } from '../../utils/markdown'
+import PdfMarkdownStudio from './PdfMarkdownStudio.vue'
 import './index.scss'
+
+const pdfMdVisible = ref(false)
 
 const kbs = ref<KnowledgeKb[]>([])
 const currentKbId = ref('')
@@ -52,6 +57,36 @@ const embeddingModel = ref('')
 const staleDocs = ref<string[]>([])
 const uploading = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const externalGuideVisible = ref(false)
+const externalApiInfo = ref<KnowledgeExternalApiInfo | null>(null)
+const externalApiLoading = ref(false)
+
+const externalMcpEndpoint = computed(() => `${window.location.origin}/personal-office-assistant/mcp`)
+const externalMcpUsername = computed(() => authState.user?.username || 'your_username')
+const externalMcpConfig = computed(() => JSON.stringify({
+  mcpServers: {
+    personal_office_knowledge: {
+      type: 'streamable-http',
+      url: externalMcpEndpoint.value,
+      headers: {
+        Authorization: 'Bearer <mcp_secret>',
+        'X-MCP-Username': externalMcpUsername.value,
+      },
+    },
+  },
+}, null, 2))
+const externalSearchExample = computed(() => `curl -X POST '${externalMcpEndpoint.value}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Authorization: Bearer <mcp_secret>' \\
+  -H 'X-MCP-Username: ${externalMcpUsername.value}' \\
+  --data '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"knowledge.search","arguments":{"query":"报销流程","top_k":5}}}'`)
+const ragflowOpenAiExample = computed(() => {
+  const endpoint = externalApiInfo.value?.completion_url || 'https://ragflow.example.com/api/v1/chats_openai/<chat_id>/chat/completions'
+  return `curl -X POST '${endpoint}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Authorization: Bearer <ragflow_api_key>' \\
+  --data '{"model":"ragflow","messages":[{"role":"user","content":"请说明报销流程"}],"stream":false}'`
+})
 
 const query = ref('')
 const searching = ref(false)
@@ -86,6 +121,27 @@ const selectedKbSummary = computed(() => {
 
 function escapeHtml(value: string) {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+async function copyExternalGuide(value: string) {
+  try {
+    await navigator.clipboard.writeText(value)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动选择复制')
+  }
+}
+
+async function openExternalGuide() {
+  externalGuideVisible.value = true
+  externalApiLoading.value = true
+  try {
+    externalApiInfo.value = await getKnowledgeExternalApiInfo()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    externalApiLoading.value = false
+  }
 }
 
 function splitSessionTitle(title: string) {
@@ -218,13 +274,19 @@ async function selectChatSession(sessionId: string) {
   await loadChatHistory(sessionId)
 }
 
-async function deleteChatSession(sessionId = currentSessionId.value) {
+async function deleteChatSession(sessionId = currentSessionId.value, shouldConfirm = true) {
   if (!sessionId) return
   const session = chatSessions.value.find((item) => item.id === sessionId)
-  try {
-    await ElMessageBox.confirm(`确认删除会话“${session?.title || '新会话'}”？删除后该会话历史将不再显示。`, '删除会话', { type: 'warning' })
-  } catch {
-    return
+  if (shouldConfirm) {
+    try {
+      await ElMessageBox.confirm(`确认删除会话“${session?.title || '新会话'}”？删除后该会话历史将不再显示。`, '删除会话', {
+        type: 'warning',
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消',
+      })
+    } catch {
+      return
+    }
   }
   try {
     await clearKnowledgeChat(sessionId)
@@ -247,7 +309,22 @@ async function deleteChatSession(sessionId = currentSessionId.value) {
 }
 
 async function clearChat() {
-  await deleteChatSession(currentSessionId.value)
+  const session = chatSessions.value.find((item) => item.id === currentSessionId.value)
+  try {
+    await ElMessageBox.confirm(
+      `将永久清空“${session?.title || '当前会话'}”的全部对话内容，且无法恢复。是否继续？`,
+      '清空当前对话',
+      {
+        type: 'warning',
+        confirmButtonText: '确认清空',
+        cancelButtonText: '取消',
+        confirmButtonClass: 'el-button--danger',
+      },
+    )
+  } catch {
+    return
+  }
+  await deleteChatSession(currentSessionId.value, false)
 }
 
 // 引用角标浮层：鼠标悬浮在角标上即预览对应片段（含表格渲染）；要看完整文档再点「预览原文」进抽屉。
@@ -651,22 +728,31 @@ function closeRagflowConsole() {
 }
 
 function applyDocList(result: Awaited<ReturnType<typeof listKnowledgeDocs>>) {
-  docs.value = result.docs
+  if (JSON.stringify(docs.value) !== JSON.stringify(result.docs)) docs.value = result.docs
   embeddingModel.value = result.embedding_model
   staleDocs.value = result.stale_docs || []
   canManage.value = result.can_manage !== false
   provider.value = result.provider || ''
 }
 
-async function loadDocs() {
-  docsLoading.value = true
+let docsRequest = 0
+let knowledgeActive = true
+async function loadDocs(silent = false) {
+  if (!knowledgeActive) return
+  stopParsingPoll()
+  const requestId = ++docsRequest
+  const scope = scopeParam.value
+  docsLoading.value = !silent && !docs.value.length
   try {
-    applyDocList(await listKnowledgeDocs(scopeParam.value))
+    const result = await listKnowledgeDocs(scope)
+    if (knowledgeActive && requestId === docsRequest && scope === scopeParam.value) applyDocList(result)
   } catch (error) {
-    ElMessage.error(errorMessage(error))
+    if (!silent && knowledgeActive && requestId === docsRequest) ElMessage.error(errorMessage(error))
   } finally {
-    docsLoading.value = false
-    schedulePollParsing()
+    if (knowledgeActive && requestId === docsRequest) {
+      docsLoading.value = false
+      schedulePollParsing()
+    }
   }
 }
 
@@ -736,21 +822,30 @@ async function handleDeleteKb(kb: KnowledgeKb) {
 // 有解析中的文档时每 4 秒静默刷新，实时展示 DeepDoc 解析进度。
 let pollTimer: number | undefined
 
-function schedulePollParsing() {
-  if (pollTimer) window.clearTimeout(pollTimer)
-  if (!docs.value.some((doc) => doc.status === 'parsing')) return
-  pollTimer = window.setTimeout(async () => {
-    try {
-      applyDocList(await listKnowledgeDocs(scopeParam.value))
-    } catch {
-      // 静默轮询失败不打扰用户，下一轮重试
-    }
-    schedulePollParsing()
-  }, 4000)
+function stopParsingPoll() {
+  if (pollTimer !== undefined) window.clearTimeout(pollTimer)
+  pollTimer = undefined
 }
 
-onUnmounted(() => {
-  if (pollTimer) window.clearTimeout(pollTimer)
+function schedulePollParsing() {
+  stopParsingPoll()
+  if (!knowledgeActive || !docs.value.some((doc) => doc.status === 'parsing')) return
+  pollTimer = window.setTimeout(() => void loadDocs(true), 4000)
+}
+
+function pauseKnowledge() {
+  knowledgeActive = false
+  ++docsRequest
+  docsLoading.value = false
+  stopParsingPoll()
+  closeCite()
+}
+onDeactivated(pauseKnowledge)
+onUnmounted(pauseKnowledge)
+onActivated(() => {
+  const resuming = !knowledgeActive
+  knowledgeActive = true
+  if (resuming) void loadDocs(true)
 })
 
 function pickFiles() {
@@ -845,10 +940,6 @@ onUnmounted(() => {
 <template>
   <section class="kb-main">
     <header class="kb-head">
-      <div>
-        <h1>知识库</h1>
-        <p>上传文档（Word/PDF/Excel/PPT/文本等）构建团队知识库，支持语义检索与 AI 问答。当前嵌入模型：{{ embeddingModel || '未配置' }}</p>
-      </div>
       <div class="kb-head-actions">
         <button class="kb-btn" type="button" title="配置 3D 数字人回答时是否检索知识库" @click="openDhDialog">
           <el-icon><ChatDotRound /></el-icon> 数字人接入
@@ -859,8 +950,11 @@ onUnmounted(() => {
         <button v-if="isAdmin" :class="['kb-btn', { 'kb-btn--active': showSettings }]" type="button" @click="toggleSettings">
           <el-icon><Setting /></el-icon> 引擎设置
         </button>
-        <button v-if="canManage" class="kb-btn kb-btn--primary" type="button" :disabled="uploading" @click="pickFiles">
-          <el-icon><UploadFilled /></el-icon> {{ uploading ? '入库中…' : (currentKb?.shared ? '上传到共享库' : `上传到《${currentKb?.name || '我的知识库'}》`) }}
+        <button v-if="provider === 'ragflow' || kbForm.provider === 'ragflow'" class="kb-btn" type="button" title="上传 PDF，用 DeepDoc OCR 解析成图文并茂的 Markdown，并可框选区域校准图文错配" @click="pdfMdVisible = true">
+          <el-icon><Document /></el-icon> PDF 转 Markdown
+        </button>
+        <button class="kb-btn" type="button" title="查看外部系统调用知识库的接入说明" @click="openExternalGuide">
+          <el-icon><Link /></el-icon> 外部调用
         </button>
       </div>
       <input ref="fileInputRef" type="file" multiple accept=".txt,.md,.csv,.log,.json,.html,.htm,.doc,.docx,.pdf,.xls,.xlsx,.ppt,.pptx,.wps" hidden @change="handleFiles" />
@@ -1124,8 +1218,8 @@ onUnmounted(() => {
         </div>
 
         <div class="kb-query">
-          <button v-if="chat.length" class="kb-btn kb-btn--icon" type="button" title="清空对话" @click="clearChat">
-            <el-icon><Delete /></el-icon>
+          <button v-if="chat.length" class="kb-btn kb-btn--danger kb-clear-chat" type="button" @click="clearChat">
+            <el-icon><Delete /></el-icon> 清空对话
           </button>
           <textarea v-model="query" rows="2" placeholder="输入问题，Enter 发送；Shift+Enter 换行…" @keydown.enter="handleQueryKeydown" />
           <button class="kb-btn" type="button" :disabled="searching" @click="handleSearch">
@@ -1141,8 +1235,14 @@ onUnmounted(() => {
         <div class="kb-kbs">
           <header>
             <h3>知识库（{{ kbs.length }}）</h3>
-            <button v-if="provider === 'ragflow'" type="button" class="kb-kbs-add" title="新建知识库" @click="handleCreateKb">＋ 新建</button>
+            <div class="kb-kbs-actions">
+              <button v-if="canManage" type="button" class="kb-kbs-upload" :disabled="uploading" :title="currentKb ? `上传文档到《${currentKb.name}》` : '请先选择知识库'" @click="pickFiles">
+                <el-icon><UploadFilled /></el-icon> {{ uploading ? '入库中…' : '上传' }}
+              </button>
+              <button v-if="provider === 'ragflow'" type="button" class="kb-kbs-add" title="新建知识库" @click="handleCreateKb">＋ 新建</button>
+            </div>
           </header>
+          <p v-if="canManage && currentKb" class="kb-upload-target">上传文档将保存到：<strong>{{ currentKb.shared ? '共享库' : currentKb.name }}</strong></p>
           <button
             v-for="kb in kbs"
             :key="kb.id"
@@ -1162,7 +1262,7 @@ onUnmounted(() => {
         </div>
         <h3>文档（{{ docs.length }}）</h3>
         <p v-if="docsLoading" class="kb-empty">加载中…</p>
-        <p v-else-if="!docs.length" class="kb-empty">还没有文档，点击右上角上传</p>
+        <p v-else-if="!docs.length" class="kb-empty">还没有文档，请在上方选择知识库后上传</p>
         <article v-for="doc in docs" :key="doc.id" :class="['kb-doc', { stale: staleDocs.includes(doc.name) }]">
           <strong :title="doc.name">{{ doc.name }}</strong>
           <span>{{ doc.created_at }} · {{ doc.chunk_count }} 块 · {{ doc.uploaded_by }}</span>
@@ -1183,5 +1283,68 @@ onUnmounted(() => {
         </article>
       </aside>
     </div>
+
+    <el-dialog v-model="externalGuideVisible" title="外部调用知识库" width="760px" class="kb-external-dialog">
+      <div class="kb-external-guide">
+        <p class="kb-external-intro">外部智能体、工作流或自建应用可通过标准 <strong>MCP Streamable HTTP</strong> 调用本平台知识库。调用会按“用户上下文”读取该用户的个人知识库与可见共享知识库。</p>
+
+        <section>
+          <h4>接入前准备</h4>
+          <ol>
+            <li>管理员在“设置中心 → MCP 管理”生成 MCP 密钥。</li>
+            <li>调用方使用该密钥，并在请求头填写要访问的数据账号。</li>
+            <li>请勿在浏览器前端、公开仓库或日志中暴露密钥。</li>
+          </ol>
+        </section>
+
+        <section>
+          <h4>通用 MCP 客户端配置</h4>
+          <p>适用于 Claude、Cursor、Cline、OpenClaw、Cherry Studio 等支持 Streamable HTTP MCP 的客户端。</p>
+          <pre>{{ externalMcpConfig }}</pre>
+          <button class="kb-btn" type="button" @click="copyExternalGuide(externalMcpConfig)">复制 MCP 配置</button>
+        </section>
+
+        <section class="kb-ragflow-api-guide">
+          <h4>标准 RAGFlow / OpenAI 兼容接口</h4>
+          <p>适用于自建 Web 应用、Python/Java 服务、Dify、n8n 等可调用 OpenAI Chat Completions 的系统。该接口由 RAGFlow 原生提供，当前助手已绑定你的个人知识库和可见共享库。</p>
+          <p v-if="externalApiLoading" class="kb-external-status">正在准备当前用户的 RAGFlow Chat Assistant…</p>
+          <template v-else-if="externalApiInfo?.ready">
+            <div class="kb-ragflow-endpoint"><span>OpenAI Base URL</span><code>{{ externalApiInfo.base_url }}</code></div>
+            <div class="kb-ragflow-endpoint"><span>Chat Assistant ID</span><code>{{ externalApiInfo.chat_id }}</code></div>
+            <p class="kb-external-status">{{ externalApiInfo.api_key_masked }} 已绑定 {{ externalApiInfo.dataset_count }} 个可检索知识库。</p>
+          </template>
+          <p v-else class="kb-external-status">{{ externalApiInfo?.hint || 'RAGFlow 信息暂不可用。' }}</p>
+          <pre>{{ ragflowOpenAiExample }}</pre>
+          <button class="kb-btn" type="button" @click="copyExternalGuide(ragflowOpenAiExample)">复制 RAGFlow 调用示例</button>
+          <p class="kb-external-note">在 RAGFlow 控制台的 API Key 页面创建或查看 <code>ragflow_api_key</code>。传入 <code>stream: true</code> 即可接收 SSE 流式响应；非流式回答中的引用位于 <code>choices[0].message.reference</code>。</p>
+        </section>
+
+        <section>
+          <h4>可用知识库工具</h4>
+          <ul>
+            <li><code>knowledge.datasets</code>：列出当前用户可访问的知识库。</li>
+            <li><code>knowledge.search</code>：返回命中片段和来源；可传 <code>query</code>、<code>top_k</code>、<code>kb_ids</code>。</li>
+            <li><code>knowledge.ask</code>：基于资料生成带引用来源的回答；可传 <code>question</code>、<code>top_k</code>、<code>kb_ids</code>。</li>
+          </ul>
+        </section>
+
+        <section>
+          <h4>直接测试：语义检索</h4>
+          <pre>{{ externalSearchExample }}</pre>
+          <button class="kb-btn" type="button" @click="copyExternalGuide(externalSearchExample)">复制测试命令</button>
+        </section>
+
+        <p class="kb-external-note">当前用户上下文：<strong>{{ externalMcpUsername }}</strong>。如需访问另一位用户的个人库，必须将请求头 <code>X-MCP-Username</code> 改为对应账号；共享库会依照平台权限自动过滤。</p>
+      </div>
+    </el-dialog>
+
+    <PdfMarkdownStudio
+      v-if="pdfMdVisible"
+      :scope="scopeParam"
+      :scope-label="currentKb ? (currentKb.shared ? '共享库' : currentKb.name) : '个人知识库'"
+      :can-write="canManage"
+      @close="pdfMdVisible = false"
+      @stored="loadDocs()"
+    />
   </section>
 </template>

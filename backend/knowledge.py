@@ -102,7 +102,15 @@ def save_kb_config(payload: dict) -> dict:
         if api_key:
             config["knowledge_embedding_api_key"] = api_key
     write_config(config)
-    return kb_config_api()
+    # FastGPT consumes the same embedding/rerank service. Synchronize at the
+    # configuration boundary so its model selector never drifts from the
+    # platform knowledge-base settings.
+    result = kb_config_api()
+    try:
+        result["fastgpt_sync"] = sync_fastgpt_embedding_model()
+    except Exception as exc:
+        result["fastgpt_sync"] = {"ok": False, "error": str(exc)}
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -642,11 +650,15 @@ def _ragflow_list(settings: dict, dataset_id: str) -> dict:
 
 
 def _ragflow_search(query: str, top_k: int, settings: dict, dataset_ids) -> dict:
+    # RAGFlow 0.21 may return an empty ``chunks`` array for ``page_size=1``
+    # even when the same query has hits. Fetch at least two candidates and
+    # apply the caller's requested limit after normalizing the response.
+    fetch_size = max(2, top_k)
     data = _ragflow_request(
         settings,
         "POST",
         "/api/v1/retrieval",
-        {"question": query, "dataset_ids": dataset_ids, "page": 1, "page_size": top_k},
+        {"question": query, "dataset_ids": dataset_ids, "page": 1, "page_size": fetch_size},
     ) or {}
     results = []
     for index, chunk in enumerate(data.get("chunks", [])):
@@ -661,7 +673,7 @@ def _ragflow_search(query: str, top_k: int, settings: dict, dataset_ids) -> dict
                 "page": _ragflow_chunk_page(chunk),
             }
         )
-    return {"ok": True, "results": results}
+    return {"ok": True, "results": results[:top_k]}
 
 
 def _kb_is_generation_request(question: str) -> bool:
@@ -1245,6 +1257,261 @@ def _kb_rerank(query: str, candidates, top_k: int, settings: dict):
             candidate["score"] = round(float(item.get("relevance_score", 0) or 0), 4)
             reranked.append(candidate)
     return reranked
+
+
+# FastGPT ⇄ RAGFlow 打通：内网适配器，供 FastGPT 工作流的 HTTP 节点实时检索
+# RAGFlow 知识库。用管理端（服务账号）RAGFlow Key，默认检索其可见的全部有内容
+# 数据集（含共享企业知识库）；由 RAGFlow 出检索结果，FastGPT 无需再配嵌入模型。
+FASTGPT_KB_BRIDGE_SECRET = __import__("os").environ.get("FASTGPT_KB_BRIDGE_SECRET") or __import__("secrets").token_hex(32)
+
+
+def fastgpt_kb_list() -> dict:
+    settings = kb_embedding_settings()
+    _ragflow_ready(settings)
+    data = _ragflow_request(settings, "GET", "/api/v1/datasets?page=1&page_size=200") or []
+    items = []
+    for item in data:
+        items.append({
+            "id": str(item.get("id") or ""),
+            "name": item.get("name", ""),
+            "chunk_count": int(item.get("chunk_count", item.get("chunk_num", 0)) or 0),
+        })
+    return {"ok": True, "datasets": items}
+
+
+def fastgpt_kb_retrieval(payload: dict) -> dict:
+    payload = payload or {}
+    query = str(payload.get("query") or payload.get("question") or "").strip()
+    if not query:
+        raise ValueError("query 不能为空")
+    top_k = min(20, max(1, int(payload.get("top_k") or payload.get("topK") or 6)))
+    settings = kb_embedding_settings()
+    _ragflow_ready(settings)
+    dataset_ids = [str(x).strip() for x in (payload.get("dataset_ids") or payload.get("datasetIds") or []) if str(x).strip()]
+    if not dataset_ids:
+        data = _ragflow_request(settings, "GET", "/api/v1/datasets?page=1&page_size=200") or []
+        dataset_ids = [str(it.get("id")) for it in data if int(it.get("chunk_count", it.get("chunk_num", 0)) or 0) > 0 and it.get("id")]
+    if not dataset_ids:
+        return {"ok": True, "results": [], "context": ""}
+    res = _ragflow_search(query, top_k, settings, dataset_ids)
+    results = res.get("results", [])
+    context = "\n\n".join(
+        f"【资料{index + 1}：{item.get('doc_name') or '知识库'}】\n{item.get('text', '')}"
+        for index, item in enumerate(results)
+    )
+    return {"ok": True, "results": results, "context": context, "count": len(results)}
+
+
+# ---------------------------------------------------------------------------
+# FastGPT「API 文件库」(apiDataset) 连接器：让 RAGFlow 企业知识库以 FastGPT 原生
+# 知识库形式接入，可在「知识库检索」节点直接选用、带引用来源。FastGPT 按下述契约
+# 调用本服务（Authorization: Bearer <密钥>），RAGFlow 为文档来源，改文档只需在
+# RAGFlow 侧维护后在 FastGPT 重新同步即可。契约（v4.15.2 实测）：
+#   POST /v1/file/list  {searchKey,parentId} -> {success,data:[{id,name,type,parentId,hasChild,updateTime,createTime}]}
+#   GET  /v1/file/content?id=  -> {success,data:{title,content,previewUrl}}
+#   GET  /v1/file/detail?id=   -> {success,data:{id,name,parentId,type,updateTime,createTime}}
+#   GET  /v1/file/read?id=     -> {success,data:{url}}
+# id 约定：数据集(文件夹)="ds::<datasetId>"；文档(文件)="doc::<datasetId>::<docId>"。
+# 企业库使用共享凭据；个人库使用 HMAC(username) 凭据，并从
+# /apidataset/personal/<username> 路由进入。这样即使 FastGPT 所有账户在同一
+# team，也不能把 A 用户的数据源改成 B 用户的数据源来读取。
+
+
+def _apidataset_iso(value) -> str:
+    """RAGFlow 的毫秒时间戳/字符串 -> ISO8601，供 FastGPT 判断是否需要重新同步。"""
+    if not value:
+        return ""
+    try:
+        ts = float(value)
+        if ts > 1e12:  # 毫秒
+            ts /= 1000.0
+        import datetime
+        return datetime.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except Exception:
+        return str(value)
+
+
+def fastgpt_apidataset_personal_token(username: str) -> str:
+    """Return the identity-bound API 文件库 credential for one office user."""
+    username = str(username or "").strip()
+    if not username:
+        return ""
+    return hmac.new(
+        FASTGPT_KB_BRIDGE_SECRET.encode("utf-8"),
+        ("apidataset:personal:" + username).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _apidataset_personal_scope(settings: dict, username: str):
+    """Return this user's RAGFlow credentials and the one private default KB."""
+    if not username:
+        return settings, None
+    user_settings = _ragflow_user_settings(settings, username)
+    return user_settings, _ragflow_user_dataset_id(user_settings, username)
+
+
+def _apidataset_content_datasets(settings: dict, username: str = "") -> list:
+    settings, personal_dataset_id = _apidataset_personal_scope(settings, username)
+    data = _ragflow_request(settings, "GET", "/api/v1/datasets?page=1&page_size=200") or []
+    out = []
+    for it in data:
+        if personal_dataset_id and str(it.get("id") or "") != str(personal_dataset_id):
+            continue
+        if int(it.get("chunk_count", it.get("chunk_num", 0)) or 0) <= 0:
+            continue
+        out.append(it)
+    return out
+
+
+def _apidataset_documents(settings: dict, dataset_id: str) -> list:
+    docs = []
+    page = 1
+    while True:
+        data = _ragflow_request(
+            settings, "GET",
+            f"/api/v1/datasets/{dataset_id}/documents?page={page}&page_size=100",
+        ) or {}
+        batch = data.get("docs", data if isinstance(data, list) else []) or []
+        docs.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    return docs
+
+
+def fastgpt_apidataset_list(parent_id: str = "", search_key: str = "", username: str = "") -> dict:
+    """FastGPT /v1/file/list：根级列 RAGFlow 数据集（文件夹），文件夹内列文档（文件）。"""
+    settings = kb_embedding_settings()
+    _ragflow_ready(settings)
+    parent_id = str(parent_id or "").strip()
+    search_key = str(search_key or "").strip().lower()
+    items = []
+    if not parent_id or parent_id in ("root", "/"):
+        for ds in _apidataset_content_datasets(settings, username):
+            name = ds.get("name", "")
+            if search_key and search_key not in name.lower():
+                continue
+            items.append({
+                "id": f"ds::{ds.get('id')}",
+                "parentId": "",
+                "name": name,
+                "type": "folder",
+                "hasChild": True,
+                "updateTime": _apidataset_iso(ds.get("update_time")),
+                "createTime": _apidataset_iso(ds.get("create_time")),
+            })
+    elif parent_id.startswith("ds::"):
+        dataset_id = parent_id[len("ds::"):]
+        user_settings, personal_dataset_id = _apidataset_personal_scope(settings, username)
+        if personal_dataset_id and dataset_id != str(personal_dataset_id):
+            raise ValueError("无权访问该个人知识库")
+        for doc in _apidataset_documents(user_settings, dataset_id):
+            name = doc.get("name", "")
+            if search_key and search_key not in name.lower():
+                continue
+            if int(doc.get("chunk_count", 0) or 0) <= 0:
+                continue
+            items.append({
+                "id": f"doc::{dataset_id}::{doc.get('id')}",
+                "parentId": parent_id,
+                "name": name,
+                "type": "file",
+                "hasChild": False,
+                "updateTime": _apidataset_iso(doc.get("update_time")),
+                "createTime": _apidataset_iso(doc.get("create_time")),
+            })
+    return {"success": True, "data": items}
+
+
+def _apidataset_parse_file_id(file_id: str):
+    file_id = str(file_id or "").strip()
+    if file_id.startswith("doc::"):
+        rest = file_id[len("doc::"):]
+        dataset_id, _, doc_id = rest.partition("::")
+        return "file", dataset_id, doc_id
+    if file_id.startswith("ds::"):
+        return "folder", file_id[len("ds::"):], ""
+    return "unknown", "", ""
+
+
+def fastgpt_apidataset_content(file_id: str, username: str = "") -> dict:
+    """FastGPT /v1/file/content：拼接文档全部分块文本，供 FastGPT 切块入库。"""
+    settings = kb_embedding_settings()
+    _ragflow_ready(settings)
+    kind, dataset_id, doc_id = _apidataset_parse_file_id(file_id)
+    if kind != "file":
+        raise ValueError("仅文件支持读取内容")
+    settings, personal_dataset_id = _apidataset_personal_scope(settings, username)
+    if personal_dataset_id and dataset_id != str(personal_dataset_id):
+        raise ValueError("无权访问该个人知识库")
+    title = ""
+    parts = []
+    page = 1
+    while True:
+        data = _ragflow_request(
+            settings, "GET",
+            f"/api/v1/datasets/{dataset_id}/documents/{doc_id}/chunks?page={page}&page_size=100",
+        ) or {}
+        doc_meta = data.get("doc") or data.get("document") or {}
+        if not title:
+            title = doc_meta.get("name", "")
+        chunks = data.get("chunks", []) or []
+        for ch in chunks:
+            text = ch.get("content") or ch.get("content_with_weight") or ""
+            if text:
+                parts.append(text.strip())
+        total = int(data.get("total", 0) or 0)
+        if len(chunks) < 100 or page * 100 >= total:
+            break
+        page += 1
+    content = "\n\n".join(p for p in parts if p)
+    return {"success": True, "data": {"title": title, "content": content, "previewUrl": ""}}
+
+
+def fastgpt_apidataset_detail(file_id: str, username: str = "") -> dict:
+    """FastGPT /v1/file/detail：返回文件/文件夹元数据。"""
+    settings = kb_embedding_settings()
+    _ragflow_ready(settings)
+    kind, dataset_id, doc_id = _apidataset_parse_file_id(file_id)
+    settings, personal_dataset_id = _apidataset_personal_scope(settings, username)
+    if personal_dataset_id and dataset_id != str(personal_dataset_id):
+        raise ValueError("无权访问该个人知识库")
+    if kind == "folder":
+        data = _ragflow_request(settings, "GET", "/api/v1/datasets?page=1&page_size=200") or []
+        ds = next((d for d in data if str(d.get("id")) == dataset_id), None)
+        if not ds:
+            raise ValueError("数据集不存在")
+        return {"success": True, "data": {
+            "id": file_id, "parentId": "", "name": ds.get("name", ""), "type": "folder",
+            "updateTime": _apidataset_iso(ds.get("update_time")),
+            "createTime": _apidataset_iso(ds.get("create_time")),
+        }}
+    if kind == "file":
+        docs = _apidataset_documents(settings, dataset_id)
+        doc = next((d for d in docs if str(d.get("id")) == doc_id), None)
+        if not doc:
+            raise ValueError("文档不存在")
+        return {"success": True, "data": {
+            "id": file_id, "parentId": f"ds::{dataset_id}", "name": doc.get("name", ""), "type": "file",
+            "updateTime": _apidataset_iso(doc.get("update_time")),
+            "createTime": _apidataset_iso(doc.get("create_time")),
+        }}
+    raise ValueError("无效的文件标识")
+
+
+def fastgpt_apidataset_read(file_id: str, username: str = "") -> dict:
+    """FastGPT /v1/file/read：返回原文查看链接（RAGFlow 公网地址，可为空）。"""
+    settings = kb_embedding_settings()
+    kind, dataset_id, doc_id = _apidataset_parse_file_id(file_id)
+    _, personal_dataset_id = _apidataset_personal_scope(settings, username)
+    if personal_dataset_id and dataset_id != str(personal_dataset_id):
+        raise ValueError("无权访问该个人知识库")
+    public = str(settings.get("ragflow_public_url") or "").strip().rstrip("/")
+    url = ""
+    if kind == "file" and public and doc_id:
+        url = f"{public}/document/{doc_id}"
+    return {"success": True, "data": {"url": url}}
 
 
 def kb_search(payload: dict, username: str = "") -> dict:
@@ -2188,6 +2455,35 @@ def kb_chat_embed(username: str = "") -> dict:
     public = settings["ragflow_public_url"] or settings["ragflow_url"]
     url = f"{public.rstrip('/')}/chat/share?shared_id={chat_id}&from=chat&auth={urllib.parse.quote(beta)}"
     return {"ok": True, "url": url, "empty": False}
+
+
+def kb_external_api_info(username: str = "") -> dict:
+    """Return the current user's RAGFlow OpenAI-compatible chat endpoint.
+
+    The API key itself is intentionally never returned to the browser. Users
+    obtain or rotate it in their own RAGFlow console; the chat id is safe to
+    show and is bound to the user's personal plus shared knowledge datasets.
+    """
+    settings = kb_embedding_settings()
+    public = str(settings.get("ragflow_public_url") or settings.get("ragflow_url") or "").strip().rstrip("/")
+    result = {"ok": True, "provider": settings.get("provider"), "public_url": public, "ready": False,
+              "chat_id": "", "base_url": "", "completion_url": "", "dataset_count": 0}
+    if settings.get("provider") != "ragflow":
+        result["hint"] = "当前知识库未使用 RAGFlow 引擎，请在引擎设置中启用后再接入标准 RAGFlow API。"
+        return result
+    _ragflow_ready(settings)
+    user_settings = _ragflow_user_settings(settings, username)
+    _, dataset_ids = _ragflow_user_query_datasets(settings, username)
+    result["dataset_count"] = len(dataset_ids)
+    if not dataset_ids:
+        result["hint"] = "当前没有解析完成的知识库文档；上传并解析完成后会自动创建可供外部调用的 Chat Assistant。"
+        return result
+    chat_id = _ragflow_user_chat_id(user_settings, username, dataset_ids)
+    base_url = f"{public}/api/v1/chats_openai/{chat_id}"
+    result.update({"ready": True, "chat_id": chat_id, "base_url": base_url,
+                   "completion_url": base_url + "/chat/completions",
+                   "api_key_masked": "已为当前用户开通，请在 RAGFlow 控制台的 API Key 页面查看或轮换。"})
+    return result
 
 
 def _kb_preview_ids(dataset_id: str, doc_id: str):

@@ -28,6 +28,13 @@ class KnowledgeCitationFrontendTests(unittest.TestCase):
         self.assertIn('rows="2"', self.source)
         self.assertIn('@keydown.enter="handleQueryKeydown"', self.source)
 
+    def test_clear_chat_has_an_explicit_secondary_confirmation(self):
+        self.assertIn("async function clearChat()", self.source)
+        self.assertIn("'清空当前对话'", self.source)
+        self.assertIn("'确认清空'", self.source)
+        self.assertIn("`将永久清空", self.source)
+        self.assertIn('kb-btn--danger kb-clear-chat', self.source)
+
     def test_citation_event_recovers_invalid_large_cite_indexes(self):
         self.assertIn("function resolveCitationSourceIndex", self.source)
         self.assertIn("target.closest('.kb-markdown')", self.source)

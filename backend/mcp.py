@@ -31,11 +31,21 @@ def mcp_enabled() -> bool:
     return bool(_mcp_secret())
 
 
-def _check_auth(authorization: str) -> bool:
+def _check_auth(authorization: str, access_token: str = "") -> bool:
+    """Validate an MCP credential.
+
+    Normal MCP clients use the Authorization header.  FastGPT's MCP collection
+    discovery currently only accepts a URL, so its private Docker-network URL
+    carries the same short-lived-in-config credential as a query parameter.
+    The latter is deliberately only emitted with the internal service hostname
+    (never the public URL) by ``fastgpt.py``.
+    """
     secret = _mcp_secret()
     if not secret:
         return False
-    return bool(authorization) and authorization.startswith("Bearer ") and authorization[7:].strip() == secret
+    if access_token and secrets.compare_digest(str(access_token), secret):
+        return True
+    return bool(authorization) and authorization.startswith("Bearer ") and secrets.compare_digest(authorization[7:].strip(), secret)
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +161,7 @@ def _handle_single_request(req: dict, username: str) -> dict | None:
     return err(-32601, f"Method not found: {method}")
 
 
-def mcp_handle_post(authorization: str, mcp_username: str, body_bytes: bytes) -> tuple[int, dict | list | None]:
+def mcp_handle_post(authorization: str, mcp_username: str, body_bytes: bytes, access_token: str = "") -> tuple[int, dict | list | None]:
     """
     Handle POST /mcp. Returns (http_status, response_body).
     Returns (204, None) for pure-notification messages.
@@ -161,7 +171,7 @@ def mcp_handle_post(authorization: str, mcp_username: str, body_bytes: bytes) ->
             "jsonrpc": "2.0",
             "error": {"code": -32000, "message": "MCP server not enabled. Set mcp_secret in admin → 服务器配置."},
         }
-    if not _check_auth(authorization):
+    if not _check_auth(authorization, access_token):
         return 401, {
             "jsonrpc": "2.0",
             "error": {"code": -32000, "message": "Unauthorized: invalid or missing Bearer token"},

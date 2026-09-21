@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
-import { ArrowDown, Lock, Search, User as UserIcon } from '@element-plus/icons-vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { ArrowDown, Bell, Loading, Lock, QuestionFilled, Search, Tickets, User as UserIcon } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import HelpCenter from '../HelpCenter/index.vue'
 import mascotImage from '../../../assets/mascot.png'
 import { authState } from '../../../services/authSession'
-import { changePassword, resourceUrl, saveProfile, type User } from '../../../services/personalWorkApi'
+import { activeBackgroundTaskCount, backgroundTasks } from '../../../utils/backgroundTasks'
+import type { MenuId } from '../../menu'
+import { changePassword, fetchWechatAuthStatus, resourceUrl, saveProfile, type User } from '../../../services/personalWorkApi'
 
 const props = defineProps<{
   user: User
@@ -12,15 +15,19 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   logout: []
+  navigate: [value: MenuId]
 }>()
 
 const keyword = ref('')
+const helpCenter = ref<InstanceType<typeof HelpCenter> | null>(null)
 const profileOpen = ref(false)
 const passwordOpen = ref(false)
 const savingProfile = ref(false)
 const savingPassword = ref(false)
 const avatarFileInput = ref<HTMLInputElement | null>(null)
 const avatarPreview = ref('')
+const wechatAuthReminder = ref('')
+let wechatAuthTimer: ReturnType<typeof setInterval> | null = null
 const profileForm = reactive({
   name: '',
   bio: '',
@@ -35,6 +42,7 @@ const passwordForm = reactive({
 })
 const avatarSrc = computed(() => (props.user.avatar_url ? resourceUrl(props.user.avatar_url) : mascotImage))
 const displayName = computed(() => props.user.name || props.user.username)
+const taskElapsed = (startedAt: number) => `${Math.max(1, Math.floor((Date.now() - startedAt) / 1000))} 秒`
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : '操作失败'
@@ -150,6 +158,28 @@ function handleUserCommand(command: 'profile' | 'password' | 'logout') {
   if (command === 'password') openPasswordDialog()
   else openProfileDialog()
 }
+
+async function checkWechatAuthorization() {
+  try {
+    const result = await fetchWechatAuthStatus()
+    wechatAuthReminder.value = result.expired ? result.message : ''
+  } catch {
+    // 通知检查失败不打断正常办公；下一次轮询会重试。
+  }
+}
+
+function openWechatLogin() {
+  window.open('/personal-office-assistant/wechat-article/', '_blank', 'noopener,noreferrer')
+}
+
+onMounted(() => {
+  void checkWechatAuthorization()
+  wechatAuthTimer = setInterval(() => void checkWechatAuthorization(), 5 * 60 * 1000)
+})
+
+onUnmounted(() => {
+  if (wechatAuthTimer) clearInterval(wechatAuthTimer)
+})
 </script>
 
 <template>
@@ -160,16 +190,40 @@ function handleUserCommand(command: 'profile' | 'password' | 'logout') {
       </template>
     </el-input>
     <div class="header-actions">
-      <!-- <el-tooltip content="通知" placement="bottom">
-        <el-badge :value="3" type="danger">
-          <el-button class="header-tool-button" circle size="large" :icon="Bell" aria-label="通知" />
-        </el-badge>
+      <el-popover v-if="activeBackgroundTaskCount" placement="bottom-end" :width="320" trigger="click">
+        <template #reference>
+          <el-badge :value="activeBackgroundTaskCount" type="primary">
+            <el-button class="header-tool-button header-task-button" circle size="large" aria-label="进行中的后台任务">
+              <el-icon class="header-task-spinner"><Loading /></el-icon>
+            </el-button>
+          </el-badge>
+        </template>
+        <div class="background-task-popover">
+          <strong>正在执行 {{ activeBackgroundTaskCount }} 项任务</strong>
+          <ul>
+            <li v-for="task in backgroundTasks" :key="task.id"><el-icon><Loading /></el-icon><span>{{ task.label }}</span><em>{{ taskElapsed(task.startedAt) }}</em></li>
+          </ul>
+          <p>切换页面不会中断这些任务。</p>
+        </div>
+      </el-popover>
+      <el-popover v-if="wechatAuthReminder" placement="bottom-end" :width="330" trigger="click">
+        <template #reference>
+          <el-badge is-dot type="danger">
+            <el-button class="header-tool-button" circle size="large" :icon="Bell" aria-label="公众号授权提醒" />
+          </el-badge>
+        </template>
+        <div class="wechat-auth-reminder">
+          <strong>公众号采集需要重新授权</strong>
+          <p>{{ wechatAuthReminder }}</p>
+          <el-button type="primary" size="small" @click="openWechatLogin">去重新扫码</el-button>
+        </div>
+      </el-popover>
+      <el-tooltip content="工单系统 · 提交产品建议与问题" placement="bottom">
+        <el-button class="header-tool-button" circle size="large" :icon="Tickets" aria-label="工单系统" @click="emit('navigate', 'workorder')" />
       </el-tooltip>
-      <el-tooltip content="邮件" placement="bottom">
-        <el-badge :value="6" type="danger">
-          <el-button class="header-tool-button" circle size="large" :icon="MessageBox" aria-label="邮件" />
-        </el-badge>
-      </el-tooltip> -->
+      <el-tooltip content="帮助中心" placement="bottom">
+        <el-button class="header-tool-button" circle size="large" :icon="QuestionFilled" aria-label="帮助中心" @click="helpCenter?.show()" />
+      </el-tooltip>
       <el-tooltip content="账户菜单" placement="bottom">
         <el-dropdown trigger="click" @command="handleUserCommand">
           <button class="header-user-button" type="button" aria-haspopup="menu">
@@ -249,5 +303,7 @@ function handleUserCommand(command: 'profile' | 'password' | 'logout') {
         </div>
       </div>
     </el-dialog>
+
+    <HelpCenter ref="helpCenter" @navigate="emit('navigate', $event)" />
   </header>
 </template>

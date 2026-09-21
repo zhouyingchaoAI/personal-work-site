@@ -22,15 +22,47 @@ def save_diary(payload, username):
     diary_dir.mkdir(parents=True, exist_ok=True)
     path = diary_dir / f"{date_str}.json"
     now = datetime.now().isoformat(timespec="seconds")
-    data = {
-        "date": date_str,
-        "today_work": str(payload.get("today_work", "") or "").strip(),
-        "tomorrow_plan": str(payload.get("tomorrow_plan", "") or "").strip(),
-        "thoughts": str(payload.get("thoughts", "") or "").strip(),
-        "updated_at": now,
+    # Skills (especially OpenClaw / WeChat) often save one part of a diary per
+    # message.  Treat these writes as patches: omitted or blank placeholder
+    # fields must not erase an earlier part of the same day's entry.  The web
+    # form sends replace=true because it edits the complete record and needs to
+    # retain the ability to intentionally clear a field.
+    old = read_json_lenient(path) if path.exists() else {}
+    replace = bool(payload.get("replace"))
+    clear_fields = {
+        str(field).strip()
+        for field in (payload.get("clear_fields") or [])
+        if str(field).strip() in {"today_work", "tomorrow_plan", "thoughts"}
+    }
+
+    data = {"date": date_str, "updated_at": now}
+    for field in ("today_work", "tomorrow_plan", "thoughts"):
+        incoming = str(payload.get(field, "") or "").strip()
+        if replace or field in clear_fields or incoming:
+            data[field] = incoming
+        else:
+            data[field] = str(old.get(field, "") or "").strip()
+    # 日报可同时关联多个项目，供每个项目的成员时间线汇总同一条日报。
+    # 保留 project_id 首项以兼容旧客户端和既有数据。
+    project_source = payload.get("project_ids") if (replace or "project_ids" in payload) else old.get("project_ids")
+    if project_source is None:
+        project_source = [payload.get("project_id", "")] if (replace or "project_id" in payload) else [old.get("project_id", "")]
+    project_ids = []
+    for project_id in project_source if isinstance(project_source, list) else [project_source]:
+        project_id = str(project_id or "").strip()
+        if project_id and project_id not in project_ids:
+            project_ids.append(project_id)
+    data["project_ids"] = project_ids
+    data["project_id"] = project_ids[0] if project_ids else ""
+    # 项目日记以项目 ID 为键保存，避免同一天参与多个项目时内容混在日常工作里。
+    note_source = payload.get("project_notes") if (replace or "project_notes" in payload) else old.get("project_notes", {})
+    note_source = note_source if isinstance(note_source, dict) else {}
+    data["project_notes"] = {
+        project_id: str(note_source.get(project_id, "") or "").strip()
+        for project_id in project_ids
+        if str(note_source.get(project_id, "") or "").strip()
     }
     if path.exists():
-        old = read_json_lenient(path)
         data["created_at"] = old.get("created_at", now)
     else:
         data["created_at"] = now
@@ -44,7 +76,11 @@ def get_diary(date_str, username):
     path = user_diary_dir(username) / f"{date_str}.json"
     if not path.exists():
         return {"ok": True, "diary": None}
-    return {"ok": True, "diary": read_json_lenient(path)}
+    diary = read_json_lenient(path)
+    if "project_ids" not in diary:
+        diary["project_ids"] = [diary["project_id"]] if diary.get("project_id") else []
+    diary["project_notes"] = diary.get("project_notes") if isinstance(diary.get("project_notes"), dict) else {}
+    return {"ok": True, "diary": diary}
 
 
 def list_diaries(payload, username):
@@ -64,7 +100,8 @@ def list_diaries(payload, username):
                 continue
             if end and date > end:
                 continue
-            full_text = "\n".join(str(d.get(k, "") or "") for k in ("today_work", "tomorrow_plan", "thoughts"))
+            project_notes = d.get("project_notes") if isinstance(d.get("project_notes"), dict) else {}
+            full_text = "\n".join([*(str(d.get(k, "") or "") for k in ("today_work", "tomorrow_plan", "thoughts")), *(str(value or "") for value in project_notes.values())])
             if keyword and keyword not in full_text.lower() and keyword not in date.lower():
                 continue
             items.append({
@@ -72,6 +109,9 @@ def list_diaries(payload, username):
                 "today_work": d.get("today_work", ""),
                 "tomorrow_plan": d.get("tomorrow_plan", ""),
                 "thoughts": d.get("thoughts", ""),
+                "project_id": d.get("project_id", ""),
+                "project_ids": d.get("project_ids") or ([d.get("project_id")] if d.get("project_id") else []),
+                "project_notes": project_notes,
                 "today_work_preview": d.get("today_work", "")[:120],
                 "created_at": d.get("created_at", ""),
                 "updated_at": d.get("updated_at", ""),
@@ -100,7 +140,7 @@ DIARY_SUMMARY_MAX_CHARS = 24000
 def _diary_chat_completion(settings, messages, temperature=0.3, timeout=60, retries=1):
     """调用 OpenAI 兼容 /v1/chat/completions，失败重试 retries 次。返回 message 文本。"""
     body = json.dumps(
-        {"model": settings["model"], "messages": messages, "temperature": temperature},
+        assistant_generation_payload(settings, {"model": settings["model"], "messages": messages, "temperature": temperature}),
         ensure_ascii=False,
     ).encode("utf-8")
     last_exc = None

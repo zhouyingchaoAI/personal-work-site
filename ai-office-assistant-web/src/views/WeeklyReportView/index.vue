@@ -4,8 +4,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { Calendar, Delete, Document, Download, EditPen, FullScreen, Setting, Upload, View } from '@element-plus/icons-vue'
 import IconTextButton from '../../components/IconTextButton/index.vue'
+import AiWritingStyleSelect from '../../components/AiWritingStyleSelect/index.vue'
+import AiPolishButton from '../../components/AiPolishButton/index.vue'
+import ContentAssistDialog from '../../components/ContentAssistDialog/index.vue'
 import weeklyEmptyPlaceholder from '../../assets/weekly-empty-placeholder.png'
 import { authState, defaultOptimizePrompt } from '../../services/authSession'
+import { buildOptimizePrompt, extraOptimizePrompt, getSavedStylePrompt, saveStylePrompt, writingStyle, writingStyleInstruction, type AiWritingStyle } from '../../utils/aiWritingStyle'
 import { createMailSendConfirmMessage } from '../../utils/mailSendConfirm'
 import { parseMailRecipients, serializeMailRecipientEmails, serializeMailRecipients, type MailRecipientField } from '../../utils/mailRecipients'
 import {
@@ -17,6 +21,7 @@ import {
   getMailConfig,
   getReports,
   getWeeklyPrefill,
+  listProjects,
   listDiaries,
   optimizeText,
   redirectToLoginOnUnauthorized,
@@ -29,6 +34,7 @@ import {
   type ReportFile,
   type SendMailPayload,
   type WeeklyRowPayload,
+  type Project,
 } from '../../services/personalWorkApi'
 import './index.scss'
 
@@ -37,6 +43,7 @@ type WeeklyTabId = 'edit' | 'mail' | 'history'
 type Tone = 'blue' | 'green' | 'orange' | 'violet'
 type RowField = keyof WeeklyRowPayload
 type WeeklyRowsBySection = Record<SectionId, WeeklyRowPayload[]>
+type ExcludedProjectIdsBySection = Record<SectionId, Set<string>>
 
 interface WeeklyRow extends WeeklyRowPayload {
   id: number
@@ -144,6 +151,11 @@ const isReportDirty = ref(true)
 const previewSource = ref<'instant' | 'generated'>('instant')
 const initialized = ref(false)
 const fieldOptimizing = ref<RowField[]>([])
+const activeOptimizeField = ref<RowField | null>(null)
+const summaryDialogVisible = ref(false)
+const summaryTargetField = ref<EditField | null>(null)
+const draggingRowId = ref<number | null>(null)
+const dragTarget = ref<{ rowId: number; placeAfter: boolean } | null>(null)
 
 const loading = reactive({
   init: false,
@@ -192,9 +204,11 @@ const fieldOptimizePreview = reactive<Record<RowField, FieldOptimizePreview | nu
 })
 const promptEditor = ref<RowField | ''>('')
 const promptDraft = ref('')
+const compareRefinePrompt = ref('')
 const historyPanelOpen = ref(false)
 const attachmentPreviewOpen = ref(false)
 const mailBodyPreviewOpen = ref(false)
+const mailBodyEditorRef = ref<HTMLElement | null>(null)
 const reportPanelCollapsed = ref(false)
 const historyUploadInput = ref<HTMLInputElement | null>(null)
 const templateUploadInput = ref<HTMLInputElement | null>(null)
@@ -217,6 +231,13 @@ const sections = ref<WeeklySection[]>([
   { id: 'follow', title: '二、重点工作跟进', subtitle: '记录进展和困难', emptyAction: '新增一条跟进', rows: [] },
   { id: 'next', title: '三、下周工作计划', subtitle: '安排后续计划', emptyAction: '新增一条计划', rows: [] },
 ])
+const projectOptions = ref<Project[]>([])
+const selectedProjectId = ref('')
+const excludedProjectIdsBySection = reactive<ExcludedProjectIdsBySection>({
+  summary: new Set<string>(),
+  follow: new Set<string>(),
+  next: new Set<string>(),
+})
 
 const activeWeeklyTab = computed<WeeklyTabId>(() => {
   return activeStep.value === 2 ? 'mail' : 'edit'
@@ -245,6 +266,14 @@ const periodValue = computed(() => {
 const draftStorageKey = computed(() =>
   authState.user?.username ? `personalWorkSite.formDraft.v2:${authState.user.username}` : '',
 )
+const excludedProjectTaskStorageKey = computed(() =>
+  authState.user?.username && weeklyPeriod.start && weeklyPeriod.end
+    ? `personalWorkSite.weeklyExcludedProjects.v1:${authState.user.username}:${weeklyPeriod.start}:${weeklyPeriod.end}`
+    : '',
+)
+const pendingAgentDraftKey = computed(() =>
+  authState.user?.username ? `personalWorkSite.pendingWeeklyAgentDraft:${authState.user.username}` : '',
+)
 const nextActionText = computed(() => {
   if (activeStep.value === 1) return loading.generate ? '正在生成附件' : '生成附件并进入邮件发送'
   return loading.send ? '发送中' : '发送'
@@ -266,12 +295,20 @@ const editingStateOptions = computed(() => {
   const current = editForm[stateField.key].trim()
   return current && !options.includes(current) ? [current, ...options] : options
 })
-const primaryOptimizePreview = computed(() => {
-  const field = primaryTextEditingField.value
-  return field ? fieldOptimizePreview[field.key] : null
+const activeOptimizePreview = computed(() => activeOptimizeField.value ? fieldOptimizePreview[activeOptimizeField.value] : null)
+const activeOptimizeEditField = computed(() => activeOptimizeField.value ? editingFields.value.find((field) => field.key === activeOptimizeField.value) || null : null)
+const optimizeDialogVisible = computed({
+  get: () => !!activeOptimizePreview.value && !!activeOptimizeEditField.value,
+  set: (visible: boolean) => {
+    if (!visible && activeOptimizeField.value) {
+      fieldOptimizePreview[activeOptimizeField.value] = null
+      activeOptimizeField.value = null
+    }
+  },
 })
 const currentPromptField = computed(() => editingFields.value.find((field) => field.key === promptEditor.value))
 const promptDialogTitle = computed(() => (currentPromptField.value ? `${currentPromptField.value.label}提示词` : '修改提示词'))
+const stylePromptPreview = computed(() => buildOptimizePrompt(writingStyle.value))
 const promptDialogVisible = computed({
   get: () => Boolean(promptEditor.value),
   set: (visible: boolean) => {
@@ -292,15 +329,66 @@ const periodRange = computed<string[]>({
 const toRecipients = computed({
   get: () => parseMailRecipients(mailDraft.to, 'to'),
   set: (value: string[]) => {
-    mailDraft.to = serializeMailRecipients(value, 'to')
+    mailDraft.to = serializeMailRecipients([...parseMailRecipients(mailDraft.to, 'to'), ...value], 'to')
   },
 })
 const ccRecipients = computed({
   get: () => parseMailRecipients(mailDraft.cc, 'cc'),
   set: (value: string[]) => {
-    mailDraft.cc = serializeMailRecipients(value, 'cc')
+    mailDraft.cc = serializeMailRecipients([...parseMailRecipients(mailDraft.cc, 'cc'), ...value], 'cc')
   },
 })
+const recipientEditor = reactive({ visible: false, field: 'to' as MailRecipientField, original: '', value: '' })
+
+function removeRecipient(field: MailRecipientField, recipient: string) {
+  const current = field === 'to' ? mailDraft.to : mailDraft.cc
+  const next = parseMailRecipients(current, field).filter((item) => item !== recipient)
+  if (field === 'to') mailDraft.to = serializeMailRecipients(next, field)
+  else mailDraft.cc = serializeMailRecipients(next, field)
+}
+
+function openRecipientEditor(field: MailRecipientField, recipient: string) {
+  recipientEditor.field = field
+  recipientEditor.original = recipient
+  recipientEditor.value = recipient
+  recipientEditor.visible = true
+}
+
+function handleRecipientTagMouseDown(event: MouseEvent, field: MailRecipientField) {
+  const target = event.target as HTMLElement | null
+  if (!target || target.closest('.el-tag__close')) return
+  const tag = target.closest<HTMLElement>('.el-tag')
+  const recipient = tag?.textContent?.trim() || ''
+  if (!parseMailRecipients(field === 'to' ? mailDraft.to : mailDraft.cc, field).includes(recipient)) return
+  event.preventDefault()
+  event.stopPropagation()
+  openRecipientEditor(field, recipient)
+}
+
+function saveRecipientEdit() {
+  const value = recipientEditor.value.trim()
+  if (!value || !parseMailRecipients(value, recipientEditor.field).length) {
+    ElMessage.warning('请输入有效的邮箱地址')
+    return
+  }
+  const current = recipientEditor.field === 'to' ? mailDraft.to : mailDraft.cc
+  const next = parseMailRecipients(current, recipientEditor.field).map((item) => item === recipientEditor.original ? value : item)
+  if (recipientEditor.field === 'to') mailDraft.to = serializeMailRecipients(next, recipientEditor.field)
+  else mailDraft.cc = serializeMailRecipients(next, recipientEditor.field)
+  recipientEditor.visible = false
+}
+
+function openMailBodyPreview() {
+  // el-select 在 allow-create 状态下失焦时会进行一次内部值同步；打开全屏
+  // 对话框不应影响用户已经确认的收件人或抄送人。
+  const currentTo = mailDraft.to
+  const currentCc = mailDraft.cc
+  mailBodyPreviewOpen.value = true
+  void nextTick(() => {
+    if (currentTo && !mailDraft.to) mailDraft.to = currentTo
+    if (currentCc && !mailDraft.cc) mailDraft.cc = currentCc
+  })
+}
 const weeklyTemplateDownloadUrl = computed(() => resourceUrl(weeklyTemplate.value?.download_url || '/download-template?kind=weekly'))
 
 watch(
@@ -403,16 +491,20 @@ function formatPeriodDate(value: string) {
   return year && month && day ? `${year}.${month}.${day}` : value
 }
 
-function setDefaultWeeklyDates() {
-  const today = new Date()
-  const day = today.getDay() || 7
-  const monday = new Date(today)
+function weeklyReportingRange(reference = new Date()) {
+  const weekday = reference.getDay()
+  const monday = new Date(reference)
   monday.setHours(0, 0, 0, 0)
-  monday.setDate(today.getDate() - day + 1)
+  // 周一发送周报时，默认覆盖刚结束的完整工作周，而不是刚开始的未来日期。
+  const daysSinceMonday = weekday === 0 ? 6 : weekday - 1
+  monday.setDate(monday.getDate() - daysSinceMonday - (weekday === 1 ? 7 : 0))
   const friday = new Date(monday)
   friday.setDate(monday.getDate() + 4)
-  weeklyPeriod.start = toDateInputValue(monday)
-  weeklyPeriod.end = toDateInputValue(friday)
+  return { start: toDateInputValue(monday), end: toDateInputValue(friday) }
+}
+
+function setDefaultWeeklyDates() {
+  Object.assign(weeklyPeriod, weeklyReportingRange())
 }
 
 function findSection(sectionId: SectionId) {
@@ -443,8 +535,17 @@ function canOptimizeField(field: EditField) {
   return field.key !== 'category'
 }
 
+function promptOwner() {
+  return authState.user?.username || 'guest'
+}
+
+function rawOptimizePrompt(fieldKey: RowField, style: AiWritingStyle = writingStyle.value) {
+  const saved = getSavedStylePrompt(promptOwner(), 'weekly', fieldKey, style)
+  return extraOptimizePrompt(saved === null ? (promptForm[fieldKey] || defaultOptimizePrompt()) : saved)
+}
+
 function optimizePrompt(fieldKey: RowField) {
-  return promptForm[fieldKey] || defaultOptimizePrompt()
+  return buildOptimizePrompt(writingStyle.value, rawOptimizePrompt(fieldKey))
 }
 
 function isRequiredField(field: EditField) {
@@ -460,6 +561,28 @@ function applyRowsBySection(rows: WeeklyRowsBySection) {
   applyRows('follow', rows.follow)
   applyRows('next', rows.next)
   syncActiveSectionToFirstFilled()
+}
+
+// 项目成员打开周报时，三个固定区段都会预置所属项目。
+// 只补齐尚未出现的分类，不覆盖历史周报、日记总结或用户已填写的内容。
+function syncMemberProjectsToWeeklyRows(projects: Project[]) {
+  for (const sectionId of ['summary', 'follow', 'next'] as SectionId[]) {
+    const section = findSection(sectionId)
+    const projectRows = section.rows
+    for (const project of projects) {
+      if (excludedProjectIdsBySection[sectionId].has(project.id)) continue
+      if (projectRows.find((row) => row.category === project.name)) continue
+      projectRows.push(createRow(sectionId, { category: project.name }))
+    }
+  }
+}
+
+async function loadMemberProjects() {
+  try {
+    projectOptions.value = (await listProjects()).projects.filter((project) => project.status === 'active')
+  } catch {
+    projectOptions.value = []
+  }
 }
 
 function sectionDisplayTitle(title: string) {
@@ -498,6 +621,54 @@ function rowPayload(sectionId: SectionId, row: WeeklyRow) {
 
 function cleanRows(sectionId: SectionId) {
   return findSection(sectionId).rows.map((row) => rowPayload(sectionId, row)).filter((row) => Object.keys(row).length)
+}
+
+function currentWeeklyContent(): WeeklyRowsBySection {
+  return {
+    summary: cleanRows('summary'),
+    follow: cleanRows('follow'),
+    next: cleanRows('next'),
+  }
+}
+
+function serializeExcludedProjectIds() {
+  return {
+    summary: [...excludedProjectIdsBySection.summary],
+    follow: [...excludedProjectIdsBySection.follow],
+    next: [...excludedProjectIdsBySection.next],
+  }
+}
+
+function readStoredExcludedProjectIds(): Partial<Record<SectionId, string[]>> {
+  if (!excludedProjectTaskStorageKey.value) return {}
+  try {
+    return JSON.parse(localStorage.getItem(excludedProjectTaskStorageKey.value) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function persistExcludedProjectIds() {
+  if (!excludedProjectTaskStorageKey.value) return
+  localStorage.setItem(excludedProjectTaskStorageKey.value, JSON.stringify(serializeExcludedProjectIds()))
+}
+
+function restoreExcludedProjectIds(value?: Partial<Record<SectionId, string[]>>) {
+  const stored = readStoredExcludedProjectIds()
+  for (const sectionId of ['summary', 'follow', 'next'] as SectionId[]) {
+    excludedProjectIdsBySection[sectionId].clear()
+    for (const id of [...(stored[sectionId] || []), ...(value?.[sectionId] || [])]) {
+      if (typeof id === 'string' && id) excludedProjectIdsBySection[sectionId].add(id)
+    }
+  }
+}
+
+function rememberRemovedProjectTask(sectionId: SectionId, row: WeeklyRow) {
+  const project = projectOptions.value.find((item) => item.name === String(row.category || '').trim())
+  if (project) {
+    excludedProjectIdsBySection[sectionId].add(project.id)
+    persistExcludedProjectIds()
+  }
 }
 
 function rowState(sectionId: SectionId, row: WeeklyRow) {
@@ -657,10 +828,12 @@ function handleEditorOutsidePointer(event: PointerEvent) {
 function handleEditFieldInput(fieldKey: RowField) {
   if (!fieldOptimizePreview[fieldKey]) return
   fieldOptimizePreview[fieldKey] = null
+  if (activeOptimizeField.value === fieldKey) activeOptimizeField.value = null
 }
 
 function undoOptimizePreview(field: EditField) {
   fieldOptimizePreview[field.key] = null
+  if (activeOptimizeField.value === field.key) activeOptimizeField.value = null
 }
 
 function acceptOptimizePreview(field: EditField) {
@@ -668,25 +841,77 @@ function acceptOptimizePreview(field: EditField) {
   if (!preview) return
   editForm[field.key] = (preview.edited || preview.suggestion).trim()
   fieldOptimizePreview[field.key] = null
+  if (activeOptimizeField.value === field.key) activeOptimizeField.value = null
 }
 
 function openPromptEditor(field: EditField) {
   promptEditor.value = field.key
-  promptDraft.value = optimizePrompt(field.key)
+  promptDraft.value = rawOptimizePrompt(field.key)
+}
+
+function syncPromptDraftForStyle(style: AiWritingStyle) {
+  if (promptEditor.value) promptDraft.value = rawOptimizePrompt(promptEditor.value, style)
 }
 
 function savePromptEditor() {
   if (!promptEditor.value) return
-  promptForm[promptEditor.value] = promptDraft.value.trim()
+  saveStylePrompt(promptOwner(), 'weekly', promptEditor.value, writingStyle.value, promptDraft.value)
   promptEditor.value = ''
   ElMessage.success('提示词已更新')
 }
 
 function removeRow(section: WeeklySection, rowId: number) {
+  const row = section.rows.find((item) => item.id === rowId)
+  if (row) rememberRemovedProjectTask(section.id, row)
   section.rows = section.rows.filter((row) => row.id !== rowId)
   if (editing.value?.rowId === rowId) editing.value = null
   markReportDirty()
   saveWeeklyDraft()
+  ElMessage.success('已删除该任务，后续生成的邮件正文和附件将同步移除')
+}
+
+function handleRowDragStart(event: DragEvent, rowId: number) {
+  commitEditSilently()
+  draggingRowId.value = rowId
+  dragTarget.value = null
+  event.dataTransfer?.setData('text/plain', String(rowId))
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+}
+
+function handleRowDragOver(event: DragEvent, rowId: number) {
+  if (!draggingRowId.value || draggingRowId.value === rowId) return
+  const targetElement = event.currentTarget as HTMLElement
+  dragTarget.value = {
+    rowId,
+    placeAfter: event.clientY > targetElement.getBoundingClientRect().top + targetElement.getBoundingClientRect().height / 2,
+  }
+}
+
+function handleRowDrop(event: DragEvent, section: WeeklySection, targetRowId: number) {
+  event.preventDefault()
+  const sourceRowId = draggingRowId.value ?? Number(event.dataTransfer?.getData('text/plain'))
+  const target = dragTarget.value
+  draggingRowId.value = null
+  dragTarget.value = null
+  if (!sourceRowId || sourceRowId === targetRowId) return
+
+  const sourceIndex = section.rows.findIndex((row) => row.id === sourceRowId)
+  const targetIndex = section.rows.findIndex((row) => row.id === targetRowId)
+  if (sourceIndex < 0 || targetIndex < 0) return
+
+  const [sourceRow] = section.rows.splice(sourceIndex, 1)
+  const currentTargetIndex = section.rows.findIndex((row) => row.id === targetRowId)
+  const placeAfter = target?.rowId === targetRowId
+    ? target.placeAfter
+    : event.clientY > (event.currentTarget as HTMLElement).getBoundingClientRect().top + (event.currentTarget as HTMLElement).getBoundingClientRect().height / 2
+  section.rows.splice(currentTargetIndex + (placeAfter ? 1 : 0), 0, sourceRow)
+  markReportDirty()
+  saveWeeklyDraft()
+}
+
+function handleRowDragEnd() {
+  draggingRowId.value = null
+  dragTarget.value = null
 }
 
 function instantMailSubject() {
@@ -694,8 +919,9 @@ function instantMailSubject() {
 }
 
 function instantMailBody() {
+  const content = currentWeeklyContent()
   const blocks = sections.value.map((section) => {
-    const rows = cleanRows(section.id)
+    const rows = content[section.id]
     const lines = rows.length
       ? rows.map((row, index) => `${index + 1}. ${[row.category, row.content, row.status || row.progress, row.plan || row.difficulty].filter(Boolean).join('｜')}`)
       : ['暂无内容']
@@ -712,8 +938,9 @@ function instantMailHtml() {
 }
 
 function instantSheetHtml() {
+  const content = currentWeeklyContent()
   const blocks = sections.value.map((section) => {
-    const rows = cleanRows(section.id)
+    const rows = content[section.id]
     const body = rows.length
       ? rows.map((row, index) => `<tr><td>${index + 1}</td><td>${textToHtml(row.category || '')}</td><td>${textToHtml(row.content || '')}</td><td>${textToHtml(row.status || row.progress || '')}</td><td>${textToHtml(row.plan || row.difficulty || '')}</td></tr>`).join('')
       : '<tr><td colspan="5">暂无内容</td></tr>'
@@ -751,6 +978,7 @@ function saveWeeklyDraft() {
       summary: cleanRows('summary'),
       follow: cleanRows('follow'),
       next: cleanRows('next'),
+      excludedProjectIds: serializeExcludedProjectIds(),
     },
   }
   localStorage.setItem(draftStorageKey.value, JSON.stringify(draft))
@@ -760,22 +988,39 @@ function restoreWeeklyDraft() {
   if (!draftStorageKey.value) return false
   const raw = localStorage.getItem(draftStorageKey.value)
   if (!raw) return false
-  let draft: { weekly?: { start?: string; end?: string; summary?: WeeklyRowPayload[]; follow?: WeeklyRowPayload[]; next?: WeeklyRowPayload[] } }
+  let draft: { weekly?: { start?: string; end?: string; summary?: WeeklyRowPayload[]; follow?: WeeklyRowPayload[]; next?: WeeklyRowPayload[]; excludedProjectIds?: Partial<Record<SectionId, string[]>> } }
   try {
     draft = JSON.parse(raw)
   } catch {
     return false
   }
   if (!draft.weekly) return false
+  restoreExcludedProjectIds(draft.weekly.excludedProjectIds)
   if (draft.weekly.start) weeklyPeriod.start = draft.weekly.start
   if (draft.weekly.end) weeklyPeriod.end = draft.weekly.end
-  if (![draft.weekly.summary, draft.weekly.follow, draft.weekly.next].some((rows) => rows?.length)) return false
+  const hasRows = [draft.weekly.summary, draft.weekly.follow, draft.weekly.next].some((rows) => rows?.length)
+  const hasRemovedProjectTasks = Object.values(draft.weekly.excludedProjectIds || {}).some((ids) => ids?.length)
+  if (!hasRows && !hasRemovedProjectTasks) return false
   applyRowsBySection({
     summary: draft.weekly.summary || [],
     follow: draft.weekly.follow || [],
     next: draft.weekly.next || [],
   })
   return true
+}
+
+function takePendingAgentDraft() {
+  if (!pendingAgentDraftKey.value) return null
+  const raw = localStorage.getItem(pendingAgentDraftKey.value)
+  if (!raw) return null
+  localStorage.removeItem(pendingAgentDraftKey.value)
+  try {
+    const draft = JSON.parse(raw) as { weekly_summary?: WeeklyRowPayload[]; weekly_follow?: WeeklyRowPayload[]; weekly_next?: WeeklyRowPayload[] }
+    if (![draft.weekly_summary, draft.weekly_follow, draft.weekly_next].some((rows) => Array.isArray(rows) && rows.length)) return null
+    return draft
+  } catch {
+    return null
+  }
 }
 
 async function loadReports() {
@@ -992,13 +1237,7 @@ function diaryPreview(entry: DiaryEntry) {
 }
 
 function summarizeWeekRange(reference: Date) {
-  const day = reference.getDay() || 7
-  const monday = new Date(reference)
-  monday.setHours(0, 0, 0, 0)
-  monday.setDate(reference.getDate() - day + 1)
-  const friday = new Date(monday)
-  friday.setDate(monday.getDate() + 4)
-  return { start: toDateInputValue(monday), end: toDateInputValue(friday) }
+  return weeklyReportingRange(reference)
 }
 
 // 第一步：打开弹框，默认沿用当前周报时段（没有则取本周），加载日记列表并默认全选。
@@ -1103,12 +1342,14 @@ async function generateReport() {
   refreshInstantPreview()
   loading.generate = true
   try {
+    const content = currentWeeklyContent()
     const result = await generateWeekly({
       kind: 'weekly',
       period: periodValue.value,
-      weekly_summary: cleanRows('summary'),
-      weekly_follow: cleanRows('follow'),
-      weekly_next: cleanRows('next'),
+      weekly_summary: content.summary,
+      weekly_follow: content.follow,
+      weekly_next: content.next,
+      project_id: selectedProjectId.value || undefined,
     })
     selectedReport.value = result.file
     applyGeneratedDraft(result.draft)
@@ -1142,6 +1383,8 @@ async function optimizeEditField(field: EditField) {
       suggestion: result.text || original,
       edited: result.text || original,
     }
+    compareRefinePrompt.value = rawOptimizePrompt(field.key)
+    activeOptimizeField.value = field.key
     if (result.warning) ElMessage.warning(result.warning)
     else ElMessage.success('已生成优化结果，可修改后应用')
   } catch (error) {
@@ -1149,6 +1392,39 @@ async function optimizeEditField(field: EditField) {
   } finally {
     fieldOptimizing.value = fieldOptimizing.value.filter((key) => key !== field.key)
   }
+}
+
+async function refineOptimizePreview(field: EditField) {
+  const preview = fieldOptimizePreview[field.key]
+  const content = preview?.edited.trim()
+  if (!preview || !content || fieldOptimizing.value.includes(field.key)) return
+  fieldOptimizing.value = [...fieldOptimizing.value, field.key]
+  try {
+    const prompt = buildOptimizePrompt(writingStyle.value, extraOptimizePrompt(compareRefinePrompt.value))
+    const result = await optimizeText(content, prompt)
+    preview.suggestion = result.text || content
+    preview.edited = result.text || content
+    if (result.warning) ElMessage.warning(result.warning)
+    else ElMessage.success('已按新要求再次润色')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '再次润色失败')
+  } finally {
+    fieldOptimizing.value = fieldOptimizing.value.filter((key) => key !== field.key)
+  }
+}
+
+function openSummaryDialog(field: EditField) {
+  if (!canOptimizeField(field)) return
+  summaryTargetField.value = field
+  summaryDialogVisible.value = true
+}
+
+function applySummaryToEditField(content: string) {
+  const field = summaryTargetField.value
+  if (!field) return
+  editForm[field.key] = content
+  handleEditFieldInput(field.key)
+  summaryTargetField.value = null
 }
 
 function clearSendReview() {
@@ -1168,7 +1444,23 @@ function handleRecipientPaste(event: Event, field: MailRecipientField) {
   clearSendReview()
 }
 
+function handleMailBodyInput(event: Event) {
+  // 输入期间不回写 v-html，否则 Vue 重绘编辑区会导致光标跳转。
+  const editor = event.currentTarget as HTMLElement
+  mailDraft.body = editor.innerText
+  clearSendReview()
+}
+
+function commitMailBodyEdits() {
+  const editor = mailBodyEditorRef.value
+  if (!editor) return
+  const html = editor.innerHTML
+  if (mailDraft.body_html !== html) mailDraft.body_html = html
+  mailDraft.body = editor.innerText
+}
+
 function buildSendPayload(): SendMailPayload {
+  commitMailBodyEdits()
   return {
     to: serializeMailRecipientEmails(mailDraft.to, 'to'),
     cc: serializeMailRecipientEmails(mailDraft.cc, 'cc'),
@@ -1208,7 +1500,8 @@ async function switchWeeklyTab(tab: WeeklyTabId) {
   if (activeWeeklyTab.value === tab) return
   commitEditSilently(tab === 'edit')
   if (tab === 'mail') {
-    if (isReportDirty.value || !mailDraft.body) refreshInstantPreview()
+    // 直接进入邮件页时不创建临时预览；用户须先在左侧选定实际待发送的报告。
+    if (selectedReport.value && (isReportDirty.value || !mailDraft.body)) refreshInstantPreview()
     await loadWeeklyMailRecipients()
   }
   activeStep.value = stepForWeeklyTab(tab)
@@ -1344,6 +1637,7 @@ async function initializeFromDiarySummary(pending: NonNullable<ReturnType<typeof
     weeklyPeriod.start = pending.start
     weeklyPeriod.end = pending.end
   }
+  restoreExcludedProjectIds()
   applyRows('summary', pending.rows?.summary || [])
   applyRows('next', pending.rows?.next || [])
   applyRows('follow', [])
@@ -1368,13 +1662,36 @@ async function initializeFromDiarySummary(pending: NonNullable<ReturnType<typeof
 }
 
 async function initializeWeekly() {
+  const projectsTask = loadMemberProjects()
   const pending = takePendingDiarySummary()
   if (pending?.rows) {
     await initializeFromDiarySummary(pending)
+    await projectsTask
+    syncMemberProjectsToWeeklyRows(projectOptions.value)
+    return
+  }
+  const agentDraft = takePendingAgentDraft()
+  if (agentDraft) {
+    setDefaultWeeklyDates()
+    restoreExcludedProjectIds()
+    applyRowsBySection({
+      summary: agentDraft.weekly_summary || [],
+      follow: agentDraft.weekly_follow || [],
+      next: agentDraft.weekly_next || [],
+    })
+    activeStep.value = 1
+    initialized.value = true
+    markReportDirty()
+    saveWeeklyDraft()
+    setStatus('已带入犇犇生成的周报草稿，请核对内容后生成附件并进入邮件发送。', 'ok')
+    await loadReports()
+    await projectsTask
+    syncMemberProjectsToWeeklyRows(projectOptions.value)
     return
   }
   loading.init = true
   setDefaultWeeklyDates()
+  restoreExcludedProjectIds()
   try {
     const restored = restoreWeeklyDraft()
     const latestWeekly = await loadReports()
@@ -1391,6 +1708,8 @@ async function initializeWeekly() {
   } catch (error) {
     setStatus(error instanceof Error ? error.message : '周报助手初始化失败', 'error')
   } finally {
+    await projectsTask
+    syncMemberProjectsToWeeklyRows(projectOptions.value)
     initialized.value = true
     loading.init = false
   }
@@ -1402,11 +1721,6 @@ onMounted(initializeWeekly)
 <template>
   <section class="weekly-main weekly-main--wide" @pointerdown.capture="handleEditorOutsidePointer">
     <header ref="flowTop" class="weekly-page-head">
-      <div class="weekly-title-block">
-        <h1>周报助手</h1>
-        <p>填写周报、发送邮件、管理历史周报</p>
-      </div>
-
       <nav class="weekly-tabs" aria-label="周报助手功能页签">
         <button
           v-for="tab in weeklyTabs"
@@ -1436,6 +1750,9 @@ onMounted(initializeWeekly)
               end-placeholder="结束日期"
             />
           </el-config-provider>
+          <el-select v-model="selectedProjectId" class="weekly-project-select" clearable placeholder="关联项目（可选）">
+            <el-option v-for="project in projectOptions" :key="project.id" :label="project.name" :value="project.id" />
+          </el-select>
         </div>
 
         <div class="toolbar-actions">
@@ -1467,7 +1784,7 @@ onMounted(initializeWeekly)
           <header>
             <div>
               <h2>{{ sectionDisplayTitle(activeSection.title) }}</h2>
-              <span>{{ cleanRows(activeSection.id).length }} 条</span>
+              <span>{{ cleanRows(activeSection.id).length }} 条 · 拖到蓝色插入线处调整主次顺序</span>
             </div>
             <IconTextButton icon="plus" @click="beginAdd(activeSection)">新增</IconTextButton>
           </header>
@@ -1477,7 +1794,21 @@ onMounted(initializeWeekly)
               v-for="(row, index) in activeSection.rows"
               :key="row.id"
               type="button"
-              :class="['entry-item', { selected: isEditingRow(activeSection.id, row.id) }]"
+              draggable="true"
+              :class="[
+                'entry-item',
+                {
+                  selected: isEditingRow(activeSection.id, row.id),
+                  dragging: draggingRowId === row.id,
+                  'drop-before': dragTarget?.rowId === row.id && !dragTarget.placeAfter,
+                  'drop-after': dragTarget?.rowId === row.id && dragTarget.placeAfter,
+                },
+              ]"
+              title="拖动条目可调整排序"
+              @dragstart="handleRowDragStart($event, row.id)"
+              @dragover.prevent="handleRowDragOver($event, row.id)"
+              @drop="handleRowDrop($event, activeSection, row.id)"
+              @dragend="handleRowDragEnd"
               @click="beginEdit(activeSection.id, row)"
             >
               <span :class="['entry-icon', row.tone]">{{ index + 1 }}</span>
@@ -1539,11 +1870,9 @@ onMounted(initializeWeekly)
               <label v-if="primaryTextEditingField" class="detail-field detail-field--content">
                 <span>{{ primaryTextEditingField.label }}</span>
                 <div class="detail-field-tools ai-field-actions">
+                  <AiPolishButton :loading="fieldOptimizing.includes(primaryTextEditingField.key)" @polish="optimizeEditField(primaryTextEditingField)" />
                   <button class="ai-prompt-button" type="button" @click="openPromptEditor(primaryTextEditingField)">提示词</button>
-                  <button class="ai-polish-button" type="button" :disabled="fieldOptimizing.includes(primaryTextEditingField.key)" @click="optimizeEditField(primaryTextEditingField)">
-                    <span aria-hidden="true">✦</span>
-                    {{ fieldOptimizing.includes(primaryTextEditingField.key) ? '润色中' : 'AI 润色' }}
-                  </button>
+                  <button class="ai-summary-button" type="button" @click="openSummaryDialog(primaryTextEditingField)">AI 总结</button>
                 </div>
                 <el-input
                   v-model="editForm[primaryTextEditingField.key]"
@@ -1555,34 +1884,15 @@ onMounted(initializeWeekly)
                 />
               </label>
 
-              <div v-if="primaryTextEditingField && primaryOptimizePreview" class="ai-compare-card">
-                <div class="ai-compare-grid">
-                  <section>
-                    <span>原内容</span>
-                    <p>{{ primaryOptimizePreview.original }}</p>
-                  </section>
-                  <section>
-                    <span>优化结果（可编辑）</span>
-                    <textarea v-model="primaryOptimizePreview.edited" class="ai-compare-editor" rows="5" />
-                  </section>
-                </div>
-                <div class="ai-compare-actions">
-                  <button type="button" @click="undoOptimizePreview(primaryTextEditingField)">忽略</button>
-                  <button type="button" class="primary" @click="acceptOptimizePreview(primaryTextEditingField)">应用结果</button>
-                </div>
-              </div>
-
               <details class="detail-extra">
                 <summary>补充信息（后续计划、当前进展说明、困难与求助）</summary>
                 <div v-for="field in extraEditingFields" :key="field.key" class="detail-extra-field">
                   <label class="detail-field">
                     <span>{{ field.label }}</span>
                     <div v-if="canOptimizeField(field)" class="detail-field-tools ai-field-actions">
+                      <AiPolishButton :loading="fieldOptimizing.includes(field.key)" @polish="optimizeEditField(field)" />
                       <button class="ai-prompt-button" type="button" @click="openPromptEditor(field)">提示词</button>
-                      <button class="ai-polish-button" type="button" :disabled="fieldOptimizing.includes(field.key)" @click="optimizeEditField(field)">
-                        <span aria-hidden="true">✦</span>
-                        {{ fieldOptimizing.includes(field.key) ? '润色中' : 'AI 润色' }}
-                      </button>
+                      <button class="ai-summary-button" type="button" @click="openSummaryDialog(field)">AI 总结</button>
                     </div>
                     <el-input
                       v-model="editForm[field.key]"
@@ -1591,22 +1901,6 @@ onMounted(initializeWeekly)
                       @input="handleEditFieldInput(field.key)"
                     />
                   </label>
-                  <div v-if="fieldOptimizePreview[field.key]" class="ai-compare-card ai-compare-card--compact">
-                    <div class="ai-compare-grid">
-                      <section>
-                        <span>原内容</span>
-                        <p>{{ fieldOptimizePreview[field.key]?.original }}</p>
-                      </section>
-                      <section>
-                        <span>优化结果（可编辑）</span>
-                        <textarea v-model="fieldOptimizePreview[field.key]!.edited" class="ai-compare-editor" rows="4" />
-                      </section>
-                    </div>
-                    <div class="ai-compare-actions">
-                      <button type="button" @click="undoOptimizePreview(field)">忽略</button>
-                      <button type="button" class="primary" @click="acceptOptimizePreview(field)">应用结果</button>
-                    </div>
-                  </div>
                 </div>
               </details>
             </div>
@@ -1675,6 +1969,11 @@ onMounted(initializeWeekly)
       </aside>
 
       <section class="mail-compose-card">
+        <div v-if="!selectedReport" class="mail-report-empty mail-selection-prompt">
+          <strong>请在左侧列表选择待发送报告</strong>
+          <span>选中报告后将自动带入对应的收件人、主题、正文和附件。</span>
+        </div>
+        <template v-else>
         <div class="mail-row mail-address-row">
           <span>收件人</span>
           <el-select
@@ -1688,8 +1987,12 @@ onMounted(initializeWeekly)
             :max-collapse-tags="3"
             placeholder="添加收件人"
             @paste.capture="handleRecipientPaste($event, 'to')"
+            @remove-tag="removeRecipient('to', $event)"
+            @mousedown.capture="handleRecipientTagMouseDown($event, 'to')"
           >
-            <el-option v-for="item in toRecipients" :key="item" :label="item" :value="item" />
+            <el-option v-for="item in toRecipients" :key="item" :label="item" :value="item">
+              <div class="recipient-option" @mousedown.stop @click.stop="openRecipientEditor('to', item)"><span>{{ item }}</span></div>
+            </el-option>
           </el-select>
         </div>
         <div class="mail-row mail-address-row">
@@ -1705,8 +2008,12 @@ onMounted(initializeWeekly)
             :max-collapse-tags="3"
             placeholder="添加抄送"
             @paste.capture="handleRecipientPaste($event, 'cc')"
+            @remove-tag="removeRecipient('cc', $event)"
+            @mousedown.capture="handleRecipientTagMouseDown($event, 'cc')"
           >
-            <el-option v-for="item in ccRecipients" :key="item" :label="item" :value="item" />
+            <el-option v-for="item in ccRecipients" :key="item" :label="item" :value="item">
+              <div class="recipient-option" @mousedown.stop @click.stop="openRecipientEditor('cc', item)"><span>{{ item }}</span></div>
+            </el-option>
           </el-select>
         </div>
         <div class="mail-row">
@@ -1714,12 +2021,22 @@ onMounted(initializeWeekly)
           <el-input v-model="mailDraft.subject" />
         </div>
         <div class="mail-body-preview-row">
-          <span>邮件正文</span>
+          <span>邮件正文（可编辑）</span>
           <div class="mail-body-preview-wrap">
-            <button class="mail-body-fullscreen" type="button" aria-label="全屏查看邮件正文" @click="mailBodyPreviewOpen = true">
+            <button class="mail-body-fullscreen" type="button" aria-label="全屏预览邮件正文" @mousedown.prevent @click="openMailBodyPreview">
               <el-icon><FullScreen /></el-icon>
             </button>
-            <div class="mail-body-preview" v-html="mailBodyPreviewHtml"></div>
+            <div
+              class="mail-body-preview mail-body-editor"
+              ref="mailBodyEditorRef"
+              contenteditable="true"
+              role="textbox"
+              aria-label="可编辑邮件正文"
+              spellcheck="false"
+              v-html="mailBodyPreviewHtml"
+              @input="handleMailBodyInput"
+              @blur="commitMailBodyEdits"
+            ></div>
           </div>
         </div>
         <div class="mail-attachment-status">
@@ -1738,6 +2055,7 @@ onMounted(initializeWeekly)
           <strong>发送前需处理</strong>
           <span v-for="item in sendBlockers" :key="item">{{ item }}</span>
         </div>
+        </template>
       </section>
 
     </section>
@@ -1849,7 +2167,21 @@ onMounted(initializeWeekly)
       destroy-on-close
       :close-on-click-modal="false"
     >
-      <el-input v-model="promptDraft" type="textarea" :autosize="{ minRows: 5, maxRows: 8 }" />
+      <div class="ai-prompt-style">
+        <div>
+          <strong>当前行文风格</strong>
+          <AiWritingStyleSelect @select="syncPromptDraftForStyle" />
+        </div>
+        <p>{{ writingStyleInstruction(writingStyle) }}</p>
+      </div>
+      <label class="ai-prompt-preview-label">
+        <span>AI 润色提示词（随行文风格自动变化）</span>
+        <el-input :model-value="stylePromptPreview" type="textarea" readonly :autosize="{ minRows: 5, maxRows: 8 }" />
+      </label>
+      <label class="ai-prompt-custom-label">
+        <span>当前风格的补充提示词（永久保存）</span>
+        <el-input v-model="promptDraft" type="textarea" :autosize="{ minRows: 5, maxRows: 8 }" />
+      </label>
       <template #footer>
         <div class="weekly-prompt-actions prompt-dialog-actions">
           <el-button class="prompt-dialog-button" @click="promptEditor = ''">取消</el-button>
@@ -1857,6 +2189,46 @@ onMounted(initializeWeekly)
         </div>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="optimizeDialogVisible"
+      class="weekly-optimize-dialog"
+      title="AI 润色对比"
+      width="min(1080px, 94vw)"
+      append-to-body
+      destroy-on-close
+      :close-on-click-modal="false"
+    >
+      <div v-if="activeOptimizePreview && activeOptimizeEditField" class="ai-compare-card ai-compare-card--dialog">
+        <div class="ai-compare-grid">
+          <section>
+            <span>原内容</span>
+            <p>{{ activeOptimizePreview.original }}</p>
+          </section>
+          <section>
+            <span>优化结果（可编辑）</span>
+            <textarea v-model="activeOptimizePreview.edited" class="ai-compare-editor" rows="14" autofocus />
+          </section>
+        </div>
+        <label class="ai-compare-refine">
+          <span>继续润色要求（基于右侧当前内容，可反复修改）</span>
+          <el-input v-model="compareRefinePrompt" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="例如：更精炼、改为正式官方表达、突出量化成果" />
+        </label>
+        <div class="ai-compare-actions">
+          <button type="button" @click="undoOptimizePreview(activeOptimizeEditField)">忽略</button>
+          <button type="button" :disabled="fieldOptimizing.includes(activeOptimizeEditField.key)" @click="refineOptimizePreview(activeOptimizeEditField)">{{ fieldOptimizing.includes(activeOptimizeEditField.key) ? '润色中' : '再次润色' }}</button>
+          <button type="button" class="primary" @click="acceptOptimizePreview(activeOptimizeEditField)">应用结果</button>
+        </div>
+      </div>
+    </el-dialog>
+
+    <ContentAssistDialog
+      v-model="summaryDialogVisible"
+      :field-label="summaryTargetField?.label || ''"
+      :task-title="editForm.category || summaryTargetField?.label || ''"
+      :initial-content="summaryTargetField ? editForm[summaryTargetField.key] : ''"
+      @apply="applySummaryToEditField"
+    />
 
     <el-dialog
       v-model="mailBodyPreviewOpen"
@@ -1867,6 +2239,11 @@ onMounted(initializeWeekly)
       destroy-on-close
     >
       <div class="mail-body-dialog-preview" v-html="mailBodyPreviewHtml"></div>
+    </el-dialog>
+
+    <el-dialog v-model="recipientEditor.visible" title="编辑邮箱" width="min(440px, 92vw)" append-to-body>
+      <el-input v-model="recipientEditor.value" autofocus @keyup.enter="saveRecipientEdit" />
+      <template #footer><el-button @click="recipientEditor.visible = false">取消</el-button><el-button type="primary" @click="saveRecipientEdit">保存</el-button></template>
     </el-dialog>
 
     <el-dialog

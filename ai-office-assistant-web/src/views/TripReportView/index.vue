@@ -14,7 +14,11 @@ import {
   View,
 } from '@element-plus/icons-vue'
 import IconTextButton from '../../components/IconTextButton/index.vue'
+import AiWritingStyleSelect from '../../components/AiWritingStyleSelect/index.vue'
+import AiPolishButton from '../../components/AiPolishButton/index.vue'
+import ContentAssistDialog from '../../components/ContentAssistDialog/index.vue'
 import { authState, defaultOptimizePrompt } from '../../services/authSession'
+import { buildOptimizePrompt, extraOptimizePrompt, getSavedStylePrompt, saveStylePrompt, writingStyle, writingStyleInstruction, type AiWritingStyle } from '../../utils/aiWritingStyle'
 import { createMailSendConfirmMessage } from '../../utils/mailSendConfirm'
 import { parseMailRecipients, serializeMailRecipientEmails, serializeMailRecipients, type MailRecipientField } from '../../utils/mailRecipients'
 import {
@@ -140,6 +144,7 @@ const reports = ref<ReportFile[]>([])
 const historyPanelOpen = ref(false)
 const attachmentPreviewOpen = ref(false)
 const mailBodyPreviewOpen = ref(false)
+const mailBodyEditorRef = ref<HTMLElement | null>(null)
 const reportPanelCollapsed = ref(false)
 const historyUploadInput = ref<HTMLInputElement | null>(null)
 const templateUploadInput = ref<HTMLInputElement | null>(null)
@@ -148,6 +153,8 @@ const templateFile = ref<File | null>(null)
 const tripTemplate = ref<ReportTemplateItem | null>(null)
 const historyUploadStatus = ref('')
 const activeOptimizeField = ref<TripFieldKey | ''>('')
+const summaryDialogVisible = ref(false)
+const summaryTargetField = ref<TripField | null>(null)
 const promptEditor = ref<TripFieldKey | ''>('')
 const promptDraft = ref('')
 const statusMessage = ref('')
@@ -239,6 +246,7 @@ const nextActionText = computed(() => {
 const stepActionDisabled = computed(() => loading.generate || loading.send)
 const currentPromptField = computed(() => tripGroups.flatMap((group) => group.fields).find((field) => field.key === promptEditor.value))
 const promptDialogTitle = computed(() => (currentPromptField.value ? `修改${currentPromptField.value.label}提示词` : '修改提示词'))
+const stylePromptPreview = computed(() => buildOptimizePrompt(writingStyle.value))
 const promptDialogVisible = computed({
   get: () => Boolean(promptEditor.value),
   set: (visible: boolean) => {
@@ -248,15 +256,66 @@ const promptDialogVisible = computed({
 const toRecipients = computed({
   get: () => parseMailRecipients(mailDraft.to, 'to'),
   set: (value: string[]) => {
-    mailDraft.to = serializeMailRecipients(value, 'to')
+    mailDraft.to = serializeMailRecipients([...parseMailRecipients(mailDraft.to, 'to'), ...value], 'to')
   },
 })
 const ccRecipients = computed({
   get: () => parseMailRecipients(mailDraft.cc, 'cc'),
   set: (value: string[]) => {
-    mailDraft.cc = serializeMailRecipients(value, 'cc')
+    mailDraft.cc = serializeMailRecipients([...parseMailRecipients(mailDraft.cc, 'cc'), ...value], 'cc')
   },
 })
+const recipientEditor = reactive({ visible: false, field: 'to' as MailRecipientField, original: '', value: '' })
+
+function removeRecipient(field: MailRecipientField, recipient: string) {
+  const current = field === 'to' ? mailDraft.to : mailDraft.cc
+  const next = parseMailRecipients(current, field).filter((item) => item !== recipient)
+  if (field === 'to') mailDraft.to = serializeMailRecipients(next, field)
+  else mailDraft.cc = serializeMailRecipients(next, field)
+}
+
+function openRecipientEditor(field: MailRecipientField, recipient: string) {
+  recipientEditor.field = field
+  recipientEditor.original = recipient
+  recipientEditor.value = recipient
+  recipientEditor.visible = true
+}
+
+function handleRecipientTagMouseDown(event: MouseEvent, field: MailRecipientField) {
+  const target = event.target as HTMLElement | null
+  if (!target || target.closest('.el-tag__close')) return
+  const tag = target.closest<HTMLElement>('.el-tag')
+  const recipient = tag?.textContent?.trim() || ''
+  if (!parseMailRecipients(field === 'to' ? mailDraft.to : mailDraft.cc, field).includes(recipient)) return
+  event.preventDefault()
+  event.stopPropagation()
+  openRecipientEditor(field, recipient)
+}
+
+function saveRecipientEdit() {
+  const value = recipientEditor.value.trim()
+  if (!value || !parseMailRecipients(value, recipientEditor.field).length) {
+    ElMessage.warning('请输入有效的邮箱地址')
+    return
+  }
+  const current = recipientEditor.field === 'to' ? mailDraft.to : mailDraft.cc
+  const next = parseMailRecipients(current, recipientEditor.field).map((item) => item === recipientEditor.original ? value : item)
+  if (recipientEditor.field === 'to') mailDraft.to = serializeMailRecipients(next, recipientEditor.field)
+  else mailDraft.cc = serializeMailRecipients(next, recipientEditor.field)
+  recipientEditor.visible = false
+}
+
+function openMailBodyPreview() {
+  // Opening the preview must not let the recipient selector's blur lifecycle
+  // clear an allow-create value that has already been entered.
+  const currentTo = mailDraft.to
+  const currentCc = mailDraft.cc
+  mailBodyPreviewOpen.value = true
+  void nextTick(() => {
+    if (currentTo && !mailDraft.to) mailDraft.to = currentTo
+    if (currentCc && !mailDraft.cc) mailDraft.cc = currentCc
+  })
+}
 
 watch(
   tripForm,
@@ -355,8 +414,17 @@ function canOptimizeField(field: TripField) {
   return Boolean(field.multiline)
 }
 
+function promptOwner() {
+  return authState.user?.username || 'guest'
+}
+
+function rawOptimizePrompt(fieldKey: TripFieldKey, style: AiWritingStyle = writingStyle.value) {
+  const saved = getSavedStylePrompt(promptOwner(), 'trip', fieldKey, style)
+  return extraOptimizePrompt(saved === null ? (promptForm[fieldKey] || defaultOptimizePrompt()) : saved)
+}
+
 function optimizePrompt(fieldKey: TripFieldKey) {
-  return promptForm[fieldKey] || defaultOptimizePrompt()
+  return buildOptimizePrompt(writingStyle.value, rawOptimizePrompt(fieldKey))
 }
 
 function groupPreview(group: TripGroup) {
@@ -399,7 +467,11 @@ function handleEditInput(fieldKey: TripFieldKey) {
 function openPromptEditor(field: TripField) {
   if (!canOptimizeField(field)) return
   promptEditor.value = field.key
-  promptDraft.value = optimizePrompt(field.key)
+  promptDraft.value = rawOptimizePrompt(field.key)
+}
+
+function syncPromptDraftForStyle(style: AiWritingStyle) {
+  if (promptEditor.value) promptDraft.value = rawOptimizePrompt(promptEditor.value, style)
 }
 
 function closePromptEditor() {
@@ -409,7 +481,7 @@ function closePromptEditor() {
 
 function savePromptEditor() {
   if (!promptEditor.value) return
-  promptForm[promptEditor.value] = promptDraft.value.trim()
+  saveStylePrompt(promptOwner(), 'trip', promptEditor.value, writingStyle.value, promptDraft.value)
   closePromptEditor()
   ElMessage.success('提示词已更新')
 }
@@ -443,6 +515,20 @@ async function optimizeTripField(field: TripField) {
   } finally {
     activeOptimizeField.value = ''
   }
+}
+
+function openSummaryDialog(field: TripField) {
+  if (!canOptimizeField(field)) return
+  summaryTargetField.value = field
+  summaryDialogVisible.value = true
+}
+
+function applySummaryToTripField(content: string) {
+  const field = summaryTargetField.value
+  if (!field) return
+  tripForm[field.key] = content
+  handleEditInput(field.key)
+  summaryTargetField.value = null
 }
 
 function acceptTripOptimizePreview(field: TripField) {
@@ -708,6 +794,7 @@ async function generateReport() {
 }
 
 function buildSendPayload(): SendMailPayload {
+  commitMailBodyEdits()
   return {
     to: serializeMailRecipientEmails(mailDraft.to, 'to'),
     cc: serializeMailRecipientEmails(mailDraft.cc, 'cc'),
@@ -742,6 +829,21 @@ function handleRecipientPaste(event: Event, field: MailRecipientField) {
   if (field === 'to') mailDraft.to = next
   else mailDraft.cc = next
   clearSendReview()
+}
+
+function handleMailBodyInput(event: Event) {
+  // 输入期间不回写 v-html，否则 Vue 重绘编辑区会导致光标跳转。
+  const editor = event.currentTarget as HTMLElement
+  mailDraft.body = editor.innerText
+  clearSendReview()
+}
+
+function commitMailBodyEdits() {
+  const editor = mailBodyEditorRef.value
+  if (!editor) return
+  const html = editor.innerHTML
+  if (mailDraft.body_html !== html) mailDraft.body_html = html
+  mailDraft.body = editor.innerText
 }
 
 async function applySentTripPromotion(result: SendMailResponse) {
@@ -982,16 +1084,6 @@ onMounted(initializeTrip)
 <template>
   <section class="trip-main">
     <header class="trip-page-head">
-      <div>
-        <h1>{{ activeTab === 'mail' ? '邮件发送' : '出差报告助手' }}</h1>
-        <p>
-          {{
-            activeTab === 'mail'
-              ? '确认收件人、正文和附件后发送。'
-              : '填写出差基础信息与正文内容，支持 AI 润色和历史报告预填。'
-          }}
-        </p>
-      </div>
       <nav class="trip-tabs" aria-label="出差报告功能页签">
         <button
           v-for="tab in tripTabs"
@@ -1051,13 +1143,11 @@ onMounted(initializeTrip)
               <span>{{ activeTripGroup.title }}</span>
             </div>
             <div v-if="activeMainField" class="trip-editor-actions ai-field-actions">
+              <AiPolishButton :loading="activeOptimizeField === activeMainField.key" :disabled="activeOptimizeField !== '' && activeOptimizeField !== activeMainField.key" @polish="optimizeTripField(activeMainField)" />
               <button class="ai-prompt-button" type="button" @click="openPromptEditor(activeMainField)">
                 提示词
               </button>
-              <button class="ai-polish-button" type="button" :disabled="activeOptimizeField !== ''" @click="optimizeTripField(activeMainField)">
-                <span aria-hidden="true">✦</span>
-                {{ activeOptimizeField === activeMainField.key ? '润色中' : 'AI 润色' }}
-              </button>
+              <button class="ai-summary-button" type="button" @click="openSummaryDialog(activeMainField)">AI 总结</button>
             </div>
           </header>
 
@@ -1172,6 +1262,11 @@ onMounted(initializeTrip)
       </aside>
 
       <section class="trip-mail-compose">
+        <div v-if="!selectedReport" class="trip-mail-report-empty trip-mail-selection-prompt">
+          <strong>请在左侧列表选择待发送报告</strong>
+          <span>选中报告后将自动带入对应的收件人、主题、正文和附件。</span>
+        </div>
+        <template v-else>
         <div class="trip-mail-form">
           <label class="trip-mail-address-row">
             <span>收件人 <em>*</em></span>
@@ -1186,8 +1281,12 @@ onMounted(initializeTrip)
               :max-collapse-tags="3"
               placeholder="添加收件人"
               @paste.capture="handleRecipientPaste($event, 'to')"
+              @remove-tag="removeRecipient('to', $event)"
+              @mousedown.capture="handleRecipientTagMouseDown($event, 'to')"
             >
-              <el-option v-for="item in toRecipients" :key="item" :label="item" :value="item" />
+              <el-option v-for="item in toRecipients" :key="item" :label="item" :value="item">
+                <div class="recipient-option" @mousedown.stop @click.stop="openRecipientEditor('to', item)"><span>{{ item }}</span></div>
+              </el-option>
             </el-select>
           </label>
           <label class="trip-mail-address-row">
@@ -1203,8 +1302,12 @@ onMounted(initializeTrip)
               :max-collapse-tags="3"
               placeholder="添加抄送"
               @paste.capture="handleRecipientPaste($event, 'cc')"
+              @remove-tag="removeRecipient('cc', $event)"
+              @mousedown.capture="handleRecipientTagMouseDown($event, 'cc')"
             >
-              <el-option v-for="item in ccRecipients" :key="item" :label="item" :value="item" />
+              <el-option v-for="item in ccRecipients" :key="item" :label="item" :value="item">
+                <div class="recipient-option" @mousedown.stop @click.stop="openRecipientEditor('cc', item)"><span>{{ item }}</span></div>
+              </el-option>
             </el-select>
           </label>
           <label>
@@ -1212,12 +1315,22 @@ onMounted(initializeTrip)
             <el-input v-model="mailDraft.subject" />
           </label>
           <div class="trip-mail-body-preview-row">
-            <span>邮件正文 <em>*</em></span>
+            <span>邮件正文（可编辑）<em>*</em></span>
             <div class="trip-mail-body-preview-wrap">
-              <button class="trip-mail-body-fullscreen" type="button" aria-label="全屏查看邮件正文" @click="mailBodyPreviewOpen = true">
+              <button class="trip-mail-body-fullscreen" type="button" aria-label="全屏预览邮件正文" @mousedown.prevent @click="openMailBodyPreview">
                 <el-icon><FullScreen /></el-icon>
               </button>
-              <div class="trip-mail-body-preview trip-html" v-html="mailBodyPreviewHtml"></div>
+              <div
+                class="trip-mail-body-preview trip-mail-body-editor trip-html"
+                ref="mailBodyEditorRef"
+                contenteditable="true"
+                role="textbox"
+                aria-label="可编辑邮件正文"
+                spellcheck="false"
+                v-html="mailBodyPreviewHtml"
+                @input="handleMailBodyInput"
+                @blur="commitMailBodyEdits"
+              ></div>
             </div>
           </div>
           <div class="trip-mail-attachment-status">
@@ -1237,6 +1350,7 @@ onMounted(initializeTrip)
             <span v-for="item in sendBlockers" :key="item">{{ item }}</span>
           </div>
         </div>
+        </template>
       </section>
       <section class="trip-action-bar">
         <div :class="['trip-auto-save', sendBlockers.length ? 'error' : 'normal']">
@@ -1373,7 +1487,21 @@ onMounted(initializeTrip)
       destroy-on-close
       :close-on-click-modal="false"
     >
-      <el-input v-model="promptDraft" type="textarea" :autosize="{ minRows: 5, maxRows: 8 }" />
+      <div class="ai-prompt-style">
+        <div>
+          <strong>当前行文风格</strong>
+          <AiWritingStyleSelect @select="syncPromptDraftForStyle" />
+        </div>
+        <p>{{ writingStyleInstruction(writingStyle) }}</p>
+      </div>
+      <label class="ai-prompt-preview-label">
+        <span>AI 润色提示词（随行文风格自动变化）</span>
+        <el-input :model-value="stylePromptPreview" type="textarea" readonly :autosize="{ minRows: 5, maxRows: 8 }" />
+      </label>
+      <label class="ai-prompt-custom-label">
+        <span>当前风格的补充提示词（永久保存）</span>
+        <el-input v-model="promptDraft" type="textarea" :autosize="{ minRows: 5, maxRows: 8 }" />
+      </label>
       <template #footer>
         <div class="trip-prompt-actions prompt-dialog-actions">
           <el-button class="prompt-dialog-button" @click="closePromptEditor">取消</el-button>
@@ -1381,6 +1509,14 @@ onMounted(initializeTrip)
         </div>
       </template>
     </el-dialog>
+
+    <ContentAssistDialog
+      v-model="summaryDialogVisible"
+      :field-label="summaryTargetField?.label || ''"
+      :task-title="activeTripGroup.title || summaryTargetField?.label || ''"
+      :initial-content="summaryTargetField ? tripForm[summaryTargetField.key] : ''"
+      @apply="applySummaryToTripField"
+    />
 
     <el-dialog
       v-model="mailBodyPreviewOpen"
@@ -1391,6 +1527,11 @@ onMounted(initializeTrip)
       destroy-on-close
     >
       <div class="trip-mail-body-dialog-preview trip-html" v-html="mailBodyPreviewHtml"></div>
+    </el-dialog>
+
+    <el-dialog v-model="recipientEditor.visible" title="编辑邮箱" width="min(440px, 92vw)" append-to-body>
+      <el-input v-model="recipientEditor.value" autofocus @keyup.enter="saveRecipientEdit" />
+      <template #footer><el-button @click="recipientEditor.visible = false">取消</el-button><el-button type="primary" @click="saveRecipientEdit">保存</el-button></template>
     </el-dialog>
 
   </section>

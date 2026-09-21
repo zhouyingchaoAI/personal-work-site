@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch, type Component } from 'vue'
+import InternalOrganizationEntry from '../CrmAssistantView/InternalOrganizationEntry.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import DOMPurify from 'dompurify'
 import {
   Connection,
   CopyDocument,
@@ -18,9 +20,12 @@ import {
   UserFilled,
 } from '@element-plus/icons-vue'
 import { authState } from '../../services/authSession'
-import type { MenuId } from '../../layout/menu'
+import { sidebarMenuItems, type MenuId } from '../../layout/menu'
+const permissionAssistants = sidebarMenuItems.filter(item => item.category)
 import {
   addAdminUser,
+  batchUpdateAdminUserPermissions,
+  batchUpdateUsersForAssistant,
   deleteAdminUser,
   getMcpConfig,
   getAdminConfig,
@@ -73,6 +78,8 @@ import {
   type McpConfigResponse,
   type SkillDefinition,
   type User,
+  importOrganizationExcel,
+  type OrganizationExcelResult,
 } from '../../services/personalWorkApi'
 import './index.scss'
 
@@ -130,6 +137,8 @@ const loading = reactive({
   skillTest: false,
   users: false,
   addUser: false,
+  batchPermissions: false,
+  organizationImport: false,
   mcpConfig: false,
   mcpSecret: false,
   lobsters: false,
@@ -176,11 +185,29 @@ const mailMeta = reactive({
   personal_imap_password_masked: '',
 })
 const mailReference = ref<Partial<MailConfig>>({})
+const signatureEditorRef = ref<HTMLElement | null>(null)
+const signatureEditorHtml = ref('')
+let signatureRange: Range | null = null
+
+function signatureHtml(value: string) {
+  const source = /<[^>]+>/.test(value)
+    ? value
+    : value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>')
+  return DOMPurify.sanitize(source, {
+    USE_PROFILES: { html: true },
+    ADD_ATTR: ['target'],
+  })
+}
 
 const adminForm = reactive({
   assistant_api_url: '',
   assistant_api_key: '',
   assistant_model: '',
+  assistant_reasoning_effort: 'off',
   assistant_prompt: '',
 })
 const serverForm = reactive({
@@ -272,14 +299,85 @@ const skillTestInstruction = ref('')
 const skillConfirmUnsafe = ref(false)
 const skillTestResult = ref('点击“运行测试”后，这里会显示 Skill 返回结果。')
 const addUserDialog = ref(false)
+const organizationExcelDialog = ref(false)
+const organizationExcelPicker = ref<HTMLInputElement | null>(null)
+const organizationExcelResult = ref<OrganizationExcelResult | null>(null)
+const organizationCreateUsers = ref(true)
 
 const users = ref<User[]>([])
-const userDrafts = reactive<Record<string, { name: string; password: string; role: User['role'] }>>({})
-const newUser = reactive<{ username: string; name: string; password: string; role: User['role'] }>({
+const userSearch = ref('')
+const organizationStatusFilter = ref<'all' | 'missing'>('all')
+const expandedUsername = ref<string | null>(null)
+const missingOrganizationUsers = computed(() => users.value.filter(item => item.organization_check?.status === 'missing'))
+const filteredUsers = computed(() => {
+  const query = userSearch.value.trim().toLocaleLowerCase()
+  return users.value.filter(item => {
+    if (organizationStatusFilter.value === 'missing' && item.organization_check?.status !== 'missing') return false
+    return !query || [item.username, item.name, item.employee_id, item.company, item.department, item.position, roleLabel(item.role)]
+      .some(value => (value || '').toLocaleLowerCase().includes(query))
+  })
+})
+const organizationUsers = computed(() => {
+  const companies = new Map<string, Map<string, User[]>>()
+  for (const item of filteredUsers.value) {
+    const company = item.company?.trim() || '未归属组织'
+    const department = item.department?.trim() || '未登记部门'
+    if (!companies.has(company)) companies.set(company, new Map())
+    const departments = companies.get(company)!
+    if (!departments.has(department)) departments.set(department, [])
+    departments.get(department)!.push(item)
+  }
+  const byCompany = ([left]: [string, Map<string, User[]>], [right]: [string, Map<string, User[]>]) => {
+    if (left === '未归属组织') return 1
+    if (right === '未归属组织') return -1
+    return left.localeCompare(right, 'zh-Hans-CN')
+  }
+  return [...companies.entries()].sort(byCompany).map(([company, departments]) => ({
+    company,
+    departments: [...departments.entries()]
+      .sort(([left], [right]) => left.localeCompare(right, 'zh-Hans-CN'))
+      .map(([department, members]) => ({
+        department,
+        members: [...members].sort((left, right) => (left.employee_id || left.username).localeCompare(right.employee_id || right.username)),
+      })),
+  }))
+})
+const organizationCompanies = computed(() => [...new Set(users.value.map(item => item.company?.trim()).filter(Boolean))].sort((left, right) => left!.localeCompare(right!, 'zh-Hans-CN')) as string[])
+const newUserDepartments = computed(() => [...new Set(users.value
+  .filter(item => item.company?.trim() === newUser.company.trim())
+  .map(item => item.department?.trim())
+  .filter(Boolean))].sort((left, right) => left!.localeCompare(right!, 'zh-Hans-CN')) as string[])
+const batchCompany = ref('')
+const batchDepartments = ref<string[]>([])
+const batchAssistantIds = ref<string[]>([])
+const batchEnabled = ref(true)
+const batchDepartmentsOptions = computed(() => [...new Set(users.value
+  .filter(item => item.company?.trim() === batchCompany.value.trim())
+  .map(item => item.department?.trim())
+  .filter(Boolean))].sort((left, right) => left!.localeCompare(right!, 'zh-Hans-CN')) as string[])
+const batchTargetCount = computed(() => users.value.filter(item =>
+  item.role !== 'superadmin' && item.company?.trim() === batchCompany.value.trim() &&
+  (!batchDepartments.value.length || batchDepartments.value.includes(item.department?.trim() || '')),
+).length)
+const batchPermissionAssistants = computed(() => permissionAssistants)
+const assistantUserFilter = ref('')
+const assistantUserSelection = ref<string[]>([])
+const assistantUserEnabled = ref(false)
+const selectedAssistant = computed(() => batchPermissionAssistants.value.find(item => item.id === assistantUserFilter.value))
+const usersWithSelectedAssistant = computed(() => users.value.filter(item => item.role !== 'superadmin' && item.assistant_permissions?.[assistantUserFilter.value]))
+const assistantUserCandidates = computed(() => users.value.filter(item => item.role !== 'superadmin'))
+const companyEmailFor = (username: string) => username.includes('@') ? username : `${username}@chencytech.com`
+const userDrafts = reactive<Record<string, { name: string; password: string; email: string; role: User['role']; assistant_permissions: Record<string, boolean> }>>({})
+const newUser = reactive<{ username: string; name: string; password: string; email: string; role: User['role']; employee_id: string; company: string; department: string; position: string }>({
   username: '',
   name: '',
   password: '',
+  email: '',
   role: 'member',
+  employee_id: '',
+  company: '',
+  department: '',
+  position: '',
 })
 const mcpConfig = ref<McpConfigResponse | null>(null)
 const mcpNewSecret = ref('')
@@ -306,7 +404,7 @@ const agentLabels = [
   { key: 'forum', label: '论坛助手' },
   { key: 'dashboard', label: '总助手' },
 ]
-const mcpModules = ['周报', '出差报告', '工作日记', '邮件', '金点子论坛', '资讯', '报告', '通用', '记忆', '工作流']
+const mcpModules = ['周报', '出差报告', '工作日记', '邮件', '金点子论坛', '资讯', '智能写作', '会议', '知识库', '报销', '报告', '通用', '记忆', '工作流']
 
 const tabItems = computed(() => {
   const items: Array<{ id: SettingsTab; label: string; icon: Component; visible: boolean }> = [
@@ -340,6 +438,36 @@ const mcpClaudeConfig = computed(() =>
             'X-MCP-Username': mcpUsername.value,
           },
         },
+      },
+    },
+    null,
+    2,
+  ),
+)
+const mcpCodexConfig = computed(
+  () =>
+    `# ~/.codex/config.toml（保留文件中的其他配置）\n` +
+    `[mcp_servers.personal_office_assistant]\n` +
+    `url = "${mcpEndpoint.value}"\n` +
+    `http_headers = { "Authorization" = "Bearer <mcp_secret>", "X-MCP-Username" = "${mcpUsername.value}" }\n` +
+    `startup_timeout_sec = 20\n` +
+    `tool_timeout_sec = 120`,
+)
+const mcpCodexVerify = computed(
+  () =>
+    `# 保存 ~/.codex/config.toml 后，重新启动 Codex\n` +
+    `codex mcp list\n` +
+    `codex mcp get personal_office_assistant`,
+)
+const mcpGenericConfig = computed(() =>
+  JSON.stringify(
+    {
+      name: '承希智能办公平台',
+      type: 'streamable-http',
+      url: mcpEndpoint.value,
+      headers: {
+        Authorization: 'Bearer <mcp_secret>',
+        'X-MCP-Username': mcpUsername.value,
       },
     },
     null,
@@ -413,6 +541,7 @@ function applyMailConfig(data: MailConfig) {
   mailForm.trip_to = data.trip_to || ''
   mailForm.trip_cc = data.trip_cc || ''
   mailForm.email_signature = data.email_signature || ''
+  signatureEditorHtml.value = signatureHtml(mailForm.email_signature)
   mailMeta.smtp_password_masked = data.smtp_password_masked || '未配置'
   mailMeta.imap_password_masked = data.imap_password_masked || '未配置'
   mailMeta.smtp_host = data.smtp_host || ''
@@ -464,8 +593,84 @@ function mailConfigPayload() {
     weekly_cc: mailForm.weekly_cc,
     trip_to: mailForm.trip_to,
     trip_cc: mailForm.trip_cc,
-    email_signature: mailForm.email_signature,
+    email_signature: signatureHtml(mailForm.email_signature),
   }
+}
+
+function syncSignatureEditor() {
+  const editor = signatureEditorRef.value
+  if (!editor) return
+  // 输入期间不能回写 innerHTML：浏览器会销毁当前 Range，导致插入光标在
+  // 每次输入后消失。内容仍会先清洗后保存，编辑时只同步表单状态。
+  const cleaned = signatureHtml(editor.innerHTML || '')
+  mailForm.email_signature = cleaned
+}
+
+function rememberSignatureSelection() {
+  const editor = signatureEditorRef.value
+  const selection = window.getSelection()
+  if (!editor || !selection?.rangeCount) return
+  const range = selection.getRangeAt(0)
+  if (editor.contains(range.commonAncestorContainer)) signatureRange = range.cloneRange()
+}
+
+function focusSignatureEditor() {
+  const editor = signatureEditorRef.value
+  if (!editor) return
+  editor.focus()
+  if (!signatureRange) return
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(signatureRange)
+}
+
+function selectAllSignature() {
+  const editor = signatureEditorRef.value
+  if (!editor) return
+  editor.focus({ preventScroll: true })
+  const range = document.createRange()
+  range.selectNodeContents(editor)
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+  signatureRange = range.cloneRange()
+}
+
+function handleSignatureEditorKeydown(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+    event.preventDefault()
+    selectAllSignature()
+  }
+}
+
+function formatSignature(command: string, value?: string) {
+  focusSignatureEditor()
+  document.execCommand(command, false, value)
+  rememberSignatureSelection()
+  syncSignatureEditor()
+}
+
+function addSignatureLink() {
+  const url = window.prompt('请输入链接地址')?.trim()
+  if (!url) return
+  formatSignature('createLink', url)
+}
+
+function addSignatureImage() {
+  const url = window.prompt('请输入图片地址')?.trim()
+  if (!url) return
+  formatSignature('insertImage', url)
+}
+
+function insertSignatureTable() {
+  formatSignature('insertHTML', '<table style="border-collapse:collapse;width:100%;margin:8px 0"><tbody><tr><td style="border:1px solid #cbd5e1;padding:8px">内容</td><td style="border:1px solid #cbd5e1;padding:8px">内容</td></tr><tr><td style="border:1px solid #cbd5e1;padding:8px">内容</td><td style="border:1px solid #cbd5e1;padding:8px">内容</td></tr></tbody></table><p><br></p>')
+}
+
+function signatureSelect(event: Event, command: string) {
+  const value = (event.target as HTMLSelectElement).value
+  if (!value) return
+  formatSignature(command, value)
+  ;(event.target as HTMLSelectElement).value = ''
 }
 
 function personalMailConfigPayload() {
@@ -545,6 +750,7 @@ function applyAdminConfig(data: AdminConfig) {
   adminForm.assistant_api_url = data.assistant_api_url || ''
   adminForm.assistant_api_key = ''
   adminForm.assistant_model = data.assistant_model || 'MiniMax-M2.7'
+  adminForm.assistant_reasoning_effort = data.assistant_reasoning_effort || 'off'
   adminForm.assistant_prompt = data.assistant_prompt || ''
   apiKeyStatus.value = data.assistant_api_key_masked || '未配置'
   modelOptions.value = [adminForm.assistant_model]
@@ -893,6 +1099,7 @@ function adminConfigPayload() {
     assistant_api_url: adminForm.assistant_api_url,
     assistant_api_key: adminForm.assistant_api_key,
     assistant_model: adminForm.assistant_model,
+    assistant_reasoning_effort: adminForm.assistant_reasoning_effort,
     assistant_prompt: adminForm.assistant_prompt,
   }
 }
@@ -1073,7 +1280,7 @@ async function loadUsers() {
     const result = await listAdminUsers()
     users.value = result.users || []
     for (const item of users.value) {
-      userDrafts[item.username] = { name: item.name || item.username, password: '', role: item.role }
+      userDrafts[item.username] = { name: item.name || item.username, password: '', email: item.email || companyEmailFor(item.username), role: item.role, assistant_permissions: { ...item.assistant_permissions } }
     }
     loadedTabs.usermanage = true
   } catch (error) {
@@ -1087,7 +1294,89 @@ function resetNewUser() {
   newUser.username = ''
   newUser.name = ''
   newUser.password = ''
+  newUser.email = ''
   newUser.role = 'member'
+  newUser.employee_id = ''
+  newUser.company = ''
+  newUser.department = ''
+  newUser.position = ''
+}
+
+function handleNewUserCompanyChange() {
+  if (!newUserDepartments.value.includes(newUser.department.trim())) newUser.department = ''
+}
+
+function handleBatchCompanyChange() {
+  batchDepartments.value = []
+}
+
+watch(assistantUserFilter, () => { assistantUserSelection.value = usersWithSelectedAssistant.value.map(item => item.username); assistantUserEnabled.value = false })
+
+async function handleAssistantUserBatch() {
+  if (!assistantUserFilter.value || !assistantUserSelection.value.length) return ElMessage.warning('请选择助手和至少一位用户')
+  const action = assistantUserEnabled.value ? '开通' : '取消'
+  try {
+    await ElMessageBox.confirm(`确定为 ${assistantUserSelection.value.length} 位用户${action}「${selectedAssistant.value?.label || ''}」权限吗？`, `批量${action}助手权限`, { type: 'warning' })
+    loading.batchPermissions = true
+    const result = await batchUpdateUsersForAssistant({ assistant_id: assistantUserFilter.value, usernames: assistantUserSelection.value, enabled: assistantUserEnabled.value })
+    users.value = result.users || []
+    ElMessage.success(`已为 ${result.updated} 位用户${result.enabled ? '开通' : '取消'}权限`)
+    await loadUsers()
+  } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(errorMessage(error)) } finally { loading.batchPermissions = false }
+}
+
+async function handleBatchPermissions() {
+  if (!batchCompany.value || !batchAssistantIds.value.length) {
+    ElMessage.warning('请选择公司和至少一个助手')
+    return
+  }
+  if (!batchTargetCount.value) {
+    ElMessage.warning('当前组织范围内没有可批量管理的成员')
+    return
+  }
+  const scope = batchDepartments.value.length ? batchDepartments.value.join('、') : `${batchCompany.value}全公司`
+  const action = batchEnabled.value ? '开通' : '关闭'
+  try {
+    await ElMessageBox.confirm(`将为 ${scope} 的 ${batchTargetCount.value} 位成员${action}所选助手权限。超级管理员与客户经营助手权限不受影响。`, `确认批量${action}`, {
+      confirmButtonText: `确认${action}`,
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    loading.batchPermissions = true
+    const result = await batchUpdateAdminUserPermissions({
+      company: batchCompany.value,
+      departments: batchDepartments.value,
+      assistant_ids: batchAssistantIds.value,
+      enabled: batchEnabled.value,
+    })
+    users.value = result.users || []
+    ElMessage.success(`已为 ${result.updated} 位成员${result.enabled ? '开通' : '关闭'}权限`)
+    await loadUsers()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(errorMessage(error))
+  } finally {
+    loading.batchPermissions = false
+  }
+}
+
+async function handleOrganizationExcelUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  input.value = ''
+  if (!file.name.toLowerCase().endsWith('.xlsx')) return ElMessage.warning('请选择 .xlsx 格式的组织架构表')
+  if (file.size > 5 * 1024 * 1024) return ElMessage.warning('文件不能超过5MB')
+  loading.organizationImport = true
+  organizationExcelResult.value = null
+  try {
+    organizationExcelResult.value = await importOrganizationExcel(file, organizationCreateUsers.value)
+    ElMessage.success(`名册已保存 ${organizationExcelResult.value.imported ?? organizationExcelResult.value.updated} 条，账号已更新 ${organizationExcelResult.value.updated} 条`)
+    await loadUsers()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.organizationImport = false
+  }
 }
 
 function openAddUserDialog() {
@@ -1107,6 +1396,11 @@ async function handleAddUser() {
       password: newUser.password,
       name: newUser.name,
       role: newUser.role,
+      employee_id: newUser.employee_id,
+      company: newUser.company,
+      department: newUser.department,
+      position: newUser.position,
+      email: newUser.email,
     })
     users.value = result.users || []
     addUserDialog.value = false
@@ -1127,7 +1421,9 @@ async function handleUpdateUser(item: User) {
       username: item.username,
       name: draft.name,
       password: draft.password,
+      email: draft.email,
       role: draft.role,
+      assistant_permissions: draft.assistant_permissions,
     })
     users.value = result.users || []
     draft.password = ''
@@ -1419,10 +1715,6 @@ onMounted(() => {
 <template>
   <section class="workspace-main settings-main">
     <header class="settings-page-head">
-      <div class="settings-title-block">
-        <h1>设置中心</h1>
-        <p>管理邮箱账号、系统参数、Skill 能力和用户权限</p>
-      </div>
       <div class="settings-tabs" role="tablist" aria-label="设置模块">
         <button
           v-for="tab in tabItems"
@@ -1585,10 +1877,47 @@ onMounted(() => {
               <span>出差报告抄送</span>
               <input v-model="mailForm.trip_cc" :placeholder="mailReference.trip_cc" />
             </label>
-            <label class="settings-field-full">
+            <div class="settings-field-full signature-settings-field">
               <span>邮件签名模板</span>
-              <textarea v-model="mailForm.email_signature" placeholder="留空则使用默认签名"></textarea>
-            </label>
+              <div class="signature-editor-shell">
+                <div class="signature-editor-toolbar" aria-label="签名格式工具栏">
+                  <select title="字体" aria-label="字体" @mousedown.stop @change="signatureSelect($event, 'fontName')">
+                    <option value="">字体</option>
+                    <option value="Arial">Arial</option>
+                    <option value="Microsoft YaHei">微软雅黑</option>
+                    <option value="SimSun">宋体</option>
+                    <option value="Verdana">Verdana</option>
+                  </select>
+                  <select title="字号" aria-label="字号" @mousedown.stop @change="signatureSelect($event, 'fontSize')">
+                    <option value="">字号</option>
+                    <option value="2">12px</option>
+                    <option value="3">14px</option>
+                    <option value="4">16px</option>
+                    <option value="5">18px</option>
+                    <option value="6">24px</option>
+                  </select>
+                  <span class="signature-toolbar-divider"></span>
+                  <button type="button" title="加粗" aria-label="加粗" @mousedown.prevent @click="formatSignature('bold')"><strong>B</strong></button>
+                  <button type="button" title="斜体" aria-label="斜体" @mousedown.prevent @click="formatSignature('italic')"><i>I</i></button>
+                  <button type="button" title="下划线" aria-label="下划线" @mousedown.prevent @click="formatSignature('underline')"><u>U</u></button>
+                  <label class="signature-color-button" title="文字颜色" aria-label="文字颜色" @mousedown.stop>
+                    <span>A</span><input type="color" value="#172554" @input="formatSignature('foreColor', ($event.target as HTMLInputElement).value)" />
+                  </label>
+                  <button type="button" title="清除格式" aria-label="清除格式" @mousedown.prevent @click="formatSignature('removeFormat')">Tx</button>
+                  <span class="signature-toolbar-divider"></span>
+                  <button type="button" title="项目符号列表" aria-label="项目符号列表" @mousedown.prevent @click="formatSignature('insertUnorderedList')">•≡</button>
+                  <button type="button" title="编号列表" aria-label="编号列表" @mousedown.prevent @click="formatSignature('insertOrderedList')">1≡</button>
+                  <button type="button" title="左对齐" aria-label="左对齐" @mousedown.prevent @click="formatSignature('justifyLeft')">≡</button>
+                  <button type="button" title="居中" aria-label="居中" @mousedown.prevent @click="formatSignature('justifyCenter')">≡</button>
+                  <button type="button" title="右对齐" aria-label="右对齐" @mousedown.prevent @click="formatSignature('justifyRight')">≡</button>
+                  <span class="signature-toolbar-divider"></span>
+                  <button type="button" title="插入链接" aria-label="插入链接" @mousedown.prevent @click="addSignatureLink">链接</button>
+                  <button type="button" title="插入图片" aria-label="插入图片" @mousedown.prevent @click="addSignatureImage">图片</button>
+                  <button type="button" title="插入表格" aria-label="插入表格" @mousedown.prevent @click="insertSignatureTable">表格</button>
+                </div>
+                <div ref="signatureEditorRef" class="signature-editor" contenteditable="true" role="textbox" aria-multiline="true" tabindex="0" data-placeholder="留空则使用默认签名" v-html="signatureEditorHtml" @focus="rememberSignatureSelection" @mouseup="rememberSignatureSelection" @keyup="rememberSignatureSelection" @keydown="handleSignatureEditorKeydown" @input="syncSignatureEditor"></div>
+              </div>
+            </div>
           </div>
           <div class="settings-actions">
             <button class="settings-button settings-button--ghost" type="button" :disabled="loading.saveMail" @click="handleSaveMailConfig">保存</button>
@@ -1681,6 +2010,17 @@ onMounted(() => {
           <label>
             <span>手动模型名称</span>
             <input v-model="adminForm.assistant_model" placeholder="MiniMax-M2.7" />
+          </label>
+          <label>
+            <span>深度思考</span>
+            <el-select v-model="adminForm.assistant_reasoning_effort" class="settings-select">
+              <el-option label="关闭（推荐，常规办公）" value="off" />
+              <el-option label="最小" value="minimal" />
+              <el-option label="低" value="low" />
+              <el-option label="中" value="medium" />
+              <el-option label="高（响应较慢）" value="high" />
+            </el-select>
+            <em>应用于周报、写作、日记、数字人、会议纪要、资讯、报销和 Skill 等所有平台大模型调用。</em>
           </label>
           <label>
             <span>API Key</span>
@@ -2036,7 +2376,7 @@ onMounted(() => {
         <div class="settings-section-head">
           <div>
             <h3>用户管理</h3>
-            <span>管理系统用户、角色权限和密码。</span>
+    <span>仅超级管理员可授予或撤销助手权限。客户经营助手会同步写入其专项数据范围权限，默认仅可见本人资料。</span>
           </div>
           <div class="settings-section-actions">
             <button class="settings-button settings-button--ghost" type="button" :disabled="loading.users" @click="loadUsers">
@@ -2047,21 +2387,110 @@ onMounted(() => {
               <el-icon><Plus /></el-icon>
               新增用户
             </button>
+            <button class="settings-button settings-button--ghost" type="button" @click="organizationExcelDialog = true">
+              组织架构同步
+            </button>
+            <InternalOrganizationEntry @changed="loadUsers"/>
           </div>
         </div>
 
+        <div class="user-search-toolbar">
+          <el-input v-model="userSearch" clearable :prefix-icon="Search" placeholder="搜索姓名、工号、公司、部门或账号" aria-label="搜索用户" />
+          <el-radio-group v-model="organizationStatusFilter" class="organization-status-filter">
+            <el-radio-button label="all">全部 {{ users.length }}</el-radio-button>
+            <el-radio-button label="missing">待核验 {{ missingOrganizationUsers.length }}</el-radio-button>
+          </el-radio-group>
+          <span>{{ userSearch.trim() ? `找到 ${filteredUsers.length} 位用户 / 共 ${users.length} 位` : `共 ${users.length} 位用户` }}</span>
+          <el-button v-if="expandedUsername" text @click="expandedUsername = null">全部收起</el-button>
+        </div>
+
+        <section class="batch-permission-panel">
+          <div>
+            <strong>按组织批量授权</strong>
+            <span>全部助手均可在此批量开通或关闭；客户经营助手会按专项规则授予“仅本人数据”访问权限。</span>
+          </div>
+          <div class="batch-permission-controls">
+            <el-select v-model="batchCompany" filterable placeholder="选择公司" class="settings-select" @change="handleBatchCompanyChange">
+              <el-option v-for="company in organizationCompanies" :key="company" :label="company" :value="company" />
+            </el-select>
+            <el-select v-model="batchDepartments" multiple collapse-tags collapse-tags-tooltip :disabled="!batchCompany" placeholder="全部部门（默认）" class="settings-select">
+              <el-option v-for="department in batchDepartmentsOptions" :key="department" :label="department" :value="department" />
+            </el-select>
+            <el-radio-group v-model="batchEnabled" class="batch-permission-action">
+              <el-radio-button :label="true">开通</el-radio-button>
+              <el-radio-button :label="false">关闭</el-radio-button>
+            </el-radio-group>
+          </div>
+          <el-checkbox-group v-model="batchAssistantIds" class="batch-permission-assistants">
+            <el-checkbox v-for="assistant in batchPermissionAssistants" :key="assistant.id" :value="assistant.id">{{ assistant.label }}</el-checkbox>
+          </el-checkbox-group>
+          <div class="batch-permission-footer">
+            <span>{{ batchCompany ? `将影响 ${batchTargetCount} 位非超级管理员成员` : '请先选择公司' }}</span>
+            <button class="settings-button settings-button--primary" type="button" :disabled="loading.batchPermissions || !batchCompany || !batchAssistantIds.length" @click="handleBatchPermissions">
+              批量{{ batchEnabled ? '开通' : '关闭' }}
+            </button>
+          </div>
+        </section>
+
+        <section class="batch-permission-panel assistant-user-panel">
+          <div><strong>按助手查看与批量调整</strong><span>选择助手后会列出当前已开通用户；勾选名单后可批量取消或开通。</span></div>
+          <div class="batch-permission-controls">
+            <el-select v-model="assistantUserFilter" filterable clearable placeholder="选择要查看的助手" class="settings-select"><el-option v-for="assistant in batchPermissionAssistants" :key="assistant.id" :label="`${assistant.label}（${users.filter(user => user.role !== 'superadmin' && user.assistant_permissions?.[assistant.id]).length} 人已开通）`" :value="assistant.id" /></el-select>
+            <el-radio-group v-model="assistantUserEnabled" class="batch-permission-action"><el-radio-button :label="false">取消权限</el-radio-button><el-radio-button :label="true">开通权限</el-radio-button></el-radio-group>
+          </div>
+          <el-checkbox-group v-if="assistantUserFilter" v-model="assistantUserSelection" class="batch-permission-assistants assistant-user-list">
+            <el-checkbox v-for="user in assistantUserCandidates" :key="user.username" :value="user.username"><strong>{{ user.name || user.username }}</strong> · {{ user.username }}<small>{{ user.company || '未归属公司' }}{{ user.department ? ` / ${user.department}` : '' }}<template v-if="user.assistant_permissions?.[assistantUserFilter]"> · 已开通</template></small></el-checkbox>
+          </el-checkbox-group>
+          <div class="batch-permission-footer"><span>{{ assistantUserFilter ? `${usersWithSelectedAssistant.length} 位用户已开通，当前选中 ${assistantUserSelection.length} 位` : '请选择助手查看授权用户' }}</span><button class="settings-button settings-button--primary" type="button" :disabled="loading.batchPermissions || !assistantUserFilter || !assistantUserSelection.length" @click="handleAssistantUserBatch">批量{{ assistantUserEnabled ? '开通' : '取消' }}</button></div>
+        </section>
+
         <div v-if="loading.users" class="settings-empty">正在加载用户列表...</div>
-        <div v-else class="user-list">
-          <article v-for="item in users" :key="item.username" class="user-card">
-            <div class="user-card-head">
+        <div v-else class="organization-user-list">
+          <details v-for="company in organizationUsers" :key="company.company" class="organization-company" open>
+            <summary>
+              <span class="organization-company__icon">⌘</span>
+              <strong>{{ company.company }}</strong>
+              <em>{{ company.departments.length }} 个组织单元 · {{ company.departments.reduce((total, department) => total + department.members.length, 0) }} 位成员</em>
+            </summary>
+            <div class="organization-company__body">
+              <details v-for="department in company.departments" :key="department.department" class="organization-department" :open="Boolean(userSearch.trim())">
+                <summary>
+                  <span>{{ department.department.split(' / ').join(' › ') }}</span>
+                  <em>{{ department.members.length }} 人</em>
+                </summary>
+                <div class="user-list">
+          <article v-for="item in department.members" :key="item.username" class="user-card" :class="{ 'is-expanded': expandedUsername === item.username, 'is-roster-missing': item.organization_check?.status === 'missing' }">
+            <button type="button" class="user-card-head" :aria-expanded="expandedUsername === item.username"
+              :aria-controls="`user-details-${item.username}`"
+              @click="expandedUsername = expandedUsername === item.username ? null : item.username">
               <span>
                 <el-icon><UserFilled /></el-icon>
               </span>
               <div>
-                <strong>{{ item.username }}</strong>
-                <em>{{ roleLabel(item.role) }}</em>
+                <div class="user-card-title">
+                  <strong>{{ item.name || item.username }}</strong>
+                  <span v-if="item.organization_check?.status === 'missing'" class="user-roster-status">未在最新组织表中 · 待核验</span>
+                </div>
+                <em>{{ item.username }} · {{ roleLabel(item.role) }}</em>
+                <small v-if="item.company || item.department || item.position" class="user-organization-summary">
+                  {{ [item.company, item.department, item.position].filter(Boolean).join(' · ') }}
+                </small>
               </div>
+              <small class="user-expand-label">{{ expandedUsername === item.username ? '收起详情 ▴' : '管理 / 展开 ▾' }}</small>
+            </button>
+            <div v-if="expandedUsername === item.username" :id="`user-details-${item.username}`" class="user-card-details">
+            <div v-if="item.organization_check?.status === 'missing'" class="user-roster-warning">
+              <strong>该成员未出现在最近一次公司组织架构表中</strong>
+              <span>请核实是否离职、调动或表格遗漏。账号、权限和历史数据尚未改变。</span>
+              <small>核对时间：{{ item.organization_check.checked_at.replace('T', ' ') }} · 来源：{{ item.organization_check.source }}</small>
             </div>
+            <div v-if="item.company || item.department || item.position || item.employee_id" class="user-organization-profile">
+              <span v-if="item.employee_id">工号：{{ item.employee_id }}</span>
+              <span v-if="item.company">公司：{{ item.company }}</span>
+              <span v-if="item.department">部门：{{ item.department }}</span>
+              <span v-if="item.position">岗位：{{ item.position }}</span>
+            </div>
+            <div class="user-profile-fields">
             <label>
               <span>显示名称</span>
               <input v-model="userDrafts[item.username].name" />
@@ -2071,6 +2500,10 @@ onMounted(() => {
               <input v-model="userDrafts[item.username].password" type="password" placeholder="留空则不修改" />
             </label>
             <label>
+              <span>绑定邮箱</span>
+              <input v-model="userDrafts[item.username].email" type="email" placeholder="用于邮件找回密码" />
+            </label>
+            <label>
               <span>角色</span>
               <el-select v-model="userDrafts[item.username].role" class="settings-select">
                 <el-option label="普通成员" value="member" />
@@ -2078,6 +2511,17 @@ onMounted(() => {
                 <el-option label="超级管理员" value="superadmin" />
               </el-select>
             </label>
+            </div>
+            <div class="user-assistant-permissions">
+              <strong>助手使用权限</strong>
+              <p>客户经营助手由「客户经营助手 → 安全权限」专门管理。</p>
+              <p v-if="userDrafts[item.username].role === 'superadmin'">超级管理员拥有全部助手权限。</p>
+              <div class="user-permission-options">
+              <el-checkbox v-for="assistant in permissionAssistants" :key="assistant.id"
+                v-model="userDrafts[item.username].assistant_permissions[assistant.id]"
+                :disabled="userDrafts[item.username].role === 'superadmin' || assistant.id === 'crm'">{{ assistant.label }}</el-checkbox>
+              </div>
+            </div>
             <div class="user-card-actions">
               <button class="settings-button settings-button--ghost" type="button" @click="handleUpdateUser(item)">
                 <el-icon><EditPen /></el-icon>
@@ -2088,8 +2532,13 @@ onMounted(() => {
                 删除
               </button>
             </div>
+            </div>
           </article>
-          <div v-if="!users.length" class="settings-empty">暂无用户。</div>
+                </div>
+              </details>
+            </div>
+          </details>
+          <div v-if="!filteredUsers.length" class="settings-empty">{{ userSearch.trim() ? '没有匹配的用户，请调整搜索条件。' : '暂无用户。' }}</div>
         </div>
       </section>
 
@@ -2160,6 +2609,31 @@ onMounted(() => {
             <div class="settings-mcp-connect-head">
               <span><el-icon><Connection /></el-icon></span>
               <div>
+                <strong>本地 Codex CLI 配置</strong>
+                <em>将下方内容追加到 <code>~/.codex/config.toml</code>；把 <code>&lt;mcp_secret&gt;</code> 替换为上方刚生成的密钥。</em>
+              </div>
+            </div>
+            <ol class="settings-mcp-install-steps">
+              <li>确认已安装 Codex：运行 <code>codex --version</code>。</li>
+              <li>编辑 <code>~/.codex/config.toml</code>，粘贴配置并替换密钥。</li>
+              <li>完全退出后重新启动 Codex，再运行下方命令确认服务已加载。</li>
+            </ol>
+            <pre>{{ mcpCodexConfig }}</pre>
+            <button class="settings-button settings-button--ghost" type="button" @click="copyText(mcpCodexConfig)">
+              <el-icon><CopyDocument /></el-icon>
+              复制 Codex 配置
+            </button>
+            <pre>{{ mcpCodexVerify }}</pre>
+            <button class="settings-button settings-button--ghost" type="button" @click="copyText(mcpCodexVerify)">
+              <el-icon><CopyDocument /></el-icon>
+              复制验证命令
+            </button>
+          </article>
+
+          <article class="settings-mcp-connect-card">
+            <div class="settings-mcp-connect-head">
+              <span><el-icon><Connection /></el-icon></span>
+              <div>
                 <strong>Claude Desktop / Claude Code MCP 配置</strong>
                 <em>添加到 ~/.claude/settings.json 的 mcpServers 字段，或 claude_desktop_config.json。</em>
               </div>
@@ -2168,6 +2642,26 @@ onMounted(() => {
             <button class="settings-button settings-button--ghost" type="button" @click="copyText(mcpClaudeConfig)">
               <el-icon><CopyDocument /></el-icon>
               复制
+            </button>
+          </article>
+
+          <article class="settings-mcp-connect-card">
+            <div class="settings-mcp-connect-head">
+              <span><el-icon><Link /></el-icon></span>
+              <div>
+                <strong>其他支持 MCP 的智能体平台</strong>
+                <em>在 Cursor、Cline、Cherry Studio、VS Code 扩展等客户端新增「Streamable HTTP / HTTP MCP」服务后，填入以下字段。</em>
+              </div>
+            </div>
+            <ol class="settings-mcp-install-steps">
+              <li>传输方式选择 <strong>Streamable HTTP</strong>（不要选择 stdio）。</li>
+              <li>填写服务地址和两个请求头；用户名决定读取哪个平台账号的数据。</li>
+              <li>保存后使用客户端的「测试连接」或工具列表确认。</li>
+            </ol>
+            <pre>{{ mcpGenericConfig }}</pre>
+            <button class="settings-button settings-button--ghost" type="button" @click="copyText(mcpGenericConfig)">
+              <el-icon><CopyDocument /></el-icon>
+              复制通用配置
             </button>
           </article>
 
@@ -2211,7 +2705,7 @@ X-MCP-Username: &lt;username&gt;           ← 使用哪个账号的数据空间
         <h4 class="settings-subtitle">安装到龙虾</h4>
         <div class="settings-mcp-lobsters">
           <div class="settings-mcp-lobsters-head">
-            <span>将本平台 MCP 服务安装到您名下的龙虾智能体，安装后龙虾可直接调用平台 Skill 工具。</span>
+            <span>选择下方龙虾后点击“安装”，确认后选择“安装并重启”。完成后该龙虾可直接调用平台 Skill 工具；显示“已安装”即表示接入成功。</span>
             <button class="settings-button settings-button--ghost" type="button" :disabled="loading.lobsters" @click="loadLobsters">
               <el-icon><Refresh /></el-icon>
               刷新龙虾
@@ -2277,7 +2771,7 @@ X-MCP-Username: &lt;username&gt;           ← 使用哪个账号的数据空间
       </section>
     </div>
 
-    <el-dialog v-model="addUserDialog" title="新增用户" width="560px" class="settings-dialog" @closed="resetNewUser">
+    <el-dialog v-model="addUserDialog" title="新增用户" width="680px" class="settings-dialog" @closed="resetNewUser">
       <div class="settings-dialog-form">
         <label>
           <span>用户名</span>
@@ -2299,6 +2793,34 @@ X-MCP-Username: &lt;username&gt;           ← 使用哪个账号的数据空间
           <span>初始密码</span>
           <el-input v-model="newUser.password" type="password" show-password placeholder="至少 4 位" @keyup.enter="handleAddUser" />
         </label>
+        <label>
+          <span>绑定邮箱（选填）</span>
+          <el-input v-model="newUser.email" type="email" :placeholder="newUser.username ? `默认：${companyEmailFor(newUser.username)}` : '默认：账号@chencytech.com'" />
+        </label>
+        <div class="new-user-organization-fields">
+          <strong>组织架构关系（选填）</strong>
+          <p>选择后会在用户管理中自动归入对应公司和部门；目录未收录时可直接录入。</p>
+          <label>
+            <span>公司</span>
+            <el-select v-model="newUser.company" filterable allow-create clearable default-first-option placeholder="请选择或输入公司" class="settings-select" @change="handleNewUserCompanyChange">
+              <el-option v-for="company in organizationCompanies" :key="company" :label="company" :value="company" />
+            </el-select>
+          </label>
+          <label>
+            <span>部门</span>
+            <el-select v-model="newUser.department" filterable allow-create clearable default-first-option :disabled="!newUser.company.trim()" placeholder="请先选择公司" class="settings-select">
+              <el-option v-for="department in newUserDepartments" :key="department" :label="department" :value="department" />
+            </el-select>
+          </label>
+          <label>
+            <span>岗位</span>
+            <el-input v-model="newUser.position" placeholder="例如：交付工程师" />
+          </label>
+          <label>
+            <span>工号</span>
+            <el-input v-model="newUser.employee_id" placeholder="例如：120001" />
+          </label>
+        </div>
       </div>
       <template #footer>
         <button class="settings-button settings-button--ghost" type="button" @click="addUserDialog = false">取消</button>
@@ -2306,6 +2828,36 @@ X-MCP-Username: &lt;username&gt;           ← 使用哪个账号的数据空间
           确认
         </button>
       </template>
+    </el-dialog>
+
+    <el-dialog v-model="organizationExcelDialog" title="组织架构同步（仅超级管理员）" width="min(680px,94vw)" class="settings-dialog">
+      <div class="organization-excel-dialog">
+        <p>下载当前组织架构表，维护最新组织信息后上传。系统以账号（用户名）为主键，自动匹配并调整公司、部门、岗位。</p>
+        <p>支持直接上传岗位信息表：成本中心映射为公司，一级部门 / 二级部门组成层级，岗位及职位分类完整保存到名册。工号按文本保存，优先匹配已有工号；新工号可绑定唯一同名且尚无工号的账号，自动开户时同时保存工号。工号冲突、重名或非在职人员保留资料、等待核对，不覆盖已有身份。下载组织架构表可在“岗位名册”页查看全部已上传资料。</p>
+        <el-checkbox v-model="organizationCreateUsers">自动为未开户人员创建普通用户</el-checkbox>
+        <p>自动开户要求姓名、公司、部门完整且身份无冲突；岗位信息表仅为在职人员开户。新账号使用不可预测的随机密码，请在用户管理中设置密码后交付本人；不重置已有密码、不提升角色。关闭自动开户时仅保存名册和更新已匹配账号。</p>
+        <div class="organization-excel-actions">
+          <a class="settings-button settings-button--primary" :href="resourceUrl('/api/admin-organization/excel')" download>下载组织架构表</a>
+          <button class="settings-button settings-button--ghost" type="button" :disabled="loading.organizationImport" @click="organizationExcelPicker?.click()">{{ loading.organizationImport ? '上传处理中…' : '上传并更新组织信息' }}</button>
+          <input ref="organizationExcelPicker" type="file" accept=".xlsx" hidden @change="handleOrganizationExcelUpload" />
+        </div>
+        <el-alert v-if="organizationExcelResult" :closable="false" :type="organizationExcelResult.errors.length || (organizationExcelResult.roster_check?.missing ?? 0) ? 'warning' : 'success'" :title="`已保存 ${organizationExcelResult.imported ?? organizationExcelResult.updated} 条；账号更新 ${organizationExcelResult.updated} 条，未变更 ${organizationExcelResult.skipped} 条，待绑定/核对 ${organizationExcelResult.pending ?? 0} 条，格式错误 ${organizationExcelResult.errors.length} 条${organizationExcelResult.roster_check?.applied ? `，未在本表 ${organizationExcelResult.roster_check.missing ?? 0} 人` : ''}`" style="margin-top:16px" />
+        <p v-if="organizationExcelResult?.roster_check && !organizationExcelResult.roster_check.applied">{{ organizationExcelResult.roster_check.reason }}</p>
+        <el-table v-if="organizationExcelResult?.roster_check?.missing_users?.length" :data="organizationExcelResult.roster_check.missing_users" max-height="260" style="margin-top:12px">
+          <el-table-column prop="name" label="未在最新组织表中" width="160" />
+          <el-table-column prop="employee_id" label="工号" width="120" />
+          <el-table-column prop="username" label="账号" width="170" />
+          <el-table-column prop="company" label="当前公司" min-width="190" />
+          <el-table-column prop="department" label="当前部门" min-width="220" />
+        </el-table>
+        <el-table v-if="organizationExcelResult?.notices?.length" :data="organizationExcelResult.notices" max-height="260"><el-table-column prop="row" label="原表行号" width="110"/><el-table-column prop="error" label="已保存，待核对"/></el-table>
+        <p v-if="organizationExcelResult">本次新建 {{ organizationExcelResult.created ?? 0 }} 个普通用户；账号首次使用前请设置密码。</p>
+        <el-table v-if="organizationExcelResult?.created_users?.length" :data="organizationExcelResult.created_users" max-height="260"><el-table-column prop="name" label="姓名"/><el-table-column prop="username" label="新建账号"/></el-table>
+        <el-table v-if="organizationExcelResult?.errors.length" :data="organizationExcelResult.errors" max-height="260" style="margin-top:12px">
+          <el-table-column prop="row" label="Excel 行号" width="110" /><el-table-column prop="error" label="修正提示" min-width="260" />
+        </el-table>
+      </div>
+      <template #footer><button class="settings-button settings-button--primary" type="button" @click="organizationExcelDialog = false">完成</button></template>
     </el-dialog>
 
     <el-dialog v-model="agentConfigDialog" title="编辑犇犇配置" width="840px" class="settings-dialog">

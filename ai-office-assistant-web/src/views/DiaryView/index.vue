@@ -4,17 +4,22 @@ import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowRight, Delete, EditPen, Search } from '@element-plus/icons-vue'
 import IconTextButton from '../../components/IconTextButton/index.vue'
-import { defaultOptimizePrompt } from '../../services/authSession'
+import AiWritingStyleSelect from '../../components/AiWritingStyleSelect/index.vue'
+import AiPolishButton from '../../components/AiPolishButton/index.vue'
+import { authState, defaultOptimizePrompt } from '../../services/authSession'
+import { buildOptimizePrompt, extraOptimizePrompt, getSavedStylePrompt, saveStylePrompt, writingStyle, writingStyleInstruction, type AiWritingStyle } from '../../utils/aiWritingStyle'
 import {
   deleteDiary,
   getDiary,
   getWeeklyPrefill,
+  listProjects,
   listDiaries,
   optimizeText,
   saveDiary,
   summarizeDiaries,
   type DiaryEntry,
   type DiarySummaryRows,
+  type Project,
 } from '../../services/personalWorkApi'
 import './index.scss'
 
@@ -38,9 +43,9 @@ interface DiaryOptimizePreview {
 const diarySections: DiarySection[] = [
   {
     key: 'today_work',
-    title: '今日工作内容',
-    subtitle: '记录今天完成的主要工作、遇到的问题、解决方案',
-    placeholder: '例如：优化周报助手页面交互，调整编辑、预览、邮件发送三个核心流程...',
+    title: '日常工作',
+    subtitle: '记录不归属于特定项目的日常事项、协作和临时处理工作',
+    placeholder: '例如：参与部门例会、处理行政协作、回复客户沟通、完成内部流程...',
   },
   {
     key: 'tomorrow_plan',
@@ -62,6 +67,9 @@ const today = toDateInputValue(new Date())
 const activeMode = ref<DiaryMode>('write')
 const selectedDate = ref(today)
 const selectedDiary = ref<DiaryEntry | null>(null)
+const projectOptions = ref<Project[]>([])
+const selectedProjectIds = ref<string[]>([])
+const projectNotes = reactive<Record<string, string>>({})
 const statusMessage = ref('选择日期后可以直接记录或载入已有日记。')
 const statusTone = ref<DiaryStatusTone>('normal')
 const diaries = ref<DiaryEntry[]>([])
@@ -130,8 +138,9 @@ const pageSubtitle = computed(() =>
     ? '查看历史工作记录，快速回顾每日进展。'
     : '记录今天的工作、明日计划和临时想法，系统会自动沉淀为周报素材。',
 )
-const filledSectionCount = computed(() => diarySections.filter((section) => diaryForm[section.key].trim()).length)
-const totalContentLength = computed(() => diarySections.reduce((total, section) => total + diaryForm[section.key].trim().length, 0))
+const filledSectionCount = computed(() => diarySections.filter((section) => diaryForm[section.key].trim()).length + selectedProjectIds.value.filter((id) => projectNotes[id]?.trim()).length)
+const totalContentLength = computed(() => diarySections.reduce((total, section) => total + diaryForm[section.key].trim().length, 0) + selectedProjectIds.value.reduce((total, id) => total + (projectNotes[id] || '').trim().length, 0))
+const selectedProjects = computed(() => projectOptions.value.filter((project) => selectedProjectIds.value.includes(project.id)))
 const currentDiary = computed(() => diaries.value.find((item) => item.date === selectedDate.value))
 const currentUpdatedText = computed(() => formatDateTime(currentDiary.value?.updated_at || ''))
 const statusText = computed(() => {
@@ -172,6 +181,7 @@ const promptDialogVisible = computed({
   },
 })
 const promptDialogTitle = computed(() => (currentPromptSection.value ? `${currentPromptSection.value.title}提示词` : '提示词'))
+const stylePromptPreview = computed(() => buildOptimizePrompt(writingStyle.value))
 
 function toDateInputValue(date: Date) {
   const year = date.getFullYear()
@@ -240,16 +250,29 @@ function formFingerprint() {
   return `${diaryForm.today_work} ${diaryForm.tomorrow_plan} ${diaryForm.thoughts}`
 }
 
-const isFormDirty = computed(() => formFingerprint() !== formSnapshot.value)
+function currentFormFingerprint() {
+  return `${formFingerprint()}|${selectedProjectIds.value.join(',')}|${selectedProjectIds.value.map((id) => `${id}:${projectNotes[id] || ''}`).join('|')}`
+}
+
+const isFormDirty = computed(() => currentFormFingerprint() !== formSnapshot.value)
 
 function applyDiary(diary: DiaryEntry | null) {
   diaryForm.today_work = diary?.today_work || ''
   diaryForm.tomorrow_plan = diary?.tomorrow_plan || ''
   diaryForm.thoughts = diary?.thoughts || ''
+  selectedProjectIds.value = [...new Set([...(diary?.project_ids || (diary?.project_id ? [diary.project_id] : [])), ...Object.keys(diary?.project_notes || {})])]
+  Object.keys(projectNotes).forEach((id) => delete projectNotes[id])
+  Object.assign(projectNotes, diary?.project_notes || {})
   diarySections.forEach((section) => {
     optimizePreview[section.key] = null
   })
-  formSnapshot.value = formFingerprint()
+  formSnapshot.value = currentFormFingerprint()
+}
+
+function toggleDiaryProject(projectId: string) {
+  selectedProjectIds.value = selectedProjectIds.value.includes(projectId)
+    ? selectedProjectIds.value.filter((id) => id !== projectId)
+    : [...selectedProjectIds.value, projectId]
 }
 
 function diaryPreview(entry: DiaryEntry) {
@@ -275,18 +298,31 @@ function handleDiaryFieldInput(key: DiaryFieldKey) {
 
 function openPromptEditor(section: DiarySection) {
   promptEditor.value = section.key
-  promptDraft.value = optimizePrompt(section.key)
+  promptDraft.value = rawOptimizePrompt(section.key)
 }
 
 function savePromptEditor() {
   if (!promptEditor.value) return
-  promptForm[promptEditor.value] = promptDraft.value.trim()
+  saveStylePrompt(promptOwner(), 'diary', promptEditor.value, writingStyle.value, promptDraft.value)
   promptEditor.value = ''
   ElMessage.success('提示词已更新')
 }
 
+function promptOwner() {
+  return authState.user?.username || 'guest'
+}
+
+function rawOptimizePrompt(fieldKey: DiaryFieldKey, style: AiWritingStyle = writingStyle.value) {
+  const saved = getSavedStylePrompt(promptOwner(), 'diary', fieldKey, style)
+  return extraOptimizePrompt(saved === null ? (promptForm[fieldKey] || defaultOptimizePrompt()) : saved)
+}
+
+function syncPromptDraftForStyle(style: AiWritingStyle) {
+  if (promptEditor.value) promptDraft.value = rawOptimizePrompt(promptEditor.value, style)
+}
+
 function optimizePrompt(fieldKey: DiaryFieldKey) {
-  return promptForm[fieldKey] || defaultOptimizePrompt()
+  return buildOptimizePrompt(writingStyle.value, rawOptimizePrompt(fieldKey))
 }
 
 async function optimizeDiaryField(section: DiarySection) {
@@ -381,10 +417,11 @@ async function saveCurrentDiary(options: { silent?: boolean } = {}) {
   }
   loading.save = true
   try {
-    const result = await saveDiary({ date: selectedDate.value, ...diaryForm })
+    // 网页表单是完整编辑：显式覆盖，确保用户手动清空某个栏目也能保存。
+    const result = await saveDiary({ date: selectedDate.value, ...diaryForm, project_ids: selectedProjectIds.value, project_notes: projectNotes, replace: true })
     await loadDiaryList()
     selectedDiary.value = result.diary
-    formSnapshot.value = formFingerprint()
+    formSnapshot.value = currentFormFingerprint()
     if (silent) {
       lastAutoSavedAt.value = formatDateTime(new Date().toISOString())
       setStatus(`已于 ${lastAutoSavedAt.value} 自动保存`, 'ok')
@@ -661,7 +698,10 @@ onBeforeRouteLeave(async () => {
 })
 
 async function initializeDiary() {
-  await Promise.all([loadDiaryToForm(), loadDiaryList()])
+  const projectsTask = listProjects()
+    .then((result) => { projectOptions.value = result.projects.filter((project) => project.status === 'active') })
+    .catch(() => { projectOptions.value = [] })
+  await Promise.all([loadDiaryToForm(), loadDiaryList(), projectsTask])
 }
 
 onMounted(() => {
@@ -715,6 +755,58 @@ onUnmounted(() => {
           </div>
         </section>
 
+        <section v-if="projectOptions.length" class="diary-project-card-panel">
+          <header>
+            <div>
+              <h2>今日参与项目</h2>
+              <p>可同时关联多个项目；保存后会同步显示在各项目的日报时间线中。</p>
+            </div>
+            <span>{{ selectedProjectIds.length ? `已关联 ${selectedProjectIds.length} 个` : '暂未关联项目' }}</span>
+          </header>
+          <div class="diary-project-card-list">
+            <button
+              v-for="project in projectOptions"
+              :key="project.id"
+              :class="['diary-project-card', { active: selectedProjectIds.includes(project.id) }]"
+              type="button"
+              @click="toggleDiaryProject(project.id)"
+            >
+              <small>项目</small>
+              <strong>{{ project.name }}</strong>
+              <span>{{ project.description || '点击关联到今日日记' }}</span>
+              <em>{{ selectedProjectIds.includes(project.id) ? '已关联' : '关联项目' }}</em>
+            </button>
+          </div>
+        </section>
+
+        <section v-if="selectedProjects.length" class="diary-project-notes-panel">
+          <header>
+            <div>
+              <span class="diary-section-dot project" aria-hidden="true"></span>
+              <div>
+                <h2>项目日记</h2>
+                <p>分别记录每个项目当天的进展、成果或需要跟进的事项。</p>
+              </div>
+            </div>
+            <small>{{ selectedProjects.length }} 个项目待记录</small>
+          </header>
+          <div class="diary-project-notes-grid">
+            <article v-for="project in selectedProjects" :key="project.id" class="diary-project-note-card">
+              <header>
+                <span>项目日记</span>
+                <strong>{{ project.name }}</strong>
+                <small>{{ project.description || '记录该项目今日进展' }}</small>
+              </header>
+              <el-input
+                v-model="projectNotes[project.id]"
+                type="textarea"
+                :autosize="{ minRows: 3, maxRows: 7 }"
+                placeholder="例如：完成需求确认，推进接口联调，梳理风险及下一步安排..."
+              />
+            </article>
+          </div>
+        </section>
+
         <section class="diary-autosave-bar">
           <div class="diary-autosave-main">
             <el-switch v-model="autoSaveConfig.enabled" size="small" />
@@ -744,11 +836,8 @@ onUnmounted(() => {
               <p>{{ section.subtitle }}</p>
             </div>
             <div class="diary-section-tools ai-field-actions">
+              <AiPolishButton :loading="optimizingFields.includes(section.key)" @polish="optimizeDiaryField(section)" />
               <button class="ai-prompt-button" type="button" @click="openPromptEditor(section)">提示词</button>
-              <button class="ai-polish-button" type="button" :disabled="optimizingFields.includes(section.key)" @click="optimizeDiaryField(section)">
-                <span aria-hidden="true">✦</span>
-                {{ optimizingFields.includes(section.key) ? '润色中' : 'AI 润色' }}
-              </button>
             </div>
           </header>
           <el-input
@@ -906,7 +995,21 @@ onUnmounted(() => {
       destroy-on-close
       :close-on-click-modal="false"
     >
-      <el-input v-model="promptDraft" type="textarea" :autosize="{ minRows: 5, maxRows: 8 }" />
+      <div class="ai-prompt-style">
+        <div>
+          <strong>当前行文风格</strong>
+          <AiWritingStyleSelect @select="syncPromptDraftForStyle" />
+        </div>
+        <p>{{ writingStyleInstruction(writingStyle) }}</p>
+      </div>
+      <label class="ai-prompt-preview-label">
+        <span>AI 润色提示词（随行文风格自动变化）</span>
+        <el-input :model-value="stylePromptPreview" type="textarea" readonly :autosize="{ minRows: 5, maxRows: 8 }" />
+      </label>
+      <label class="ai-prompt-custom-label">
+        <span>当前风格的补充提示词（永久保存）</span>
+        <el-input v-model="promptDraft" type="textarea" :autosize="{ minRows: 5, maxRows: 8 }" />
+      </label>
       <template #footer>
         <div class="diary-prompt-actions prompt-dialog-actions">
           <el-button class="prompt-dialog-button" @click="promptEditor = ''">取消</el-button>

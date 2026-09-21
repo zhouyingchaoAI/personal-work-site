@@ -349,20 +349,41 @@
             display: none;
         }
 
-        /* 嵌入布局：左侧整列聊天面板（完整历史可滚动），右侧犇犇立绘。 */
+        /* 嵌入布局：左侧历史会话栏 · 中间聊天面板 · 右侧犇犇立绘（可选）。 */
+        :root { --sidebar-w: 224px; }
+
         body.embedded .app {
-            grid-template-columns: minmax(0, 1fr) 215px;
+            position: relative;
+            grid-template-columns: var(--sidebar-w) minmax(0, 1fr) 300px;
             grid-template-rows: minmax(0, 1fr);
+            grid-template-areas: "side chat stage";
             align-items: stretch;
             width: 100%;
             height: 100vh;
             padding: 6px 6px 10px;
-            gap: 4px;
+            gap: 8px;
         }
 
+        /* 默认专注对话：数字人仅在用户手动开启后显示。 */
+        body.embedded.avatar-hidden .app {
+            grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+            grid-template-areas: "side chat";
+        }
+        body.embedded.avatar-hidden .viewer { display: none; }
+
+        /* 收起历史栏后腾出全部宽度给对话。 */
+        body.embedded.sidebar-collapsed .app {
+            grid-template-columns: minmax(0, 1fr) 300px;
+            grid-template-areas: "chat stage";
+        }
+        body.embedded.sidebar-collapsed.avatar-hidden .app {
+            grid-template-columns: minmax(0, 1fr);
+            grid-template-areas: "chat";
+        }
+        body.embedded.sidebar-collapsed .sidebar { display: none; }
+
         body.embedded .viewer {
-            grid-row: 1;
-            grid-column: 2;
+            grid-area: stage;
             border-radius: 0;
             background: none;
         }
@@ -370,11 +391,178 @@
         body.embedded .panel {
             display: flex;
             flex-direction: column;
-            grid-row: 1;
-            grid-column: 1;
+            grid-area: chat;
             gap: 8px;
             height: 100%;
             min-height: 0;
+        }
+
+        /* ===== 历史会话侧栏 ===== */
+        .sidebar { display: none; }
+
+        body.embedded .sidebar {
+            grid-area: side;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-height: 0;
+            height: 100%;
+            padding: 12px 10px;
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.72);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            box-shadow: 0 14px 38px rgba(15, 23, 42, 0.14);
+        }
+
+        .sidebar-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 2px 2px 0;
+        }
+
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .sidebar-brand img {
+            width: 26px;
+            height: 26px;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        .sidebar-collapse {
+            display: inline-grid;
+            place-items: center;
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            background: #eef2f7;
+            color: #55607a;
+        }
+
+        .sidebar-collapse:hover { background: #e2e8f2; color: #1f2937; }
+
+        .sidebar-collapse svg { width: 17px; height: 17px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+        .sidebar-new {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            height: 40px;
+            border-radius: 12px;
+            border: 1px solid #d3ddf0;
+            background: linear-gradient(180deg, #f4f7fd, #eaf0fb);
+            color: var(--accent);
+            font-size: 14px;
+            font-weight: 700;
+            transition: background 120ms ease, border-color 120ms ease;
+        }
+
+        .sidebar-new:hover { background: #e5eefc; border-color: #b9cef0; }
+
+        .sidebar-new svg { width: 17px; height: 17px; stroke: currentColor; stroke-width: 2.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+        .sidebar-list {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding-right: 2px;
+            scrollbar-width: thin;
+        }
+
+        .sidebar-group {
+            padding: 12px 8px 4px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #9aa4b6;
+            letter-spacing: 0.02em;
+        }
+
+        .session-item {
+            position: relative;
+            display: block;
+            width: 100%;
+            padding: 9px 26px 9px 10px;
+            border-radius: 9px;
+            background: transparent;
+            color: #33405a;
+            font-size: 13px;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            transition: background 110ms ease, color 110ms ease;
+        }
+
+        .session-item:hover { background: rgba(47, 107, 246, 0.08); }
+
+        .session-item.active {
+            background: rgba(47, 107, 246, 0.14);
+            color: var(--accent-dark);
+            font-weight: 600;
+        }
+
+        .session-del {
+            position: absolute;
+            top: 50%;
+            right: 6px;
+            transform: translateY(-50%);
+            display: none;
+            width: 18px;
+            height: 18px;
+            line-height: 16px;
+            text-align: center;
+            border-radius: 5px;
+            color: #97a2b6;
+            font-size: 15px;
+        }
+
+        .session-item:hover .session-del { display: block; }
+        .session-del:hover { background: rgba(220, 38, 38, 0.12); color: #dc2626; }
+
+        /* 收起态下用于重新展开侧栏的浮动按钮。 */
+        .sidebar-show {
+            display: none;
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 6;
+            width: 34px;
+            height: 34px;
+            place-items: center;
+            border-radius: 9px;
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            background: rgba(255, 255, 255, 0.85);
+            color: #55607a;
+            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
+        }
+
+        body.embedded.sidebar-collapsed .sidebar-show { display: grid; }
+        .sidebar-show svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+        /* 窄屏（近全屏弹窗）默认隐藏历史栏，把宽度全部让给对话。 */
+        @media (max-width: 720px) {
+            body.embedded .app,
+            body.embedded.avatar-hidden .app {
+                grid-template-columns: minmax(0, 1fr);
+                grid-template-areas: "chat";
+            }
+            body.embedded .sidebar,
+            body.embedded .sidebar-show { display: none !important; }
         }
 
         body.embedded .chat-log {
@@ -412,28 +600,23 @@
             box-shadow: 0 14px 38px rgba(15, 23, 42, 0.22);
         }
 
+        body.embedded .chat-log { min-height: 260px; }
+        body.embedded .action-bar { flex-wrap: wrap; overflow: visible; }
+        body.embedded .controls { grid-template-columns: 44px 44px 44px 44px minmax(0, 1fr); }
+        body.embedded .file-chips { display:flex; flex-wrap:wrap; gap:6px; }
+        body.embedded .file-chip { display:inline-flex; align-items:center; gap:5px; padding:4px 8px; border-radius:7px; background:#eaf5fb; color:#24566b; font-size:12px; }
+        body.embedded .file-chip button { background:transparent; color:inherit; font-size:15px; }
+        body.embedded .weekly-draft-review-actions { display:flex; flex-wrap:wrap; gap:8px; padding:2px 0 8px; }
+        body.embedded .weekly-draft-review-actions button { padding:8px 12px; border:1px solid #bed6e3; border-radius:8px; background:#eef6fa; color:#24566b; font-weight:700; }
+        body.embedded .weekly-draft-review-actions button.primary { border-color:var(--accent); background:var(--accent); color:#fff; }
+
         /* 嵌入模式专属：隐藏/显示对话框的小圆钮，纯人物桌宠形态。 */
         .chat-toggle {
             display: none;
         }
 
-        body.embedded .chat-toggle {
-            position: fixed;
-            top: 8px;
-            right: 8px;
-            z-index: 20;
-            display: grid;
-            place-items: center;
-            width: 34px;
-            height: 34px;
-            border: 1px solid rgba(255, 255, 255, 0.7);
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.82);
-            color: #244151;
-            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-        }
+        /* 主站的大窗不再提供旧版“隐藏聊天”圆钮，关闭由主窗口遮罩完成。 */
+        body.embedded .chat-toggle { display: none; }
 
         .chat-toggle svg {
             width: 17px;
@@ -481,6 +664,229 @@
         body.embedded .btn.active {
             background: #fff2df;
         }
+
+        /* ============ 通用对话式界面（犇犇 Chat）============ */
+        :root {
+            --accent: #2f6bf6;
+            --accent-dark: #1f52d0;
+        }
+
+        /* 居中欢迎态：无消息时只显示问候语 + 输入框，像通用大模型对话。 */
+        .chat-hero {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            padding: 30px 16px 18px;
+            text-align: center;
+        }
+
+        .chat-hero-logo {
+            width: 54px;
+            height: 54px;
+            border-radius: 15px;
+            object-fit: cover;
+            box-shadow: 0 8px 22px rgba(47, 107, 246, 0.24);
+        }
+
+        .chat-hero-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .chat-hero-sub {
+            max-width: 460px;
+            font-size: 13px;
+            line-height: 1.65;
+            color: var(--muted);
+        }
+
+        .panel.chat-empty .chat-log {
+            display: none;
+        }
+
+        .panel:not(.chat-empty) .chat-hero {
+            display: none;
+        }
+
+        /* 欢迎态整体垂直居中，输入框紧随问候语。 */
+        .panel.chat-empty {
+            justify-content: center;
+        }
+
+        /* 数字人动作按钮默认收起，仅在手动开启犇犇立绘后出现。 */
+        .avatar-actions {
+            display: none;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        body:not(.avatar-hidden) .avatar-actions {
+            display: flex;
+        }
+
+        /* 输入区：一张圆角大卡片，文本域在上、工具行在下。 */
+        .composer {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 12px 14px 11px;
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            background: #fff;
+            box-shadow: 0 8px 26px rgba(15, 23, 42, 0.07);
+            transition: border-color 130ms ease, box-shadow 130ms ease;
+        }
+
+        .composer:focus-within {
+            border-color: var(--accent);
+            box-shadow: 0 8px 28px rgba(47, 107, 246, 0.16);
+        }
+
+        .composer .input {
+            grid-column: auto;
+            min-height: 44px;
+            max-height: 200px;
+            padding: 4px 6px;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+            box-shadow: none;
+            font-size: 15px;
+        }
+
+        .composer .input:focus {
+            border: 0;
+            box-shadow: none;
+        }
+
+        .composer-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .composer-tasks {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            height: 34px;
+            padding: 0 14px;
+            border: 1px solid #dbe3ef;
+            border-radius: 999px;
+            background: #f4f7fd;
+            color: #2f5390;
+            font-size: 13px;
+            font-weight: 600;
+            transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+        }
+
+        .chip:hover {
+            background: #e8f0fe;
+            border-color: #bcd0f5;
+        }
+
+        .chip:active {
+            transform: translateY(1px);
+        }
+
+        .composer-tools {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .tool-btn {
+            display: inline-grid;
+            place-items: center;
+            width: 38px;
+            height: 38px;
+            border-radius: 11px;
+            background: #f2f5fa;
+            color: #47536b;
+            font-size: 16px;
+            transition: background 120ms ease, color 120ms ease;
+        }
+
+        .tool-btn:hover {
+            background: #e6ebf3;
+            color: #1f2937;
+        }
+
+        .tool-btn.active {
+            background: #e5efff;
+            color: var(--accent);
+        }
+
+        .tool-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .tool-btn svg {
+            width: 19px;
+            height: 19px;
+            stroke: currentColor;
+            stroke-width: 2;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .send-fab {
+            display: inline-grid;
+            place-items: center;
+            width: 40px;
+            height: 40px;
+            margin-left: 2px;
+            border-radius: 999px;
+            background: var(--accent);
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(47, 107, 246, 0.32);
+            transition: background 120ms ease, transform 120ms ease;
+        }
+
+        .send-fab:hover {
+            background: var(--accent-dark);
+        }
+
+        .send-fab:active {
+            transform: scale(0.94);
+        }
+
+        .send-fab:disabled {
+            background: #c3ccdb;
+            box-shadow: none;
+            cursor: not-allowed;
+        }
+
+        .send-fab svg {
+            width: 20px;
+            height: 20px;
+            stroke: #fff;
+            stroke-width: 2.4;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        /* 用户气泡跟随主色调，整体更贴近通用对话界面。 */
+        .chat-msg.user {
+            background: var(--accent);
+        }
+
+        body.embedded .file-chips:empty {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -496,6 +902,27 @@
             </div>
         </header>
 
+        <aside class="sidebar" id="chatSidebar" aria-label="历史对话">
+            <div class="sidebar-head">
+                <div class="sidebar-brand">
+                    <img src="./logo_1.png" alt="犇犇">
+                    <span>犇犇助手</span>
+                </div>
+                <button class="sidebar-collapse" id="sidebarCollapseBtn" type="button" title="收起历史栏" aria-label="收起历史栏">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path></svg>
+                </button>
+            </div>
+            <button class="sidebar-new" id="newChatBtn" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                开启新对话
+            </button>
+            <div class="sidebar-list" id="sessionList" aria-label="历史对话列表"></div>
+        </aside>
+
+        <button class="sidebar-show" id="sidebarShowBtn" type="button" title="展开历史栏" aria-label="展开历史栏">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path></svg>
+        </button>
+
         <section class="viewer" id="viewer" aria-label="3D 数字人舞台">
             <canvas id="avatarCanvas"></canvas>
             <div class="viewer-loading" id="viewerLoading">正在加载 3D 模型</div>
@@ -505,9 +932,16 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.35 8.5 8.5 0 0 1-3.4-.65L3 21l1.8-5.6A8.38 8.38 0 0 1 3.6 11.5a8.5 8.5 0 0 1 8.7-8.35 8.38 8.38 0 0 1 8.7 8.35Z"></path></svg>
         </button>
 
-        <section class="panel" aria-label="对话控制">
+        <section class="panel chat-empty" id="chatPanel" aria-label="对话控制">
+            <div class="chat-hero" id="chatHero">
+                <img class="chat-hero-logo" src="./logo_1.png" alt="犇犇">
+                <div class="chat-hero-title">开始和犇犇对话</div>
+                <div class="chat-hero-sub">承希 AI 智能助手 · 帮你写周报、出差报告、整理待办，也能上传文件识别内容</div>
+            </div>
+
             <div class="chat-log" id="chatLog" aria-label="对话记录"></div>
-            <div class="action-bar" aria-label="动作控制">
+
+            <div class="avatar-actions" aria-label="数字人动作">
                 <button class="action-btn" type="button" data-action="blink" disabled>眨眼</button>
                 <button class="action-btn" type="button" data-action="talk" disabled>说话测试</button>
                 <button class="action-btn" type="button" data-action="greet" disabled>打招呼</button>
@@ -521,19 +955,35 @@
                 <button class="action-btn" type="button" data-action="kiss" disabled>么么哒</button>
                 <button class="action-btn" type="button" data-action="awesome" disabled>牛掰</button>
             </div>
+
             <div class="panel-status" id="panelStatus"></div>
-            <div class="controls">
-                <textarea class="input" id="userInput" rows="2" placeholder="输入要说的话，Enter 发送，Shift+Enter 换行" autocomplete="off"></textarea>
-                <button class="btn" id="micBtn" type="button" aria-label="语音输入" aria-pressed="false" title="语音输入">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"></path><path d="M19 11a7 7 0 0 1-14 0"></path><path d="M12 18v3"></path><path d="M8 21h8"></path></svg>
-                </button>
-                <button class="btn active" id="voiceBtn" type="button" aria-label="语音朗读" title="语音朗读">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"></path><path d="M16 9.5a4 4 0 0 1 0 5"></path><path d="M19 7a8 8 0 0 1 0 10"></path></svg>
-                </button>
-                <button class="btn primary" id="sendBtn" type="button">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4 20-7Z"></path><path d="M22 2 11 13"></path></svg>
-                    发送
-                </button>
+
+            <div class="composer">
+                <div class="file-chips" id="fileChips"></div>
+                <textarea class="input" id="userInput" rows="1" placeholder="发消息给犇犇，Enter 发送，Shift+Enter 换行" autocomplete="off"></textarea>
+                <input id="fileInput" type="file" multiple hidden accept=".txt,.md,.csv,.log,.json,.html,.htm,.doc,.docx,.pdf,.xls,.xlsx,.ppt,.pptx,.wps">
+                <div class="composer-bar">
+                    <div class="composer-tasks">
+                        <button class="chip quick-prompt" type="button" data-wizard="weekly" data-prompt="请生成本周周报">写周报</button>
+                        <button class="chip quick-prompt" type="button" data-prompt="请写一份出差报告">出差报告</button>
+                        <button class="chip quick-prompt" type="button" data-prompt="请整理今天的工作待办">整理待办</button>
+                    </div>
+                    <div class="composer-tools">
+                        <button class="tool-btn" id="fileBtn" type="button" aria-label="上传文件" title="上传文件并识别内容">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                        </button>
+                        <button class="tool-btn" id="micBtn" type="button" aria-label="语音输入" aria-pressed="false" title="语音输入">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"></path><path d="M19 11a7 7 0 0 1-14 0"></path><path d="M12 18v3"></path><path d="M8 21h8"></path></svg>
+                        </button>
+                        <button class="tool-btn" id="voiceBtn" type="button" aria-label="开启语音朗读" title="开启语音朗读">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"></path><path d="M16 9.5a4 4 0 0 1 0 5"></path><path d="M19 7a8 8 0 0 1 0 10"></path></svg>
+                        </button>
+                        <button class="tool-btn" id="avatarBtn" type="button" aria-label="显示犇犇数字人" title="显示犇犇数字人">犇</button>
+                        <button class="send-fab" id="sendBtn" type="button" aria-label="发送" title="发送">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>
+                        </button>
+                    </div>
+                </div>
             </div>
         </section>
     </main>
@@ -611,19 +1061,18 @@
         });
 
         if (IS_EMBEDDED) {
-            let savedHidden = false;
-            try {
-                savedHidden = localStorage.getItem(CHAT_HIDDEN_KEY) === "1";
-            } catch {
-                savedHidden = false;
-            }
-            setChatHidden(savedHidden, false);
+            setChatHidden(false, false);
         }
 
         const viewer = document.getElementById("viewer");
         const canvas = document.getElementById("avatarCanvas");
         const viewerLoading = document.getElementById("viewerLoading");
         const chatLog = document.getElementById("chatLog");
+        const chatPanel = document.getElementById("chatPanel");
+        // 有消息后退出居中欢迎态，切换为常规对话列表布局。
+        function markConversationStarted() {
+            if (chatPanel) chatPanel.classList.remove("chat-empty");
+        }
         // 状态同时写到顶栏和面板里（嵌入模式顶栏是隐藏的）。
         const statusNodes = [document.getElementById("statusText"), document.getElementById("panelStatus")].filter(Boolean);
         const statusText = {
@@ -640,6 +1089,12 @@
         const sendBtn = document.getElementById("sendBtn");
         const micBtn = document.getElementById("micBtn");
         const voiceBtn = document.getElementById("voiceBtn");
+        const fileBtn = document.getElementById("fileBtn");
+        const fileInput = document.getElementById("fileInput");
+        const fileChips = document.getElementById("fileChips");
+        const avatarBtn = document.getElementById("avatarBtn");
+        let attachedFiles = [];
+        let pendingWeeklyDraft = null;
         const actionButtons = document.querySelectorAll(".action-btn");
 
         const scene = new THREE.Scene();
@@ -684,7 +1139,8 @@
         let idleAction = null;
         let currentAction = null;
         let speakingAction = null;
-        let voiceEnabled = true;
+        let voiceEnabled = false;
+        let avatarLoaded = false;
         let recognizer = null;
         let micActive = false;
         let micPausedForReply = false;
@@ -711,9 +1167,11 @@
 
         function setControlsEnabled(enabled) {
             actionButtons.forEach(button => {
-                button.disabled = !enabled || !ENABLED_ACTIONS.has(button.dataset.action);
+                button.disabled = !enabled || (!button.classList.contains("quick-prompt") && (!avatarLoaded || !ENABLED_ACTIONS.has(button.dataset.action)));
             });
             sendBtn.disabled = !enabled;
+            // 允许在回答过程中先上传下一轮资料；上传独立处理自己的忙碌态。
+            fileBtn.disabled = false;
         }
 
         let fittedSize = null;
@@ -1175,9 +1633,107 @@
         }
 
         // 完整对话记录展示（与发给模型的短上下文分离），最近 80 条落地 localStorage。
-        const CHAT_LOG_KEY = "chengxi-chat-log";
+        // ===== 多会话历史：每个会话含 id / 标题 / 时间 / 消息，落地 localStorage =====
+        const SESSIONS_KEY = "chengxi-sessions";
+        const ACTIVE_KEY = "chengxi-active-session";
+        const LEGACY_LOG_KEY = "chengxi-chat-log";
+        const SESSION_MAX = 40;      // 最多保留的会话数
+        const MSG_PER_SESSION = 160; // 单会话保留的消息数
+
+        const sessionList = document.getElementById("sessionList");
+        let sessions = [];
+        let activeSessionId = null;
+
+        function loadSessions() {
+            try {
+                const s = JSON.parse(localStorage.getItem(SESSIONS_KEY) || "[]");
+                if (Array.isArray(s)) return s.filter(x => x && x.id && Array.isArray(x.messages));
+            } catch {}
+            return [];
+        }
+
+        function persistSessions() {
+            try {
+                sessions = sessions.slice(0, SESSION_MAX);
+                localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+            } catch {}
+        }
+
+        function newSessionObj() {
+            return {
+                id: "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                title: "新对话",
+                messages: [],
+                updatedAt: Date.now()
+            };
+        }
+
+        function getActiveSession() {
+            return sessions.find(s => s.id === activeSessionId) || null;
+        }
+
+        function deriveTitle(text) {
+            const base = String(text || "").replace(/\s+/g, " ").trim();
+            return base ? base.slice(0, 20) : "新对话";
+        }
+
+        function migrateLegacyLog() {
+            if (sessions.length) return;
+            let saved = [];
+            try { saved = JSON.parse(localStorage.getItem(LEGACY_LOG_KEY) || "[]"); } catch {}
+            if (Array.isArray(saved) && saved.length) {
+                const s = newSessionObj();
+                s.messages = saved.slice(-MSG_PER_SESSION);
+                const firstUser = s.messages.find(m => m && m.role === "user");
+                s.title = deriveTitle(firstUser ? firstUser.content : s.messages[0] && s.messages[0].content);
+                sessions.unshift(s);
+                try { localStorage.removeItem(LEGACY_LOG_KEY); } catch {}
+            }
+        }
+
+        function sessionGroupLabel(ts) {
+            const d = new Date(ts || Date.now());
+            const now = new Date();
+            const dayMs = 86400000;
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+            if (ts >= startOfToday) return "今天";
+            if (ts >= startOfToday - dayMs) return "昨天";
+            if (ts >= startOfToday - 7 * dayMs) return "近 7 天";
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        }
+
+        function renderSessionList() {
+            if (!sessionList) return;
+            sessionList.innerHTML = "";
+            const sorted = [...sessions].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+            let lastGroup = null;
+            sorted.forEach(s => {
+                const group = sessionGroupLabel(s.updatedAt || 0);
+                if (group !== lastGroup) {
+                    lastGroup = group;
+                    const h = document.createElement("div");
+                    h.className = "sidebar-group";
+                    h.textContent = group;
+                    sessionList.appendChild(h);
+                }
+                const item = document.createElement("button");
+                item.type = "button";
+                item.className = "session-item" + (s.id === activeSessionId ? " active" : "");
+                item.title = s.title || "新对话";
+                item.textContent = s.title || "新对话";
+                item.addEventListener("click", () => switchSession(s.id));
+                const del = document.createElement("span");
+                del.className = "session-del";
+                del.textContent = "×";
+                del.title = "删除对话";
+                del.addEventListener("click", evt => { evt.stopPropagation(); deleteSession(s.id); });
+                item.appendChild(del);
+                sessionList.appendChild(item);
+            });
+        }
 
         function renderChatMessage(role, content) {
+            markConversationStarted();
             const node = document.createElement("div");
             node.className = "chat-msg " + (role === "user" ? "user" : "assistant");
             node.textContent = content;
@@ -1191,38 +1747,98 @@
                 return;
             }
             renderChatMessage(role, text);
-            try {
-                const saved = JSON.parse(localStorage.getItem(CHAT_LOG_KEY) || "[]");
-                saved.push({ role, content: text });
-                localStorage.setItem(CHAT_LOG_KEY, JSON.stringify(saved.slice(-80)));
-            } catch {
-                // 存储不可用时仅影响刷新后的历史，不影响当前对话。
+            const s = getActiveSession();
+            if (s) {
+                s.messages.push({ role, content: text });
+                if (s.messages.length > MSG_PER_SESSION) s.messages = s.messages.slice(-MSG_PER_SESSION);
+                s.updatedAt = Date.now();
+                if ((!s.title || s.title === "新对话") && role === "user") {
+                    s.title = deriveTitle(text);
+                }
+                persistSessions();
+                renderSessionList();
             }
         }
 
-        function restoreChatLog() {
-            let saved = [];
-            try {
-                saved = JSON.parse(localStorage.getItem(CHAT_LOG_KEY) || "[]");
-            } catch {
-                saved = [];
-            }
-            if (!Array.isArray(saved) || !saved.length) {
-                renderChatMessage("assistant", DEMO_SPEECH_TEXT.trim());
+        // 载入当前会话的消息到聊天区；为空则保持居中欢迎态。
+        function restoreActiveSession() {
+            chatLog.innerHTML = "";
+            const s = getActiveSession();
+            if (!s || !s.messages.length) {
+                chatPanel.classList.add("chat-empty");
                 return;
             }
-            saved.slice(-80).forEach(item => {
+            s.messages.slice(-MSG_PER_SESSION).forEach(item => {
                 if (item && (item.role === "user" || item.role === "assistant") && item.content) {
                     renderChatMessage(item.role, String(item.content));
                 }
             });
         }
 
-        async function requestModelReply(message) {
+        function switchSession(id) {
+            if (id === activeSessionId) return;
+            activeSessionId = id;
+            try { localStorage.setItem(ACTIVE_KEY, id); } catch {}
+            weeklyWizard = null;
+            chatHistory.length = 0;
+            restoreActiveSession();
+            renderSessionList();
+        }
+
+        function startNewSession() {
+            const cur = getActiveSession();
+            if (!cur || cur.messages.length) {
+                const s = newSessionObj();
+                sessions.unshift(s);
+                activeSessionId = s.id;
+            }
+            try { localStorage.setItem(ACTIVE_KEY, activeSessionId); } catch {}
+            persistSessions();
+            weeklyWizard = null;
+            chatHistory.length = 0;
+            userInput.value = "";
+            autoGrowInput();
+            userInput.placeholder = "发消息给犇犇，Enter 发送，Shift+Enter 换行";
+            restoreActiveSession();
+            renderSessionList();
+            userInput.focus();
+        }
+
+        function deleteSession(id) {
+            sessions = sessions.filter(s => s.id !== id);
+            persistSessions();
+            if (activeSessionId === id) {
+                activeSessionId = sessions[0] ? sessions[0].id : null;
+                try { localStorage.setItem(ACTIVE_KEY, activeSessionId || ""); } catch {}
+                if (!activeSessionId) {
+                    startNewSession();
+                    return;
+                }
+                weeklyWizard = null;
+                chatHistory.length = 0;
+                restoreActiveSession();
+            }
+            renderSessionList();
+        }
+
+        function initSessions() {
+            sessions = loadSessions();
+            migrateLegacyLog();
+            if (!sessions.length) sessions.unshift(newSessionObj());
+            let stored = "";
+            try { stored = localStorage.getItem(ACTIVE_KEY) || ""; } catch {}
+            activeSessionId = sessions.some(s => s.id === stored) ? stored : sessions[0].id;
+            try { localStorage.setItem(ACTIVE_KEY, activeSessionId); } catch {}
+            persistSessions();
+            renderSessionList();
+            restoreActiveSession();
+        }
+
+        async function requestModelReply(message, options = {}) {
             const response = await fetch(API_BASE + "/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message, history: chatHistory })
+                body: JSON.stringify({ message, history: options.history || chatHistory, file_ids: attachedFiles.map(file => file.id), weekly_stage: options.weeklyStage || "" })
             });
             const data = await response.json();
             if (!response.ok) {
@@ -1230,7 +1846,8 @@
             }
             return {
                 text: String(data.text || "我听到了。").trim(),
-                action: ACTION_CLIPS[data.action] ? data.action : null
+                action: ACTION_CLIPS[data.action] ? data.action : null,
+                uiAction: data.ui_action || null
             };
         }
 
@@ -1394,10 +2011,199 @@
             speak(text, action);
         }
 
+        function weeklyDraftReviewText(draft) {
+            const sections = [
+                ["本周工作总结", draft.weekly_summary || []],
+                ["重点工作跟进", draft.weekly_follow || []],
+                ["下周工作计划", draft.weekly_next || []],
+            ];
+            return "周报草稿（请先核对，未确认不会写入编辑页）\n\n" + sections.map(([title, rows]) => {
+                const body = rows.length ? rows.map((row, index) => `${index + 1}. ${row.category || "未分类"}：${row.content || ""}${row.status ? `（${row.status}）` : ""}${row.progress ? `；进展：${row.progress}` : ""}${row.plan ? `；计划：${row.plan}` : ""}${row.difficulty ? `；困难：${row.difficulty}` : ""}`).join("\n") : "（暂无内容）";
+                return `${title}\n${body}`;
+            }).join("\n\n");
+        }
+
+        function appendWeeklyDraftReview(draft) {
+            pendingWeeklyDraft = draft;
+            appendChat("assistant", weeklyDraftReviewText(draft));
+            const actions = document.createElement("div");
+            actions.className = "weekly-draft-review-actions";
+            const revise = document.createElement("button");
+            revise.type = "button";
+            revise.textContent = "继续修改内容";
+            revise.addEventListener("click", () => { userInput.focus(); userInput.placeholder = "说明需要修改的分类、内容或计划后发送"; });
+            const confirm = document.createElement("button");
+            confirm.type = "button";
+            confirm.className = "primary";
+            confirm.textContent = "确认写入周报编辑页";
+            confirm.addEventListener("click", () => {
+                if (!pendingWeeklyDraft || window.parent === window) return;
+                window.parent.postMessage({ type: "chengxi.weekly-ready", draft: pendingWeeklyDraft }, "*");
+                confirm.disabled = true;
+                confirm.textContent = "正在打开编辑页…";
+            });
+            actions.append(revise, confirm);
+            chatLog.appendChild(actions);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        // ===== 周报向导：阶段内可多轮讨论，确认后才固化到草稿 =====
+        const WEEKLY_STAGES = [
+            {
+                key: "summary",
+                title: "第 1 步 / 共 3 步 · 本周工作总结",
+                prompt: "请描述本周完成的主要工作，建议按「分类：具体内容」分条填写。\n例如：\n客流识别：完成 16 个客流实例恢复核验\n平台优化：修复管理器退出异常"
+            },
+            {
+                key: "follow",
+                title: "第 2 步 / 共 3 步 · 重点工作跟进",
+                prompt: "请说明本周的重点工作及其进展、遇到的困难或需要的支持，可分条填写。\n例如：\n直播联调：抽帧成功率优化，进展持续进行中，困难中等"
+            },
+            {
+                key: "next",
+                title: "第 3 步 / 共 3 步 · 下周工作计划",
+                prompt: "请描述下周的工作计划，可分条列出重点安排。\n例如：\n性能优化：持续优化多实例并发推理性能"
+            }
+        ];
+        let weeklyWizard = null;
+
+        function previousWeeklyText(previous) {
+            const sections = [["本周工作总结", previous.weekly_summary], ["重点工作跟进", previous.weekly_follow], ["下周工作计划", previous.weekly_next]];
+            const body = sections.map(([title, text]) => `${title}\n${String(text || "（无记录）").trim() || "（无记录）"}`).join("\n\n");
+            return `上周周报参考${previous.source ? `（${previous.source}）` : ""}\n\n${body}`;
+        }
+
+        function weeklyStageHistory() {
+            return (weeklyWizard?.turns || []).slice(-8).map(turn => ({ role: turn.role, content: turn.content.slice(0, 600) }));
+        }
+
+        async function requestWeeklyStageReply(message, stage) {
+            const context = weeklyWizard?.data || {};
+            const prompt = `当前正在整理“${stage.title}”。用户本轮内容：${message}\n已确认内容参考：${JSON.stringify(context)}\n请与用户继续讨论，并给出一版可直接确认的本阶段草稿。`;
+            return requestModelReply(prompt, { history: weeklyStageHistory(), weeklyStage: stage.title });
+        }
+
+        function appendWeeklyStageActions() {
+            if (!weeklyWizard || weeklyWizard.awaiting !== "chat") return;
+            const stageIndex = weeklyWizard.index;
+            const stage = WEEKLY_STAGES[weeklyWizard.index];
+            const actions = document.createElement("div");
+            actions.className = "weekly-draft-review-actions";
+            const revise = document.createElement("button");
+            revise.type = "button";
+            revise.textContent = "继续讨论与修改";
+            revise.addEventListener("click", () => userInput.focus());
+            const confirm = document.createElement("button");
+            confirm.type = "button";
+            confirm.className = "primary";
+            confirm.textContent = weeklyWizard.index === WEEKLY_STAGES.length - 1 ? "确认本阶段，生成周报草稿" : "确认本阶段，下一步";
+            confirm.addEventListener("click", () => {
+                if (!weeklyWizard || weeklyWizard.index !== stageIndex || weeklyWizard.awaiting !== "chat" || !weeklyWizard.candidate) return;
+                weeklyWizard.data[stage.key] = weeklyWizard.candidate;
+                weeklyWizard.index += 1;
+                if (weeklyWizard.index >= WEEKLY_STAGES.length) finishWeeklyReport();
+                else enterWeeklyStage(weeklyWizard.index);
+            });
+            actions.append(revise, confirm);
+            chatLog.appendChild(actions);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        function enterWeeklyStage(index) {
+            const stage = WEEKLY_STAGES[index];
+            weeklyWizard.awaiting = "chat";
+            weeklyWizard.turns = [];
+            weeklyWizard.candidate = "";
+            if (stage.key === "follow") {
+                const previousFollow = String(weeklyWizard.previous.weekly_follow || "").trim();
+                weeklyWizard.candidate = previousFollow;
+                appendChat("assistant", `${stage.title}\n\n这是上周重点工作，可直接沿用；如需改动，直接说要补充、删减或调整什么，我们会在这一阶段继续讨论。\n\n上周重点工作\n${previousFollow || "（未找到上周重点工作）"}`);
+                const actions = document.createElement("div");
+                actions.className = "weekly-draft-review-actions";
+                const modify = document.createElement("button");
+                modify.type = "button";
+                modify.textContent = "修改重点工作";
+                modify.addEventListener("click", () => { appendChat("assistant", "好的，把需要修改的重点工作发给我；也可以上传材料后让我整理。 "); userInput.focus(); });
+                const keep = document.createElement("button");
+                keep.type = "button";
+                keep.className = "primary";
+                keep.textContent = "保持上周重点工作，下一步";
+                keep.addEventListener("click", () => {
+                    if (!weeklyWizard || weeklyWizard.index !== index) return;
+                    weeklyWizard.data.follow = weeklyWizard.candidate;
+                    weeklyWizard.index += 1;
+                    enterWeeklyStage(weeklyWizard.index);
+                });
+                actions.append(modify, keep);
+                chatLog.appendChild(actions);
+            } else {
+                appendChat("assistant", `${stage.title}\n\n${stage.prompt}\n\n你可以逐条补充、让我改写，也可以上传文档后说“帮我总结这份材料”。满意后点击“确认本阶段，下一步”。`);
+            }
+            userInput.placeholder = "输入本阶段内容，Enter 发送，Shift+Enter 换行";
+            userInput.focus();
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        async function startWeeklyReport() {
+            weeklyWizard = { index: 0, awaiting: "loading", data: {}, turns: [], candidate: "", previous: {} };
+            appendChat("assistant", "好的，我先为你找出上周周报作为参考，然后开始整理本周内容。");
+            statusText.textContent = "正在读取上周周报";
+            try {
+                const response = await fetch(API_BASE + "/api/weekly-prefill");
+                const previous = await response.json();
+                if (!response.ok) throw new Error(previous.error || "weekly_prefill_failed");
+                weeklyWizard.previous = previous || {};
+                appendChat("assistant", previousWeeklyText(weeklyWizard.previous));
+            } catch {
+                weeklyWizard.previous = {};
+                appendChat("assistant", "暂未读取到上周周报，我们直接从本周工作总结开始。 ");
+            }
+            statusText.textContent = "可以开始整理周报";
+            if (weeklyWizard) enterWeeklyStage(0);
+        }
+
+        // 把一段文本拆成周报行：识别「分类：内容」，并去掉行首序号。
+        function weeklyRowsFromText(text) {
+            return String(text || "")
+                .split(/\n+/)
+                .map(line => line.replace(/^\s*[-•]?\s*\d*[.、)\s]*/, "").trim())
+                .filter(Boolean)
+                .map(line => {
+                    const m = line.match(/^([^：:，,。;；]{1,14})[：:](.+)$/);
+                    const category = m ? m[1].trim() : "";
+                    const content = m ? m[2].trim() : line;
+                    return { category, content, status: "", progress: "", plan: "", difficulty: "" };
+                });
+        }
+
+        function buildWeeklyDraft(data) {
+            return {
+                weekly_summary: weeklyRowsFromText(data.summary),
+                weekly_follow: weeklyRowsFromText(data.follow),
+                weekly_next: weeklyRowsFromText(data.next)
+            };
+        }
+
+        function finishWeeklyReport() {
+            const data = weeklyWizard ? weeklyWizard.data : {};
+            weeklyWizard = null;
+            userInput.placeholder = "发消息给犇犇，Enter 发送，Shift+Enter 换行";
+            const draft = buildWeeklyDraft(data);
+            pushHistory("user", "（周报向导）已确认本周工作、重点跟进、下周计划三部分内容");
+            appendChat("assistant", "三部分内容已确认，我按周报三区格式整理成草稿。请最后核对，确认无误后点击「确认写入周报编辑页」。");
+            appendWeeklyDraftReview(draft);
+        }
+
         // 输入内容增多时让输入框自动长高（封顶 150px 后内部滚动）。
         function autoGrowInput() {
             userInput.style.height = "auto";
             userInput.style.height = Math.min(userInput.scrollHeight, 150) + "px";
+        }
+
+        // 与后端 _weekly_intent 对齐：识别「写/生成周报」类意图，但排除“查历史/列表”。
+        function isWeeklyReportIntent(text) {
+            if (/报告列表|历史报告|报告记录|查询.*报告|列出.*报告|最近报告|历史周报|周报历史/.test(text)) return false;
+            return /周报|工作总结/.test(text) && /写|生成|整理|输出|编写|开始|做一份|来一份|帮我/.test(text);
         }
 
         async function sendMessage() {
@@ -1406,6 +2212,41 @@
                 userInput.focus();
                 return;
             }
+
+            // 周报向导进行中：每条消息都进入当前阶段的真实多轮对话，模型的最新草稿可被确认。
+            if (weeklyWizard) {
+                userInput.value = "";
+                autoGrowInput();
+                appendChat("user", text);
+                if (weeklyWizard.awaiting !== "chat") return;
+                weeklyWizard.turns.push({ role: "user", content: text });
+                statusText.textContent = "正在整理本阶段内容";
+                setControlsEnabled(false);
+                try {
+                    const stage = WEEKLY_STAGES[weeklyWizard.index];
+                    const answer = await requestWeeklyStageReply(text, stage);
+                    weeklyWizard.turns.push({ role: "assistant", content: answer.text });
+                    weeklyWizard.candidate = answer.text;
+                    speakWithGesture(answer.text, answer.action);
+                    appendWeeklyStageActions();
+                } catch (error) {
+                    appendChat("assistant", `本阶段对话未完成：${error?.message || "请稍后重试"}`);
+                } finally {
+                    setControlsEnabled(true);
+                    statusText.textContent = "可继续讨论，或确认本阶段";
+                }
+                return;
+            }
+
+            // 用户直接说「写周报/生成周报」时，进入分三步的引导流程。
+            if (isWeeklyReportIntent(text)) {
+                userInput.value = "";
+                autoGrowInput();
+                appendChat("user", text);
+                startWeeklyReport();
+                return;
+            }
+
             userInput.value = "";
             autoGrowInput();
             appendChat("user", text);
@@ -1416,10 +2257,47 @@
                 pushHistory("user", text);
                 pushHistory("assistant", answer.text);
                 speakWithGesture(answer.text, answer.action);
-            } catch {
-                speakWithGesture("对话服务暂时不可用，请稍后再试。", null);
+                if (answer.uiAction && answer.uiAction.type === "weekly_draft_review" && answer.uiAction.draft) {
+                    appendWeeklyDraftReview(answer.uiAction.draft);
+                }
+                attachedFiles = [];
+                renderFileChips();
+            } catch (error) {
+                const detail = error && error.message ? String(error.message) : "对话服务暂时不可用，请稍后再试。";
+                appendChat("assistant", `对话未完成：${detail}`);
+                statusText.textContent = "对话失败，可重试";
             }
         }
+
+        function renderFileChips() {
+            fileChips.innerHTML = attachedFiles.map(file => `<span class="file-chip">${file.name}<button type="button" data-file-id="${file.id}" aria-label="移除文件">×</button></span>`).join("");
+            fileChips.querySelectorAll("button").forEach(button => button.addEventListener("click", () => {
+                attachedFiles = attachedFiles.filter(file => file.id !== button.dataset.fileId);
+                renderFileChips();
+            }));
+        }
+
+        function readUploadFile(file) {
+            return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve({ name:file.name, data:String(reader.result || "") }); reader.onerror = () => reject(new Error(file.name + "读取失败")); reader.readAsDataURL(file); });
+        }
+
+        fileBtn.addEventListener("click", () => fileInput.click());
+        fileInput.addEventListener("change", async () => {
+            const files = Array.from(fileInput.files || []); fileInput.value = ""; if (!files.length) return;
+            fileBtn.disabled = true; statusText.textContent = "正在识别文件";
+            try { const response = await fetch(API_BASE + "/api/writing/upload", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({files:await Promise.all(files.map(readUploadFile))}) }); const data=await response.json(); if (!response.ok) throw new Error(data.error || "upload_failed"); attachedFiles = attachedFiles.concat(data.files || []).slice(-6); renderFileChips(); statusText.textContent = "文件已识别，可提问"; } catch (error) { statusText.textContent = "文件识别失败"; } finally { fileBtn.disabled = false; }
+        });
+
+        document.querySelectorAll(".quick-prompt").forEach(button => button.addEventListener("click", () => {
+            if (button.dataset.wizard === "weekly") {
+                if (weeklyWizard) return; // 向导进行中避免重复开启
+                appendChat("user", "写周报");
+                startWeeklyReport();
+                return;
+            }
+            userInput.value = button.dataset.prompt || "";
+            sendMessage();
+        }));
 
         function setupRecognizer() {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1495,6 +2373,8 @@
         }
 
         function loadAvatar() {
+            if (avatarLoaded) return;
+            avatarLoaded = true;
             setControlsEnabled(false);
             new GLTFLoader().load(
                 MODEL_URL,
@@ -1519,6 +2399,14 @@
                     viewerLoading.textContent = "模型加载失败";
                 }
             );
+        }
+
+        function setAvatarVisible(visible) {
+            document.body.classList.toggle("avatar-hidden", !visible);
+            avatarBtn.classList.toggle("active", visible);
+            avatarBtn.title = visible ? "隐藏犇犇数字人" : "显示犇犇数字人";
+            avatarBtn.setAttribute("aria-label", avatarBtn.title);
+            if (visible) loadAvatar();
         }
 
         window.chengxiAvatar = {
@@ -1589,6 +2477,8 @@
         voiceBtn.addEventListener("click", () => {
             voiceEnabled = !voiceEnabled;
             voiceBtn.classList.toggle("active", voiceEnabled);
+            voiceBtn.title = voiceEnabled ? "关闭语音朗读" : "开启语音朗读";
+            voiceBtn.setAttribute("aria-label", voiceBtn.title);
             if (!voiceEnabled) {
                 stopSpeech();
                 return;
@@ -1605,9 +2495,20 @@
             setMicActive(!micActive);
         });
 
-        restoreChatLog();
+        avatarBtn.addEventListener("click", () => setAvatarVisible(document.body.classList.contains("avatar-hidden")));
+
+        // 历史会话侧栏：新对话 / 收起 / 展开。
+        const newChatBtn = document.getElementById("newChatBtn");
+        const sidebarCollapseBtn = document.getElementById("sidebarCollapseBtn");
+        const sidebarShowBtn = document.getElementById("sidebarShowBtn");
+        if (newChatBtn) newChatBtn.addEventListener("click", startNewSession);
+        if (sidebarCollapseBtn) sidebarCollapseBtn.addEventListener("click", () => document.body.classList.add("sidebar-collapsed"));
+        if (sidebarShowBtn) sidebarShowBtn.addEventListener("click", () => document.body.classList.remove("sidebar-collapsed"));
+
+        initSessions();
         setupRecognizer();
-        loadAvatar();
+        setAvatarVisible(false);
+        setControlsEnabled(true);
         render();
     </script>
 </body>

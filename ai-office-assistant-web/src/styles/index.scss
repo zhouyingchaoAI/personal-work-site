@@ -216,8 +216,47 @@ button {
   gap: 8px;
 }
 
+.ai-prompt-style {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid #d7e5f7;
+  border-radius: 10px;
+  background: #f7fbff;
+
+  > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  strong { color: #183a70; font-size: 13px; }
+  p { margin: 0; color: #5c6f8e; font-size: 13px; line-height: 1.55; }
+}
+
+.ai-prompt-preview-label,
+.ai-prompt-custom-label {
+  display: grid;
+  gap: 8px;
+  color: #34496d;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.ai-prompt-preview-label {
+  margin-bottom: 14px;
+
+  .el-textarea__inner {
+    color: #50637f;
+    background: #f8fafc;
+  }
+}
+
 .ai-prompt-button,
-.ai-polish-button {
+.ai-polish-button,
+.ai-summary-button {
   display: inline-flex;
   min-width: 0;
   height: 34px;
@@ -267,6 +306,14 @@ button {
     border-color: rgba(21, 73, 156, 0.34);
     background: linear-gradient(135deg, #2467ba, #123f87);
   }
+}
+
+.ai-summary-button {
+  border: 1px solid #9bc8ff;
+  color: #1555a6;
+  background: #eef6ff;
+
+  &:hover { background: #dfeeff; }
 }
 
 .weekly-prompt-actions.prompt-dialog-actions,

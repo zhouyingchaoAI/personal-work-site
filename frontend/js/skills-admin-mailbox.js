@@ -281,6 +281,7 @@
       const data = await api('/api/admin-config');
       el('configApiUrl').value = data.assistant_api_url || '';
       el('configModel').value = data.assistant_model || 'MiniMax-M2.7';
+      el('configReasoningEffort').value = data.assistant_reasoning_effort || 'off';
       renderModelOptions([data.assistant_model || 'MiniMax-M2.7'], data.assistant_model || 'MiniMax-M2.7');
       el('configPrompt').value = data.assistant_prompt || defaultAssistantPrompt;
       el('configApiKey').value = '';
@@ -686,6 +687,7 @@
         assistant_api_url: el('configApiUrl').value,
         assistant_api_key: el('configApiKey').value,
         assistant_model: el('configModel').value || el('configModelSelect').value,
+        assistant_reasoning_effort: el('configReasoningEffort').value || 'off',
         assistant_prompt: el('configPrompt').value,
       };
     }

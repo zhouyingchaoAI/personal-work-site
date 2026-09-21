@@ -8,6 +8,57 @@
   background: #dcecff;
 }
 
+.reset-password-form {
+  display: grid;
+  gap: 14px;
+
+  > p {
+    margin: 0;
+    color: #68758a;
+    font-size: 13px;
+    line-height: 1.65;
+  }
+}
+
+.reset-code-row {
+  display: flex;
+  gap: 10px;
+
+  .el-button { flex: 0 0 auto; }
+}
+
+.reset-captcha-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  > .el-input { min-width: 0; }
+  > .el-button { flex: 0 0 auto; }
+}
+
+.reset-captcha-image {
+  display: grid;
+  flex: 0 0 132px;
+  width: 132px;
+  height: 42px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+
+  svg { display: block; width: 132px; height: 42px; }
+}
+
+.reset-password-tip { color: #8a96a9 !important; }
+
+.reset-password-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
 .login-background {
   position: absolute;
   inset: 0;

@@ -66,6 +66,8 @@ def forum_public_topic(topic, with_comments=False):
     item["comment_count"] = len(comments)
     item["like_count"] = len(likes)
     item["view_count"] = int(item.get("view_count", 0) or 0)
+    item["pinned"] = forum_topic_is_pinned(topic)
+    item.pop("manual_pinned", None)
     item["heat"] = item["view_count"] + item["like_count"] * 5 + item["comment_count"] * 3
     if not with_comments:
         item.pop("comments", None)
@@ -161,12 +163,27 @@ def forum_attachment_path(attachment_id):
     return None
 
 
+def forum_topic_is_pinned(topic):
+    """普通话题允许人工置顶。工单已拆分到独立的工单系统，论坛不再处理。"""
+    # Pre-manual-pinning ordinary topics stored their manual state in `pinned`.
+    manual_pinned = topic.get("manual_pinned")
+    if manual_pinned is None:
+        manual_pinned = topic.get("pinned", False)
+    return bool(manual_pinned)
+
+
 def forum_topic_sort_key(item):
-    return (1 if item.get("pinned") else 0, str(item.get("updated_at", "")))
+    return (1 if forum_topic_is_pinned(item) else 0, str(item.get("updated_at", "")))
+
+
+def forum_is_legacy_ticket(topic):
+    # Defensive: keep any not-yet-migrated 工单 out of the idea forum.
+    return topic.get("preset") == "platform_ticket"
 
 
 def forum_list_topics(username):
-    topics = sorted(load_forum_topics(username), key=forum_topic_sort_key, reverse=True)
+    topics = [topic for topic in load_forum_topics(username) if not forum_is_legacy_ticket(topic)]
+    topics = sorted(topics, key=forum_topic_sort_key, reverse=True)
     return {"ok": True, "topics": [forum_public_topic(topic) for topic in topics]}
 
 
@@ -174,7 +191,7 @@ def forum_get_topic(payload, username):
     topic_id = str(payload.get("id", "") or "").strip()
     topics = load_forum_topics(username)
     for topic in topics:
-        if topic.get("id") == topic_id:
+        if topic.get("id") == topic_id and not forum_is_legacy_ticket(topic):
             topic["view_count"] = int(topic.get("view_count", 0) or 0) + 1
             save_forum_topics(username, topics)
             return {"ok": True, "topic": forum_public_topic(topic, with_comments=True)}
@@ -185,9 +202,8 @@ def forum_create_topic(payload, username):
     title = str(payload.get("title", "") or "").strip()
     body = str(payload.get("body", "") or "").strip()
     source = str(payload.get("source", "") or "user").strip() or "user"
-    preset = str(payload.get("preset", "") or "").strip()
-    if preset not in {"", "platform_ticket"}:
-        preset = ""
+    # 工单已迁移到独立工单系统；论坛只发布普通金点子话题。
+    preset = ""
     if not title:
         raise ValueError("请填写话题标题")
     if not body:
@@ -200,7 +216,7 @@ def forum_create_topic(payload, username):
         "body": body,
         "source": source,
         "preset": preset,
-        "pinned": preset == "platform_ticket",
+        "manual_pinned": False,
         "author": user.get("name") or username,
         "created_at": now,
         "updated_at": now,
@@ -240,8 +256,6 @@ def forum_add_comment(payload, username):
                 "attachments": forum_save_attachments(payload.get("attachments", []) or []),
                 "created_at": now,
             })
-            if topic.get("preset") == "platform_ticket" and status in {"accepted", "resolved", "rejected"}:
-                topic["pinned"] = False
             topic["updated_at"] = now
             save_forum_topics(username, topics)
             return {"ok": True, "topic": forum_public_topic(topic, with_comments=True)}
@@ -268,6 +282,23 @@ def forum_toggle_like(payload, username):
             item = forum_public_topic(topic, with_comments=True)
             item["liked"] = liked
             return {"ok": True, "topic": item}
+    raise ValueError("话题不存在")
+
+
+def forum_set_topic_pinned(payload, username):
+    """Set an ordinary topic's pinned state. Authorization is enforced by the HTTP route."""
+    topic_id = str(payload.get("topic_id", "") or "").strip()
+    pinned = bool(payload.get("pinned"))
+    if not topic_id:
+        raise ValueError("请选择话题")
+    topics = load_forum_topics(username)
+    now = datetime.now().isoformat(timespec="seconds")
+    for topic in topics:
+        if topic.get("id") == topic_id:
+            topic["manual_pinned"] = pinned
+            topic["updated_at"] = now
+            save_forum_topics(username, topics)
+            return {"ok": True, "topic": forum_public_topic(topic, with_comments=True)}
     raise ValueError("话题不存在")
 
 

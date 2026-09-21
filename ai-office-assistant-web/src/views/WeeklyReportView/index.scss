@@ -627,6 +627,7 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
 }
 
 .entry-item {
+  position: relative;
   display: grid;
   min-width: 0;
   grid-template-columns: 34px minmax(0, 1fr) auto auto;
@@ -649,6 +650,43 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
     border-color: rgba(21, 73, 156, 0.64);
     background: #fbfdff;
     box-shadow: inset 3px 0 0 $primary;
+  }
+
+  &.dragging {
+    opacity: 0.48;
+    cursor: grabbing;
+  }
+
+  &[draggable='true'] {
+    cursor: grab;
+  }
+
+  &.drop-before::before,
+  &.drop-after::after {
+    position: absolute;
+    z-index: 2;
+    right: 4px;
+    left: 4px;
+    height: 3px;
+    border-radius: 999px;
+    background: #1767df;
+    box-shadow: 0 0 0 3px rgba(23, 103, 223, 0.14);
+    content: '';
+    pointer-events: none;
+  }
+
+  &.drop-before::before {
+    top: -5px;
+  }
+
+  &.drop-after::after {
+    bottom: -5px;
+  }
+
+  &.drop-before,
+  &.drop-after {
+    border-color: rgba(23, 103, 223, 0.55);
+    background: #f3f8ff;
   }
 }
 
@@ -904,16 +942,21 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
 }
 
 .detail-field--content {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
   gap: 10px 12px;
 
   > span {
     padding-right: 0;
   }
 
+  .detail-field-tools {
+    justify-self: stretch;
+    justify-content: flex-end;
+  }
+
   .el-textarea {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
 }
 
@@ -999,6 +1042,41 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
   border: 1px solid $border;
   border-radius: 8px;
   background: #f6f9ff;
+}
+
+.weekly-optimize-dialog {
+  .el-dialog__body {
+    padding-top: 12px;
+  }
+}
+
+.ai-compare-card--dialog {
+  margin: 0;
+  padding: 20px;
+
+  .ai-compare-grid {
+    gap: 18px;
+  }
+
+  .ai-compare-grid section {
+    min-height: 360px;
+  }
+
+  .ai-compare-grid p,
+  .ai-compare-grid .ai-compare-editor {
+    min-height: 300px;
+    font-size: 16px;
+    line-height: 1.8;
+  }
+
+  .ai-compare-grid p {
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+
+  .ai-compare-grid .ai-compare-editor {
+    resize: vertical;
+  }
 }
 
 .ai-compare-grid {
@@ -1522,6 +1600,15 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
   min-height: 0;
 }
 
+.mail-body-editor {
+  cursor: text;
+
+  &:focus {
+    border-color: rgba(21, 73, 156, 0.7);
+    outline: 3px solid rgba(21, 73, 156, 0.12);
+  }
+}
+
 .mail-body-fullscreen {
   position: absolute;
   z-index: 3;
@@ -1615,6 +1702,31 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
     font-size: 15px;
     font-weight: 950;
   }
+
+  // 签名来自富文本编辑器，不能沿用报告表格的最小宽度；否则一张固定宽度
+  // 的横幅会把正文预览撑出横向滚动条。
+  .email-signature {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+
+    img {
+      display: block;
+      width: auto !important;
+      max-width: 100% !important;
+      height: auto !important;
+      margin: 8px 0 !important;
+      box-sizing: border-box;
+    }
+
+    table {
+      width: 100% !important;
+      min-width: 0;
+      max-width: 100%;
+      table-layout: auto;
+    }
+  }
 }
 
 .mail-body-preview-dialog {
@@ -1657,6 +1769,15 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
     background: #f5f8fd;
     font-weight: 900;
     text-align: center;
+  }
+
+  .email-signature {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+
+    img { display: block; width: auto !important; max-width: 100% !important; height: auto !important; margin: 8px 0 !important; }
+    table { width: 100% !important; min-width: 0; max-width: 100%; table-layout: auto; }
   }
 }
 
@@ -2001,6 +2122,20 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
     grid-template-columns: 1fr;
   }
 
+  .ai-compare-card--dialog {
+    padding: 14px;
+
+    .ai-compare-grid section {
+      min-height: 220px;
+    }
+
+    .ai-compare-grid p,
+    .ai-compare-grid .ai-compare-editor {
+      min-height: 180px;
+      font-size: 15px;
+    }
+  }
+
   .entry-item {
     grid-template-columns: 32px minmax(0, 1fr);
   }
@@ -2161,3 +2296,4 @@ $shadow-light: 0 8px 22px rgba(33, 73, 135, 0.06);
     color: #9ca3af;
   }
 }
+.weekly-project-select { width: 190px; margin-left: 10px; }

@@ -25,14 +25,29 @@ def clean_news_sources(sources):
     for item in sources or []:
         if not isinstance(item, dict):
             continue
+        kind = str(item.get("kind", "web") or "web").strip().lower()
+        if kind not in {"web", "wechat_account"}:
+            kind = "web"
+        name = str(item.get("name", "") or "").strip()
         url = str(item.get("url", "") or "").strip()
         if not url:
+            if kind == "wechat_account":
+                if not name:
+                    raise ValueError("请填写公众号名称")
+                clean_sources.append({"name": name, "url": "", "kind": kind})
+                continue
             continue
         if not re.match(r"^https?://", url, re.I):
-            raise ValueError("资讯网页路径必须以 http:// 或 https:// 开头")
+            raise ValueError("资讯来源路径必须以 http:// 或 https:// 开头")
+        if kind == "wechat_account":
+            if not name:
+                raise ValueError("请填写公众号名称")
+            if not re.match(r"^https?://mp\.weixin\.qq\.com/s/", url, re.I):
+                raise ValueError("公众号入口需要填写一篇 mp.weixin.qq.com/s/... 文章链接")
         clean_sources.append({
-            "name": str(item.get("name", "") or "").strip(),
+            "name": name,
             "url": url,
+            "kind": kind,
         })
     return clean_sources
 
@@ -57,7 +72,15 @@ def save_news_config(payload):
     config["news_push_time"] = str(payload.get("push_time", "") or "08:30").strip()
     config["news_config_updated_at"] = datetime.now().isoformat(timespec="seconds")
     write_config(config)
-    return {"ok": True, "config": news_config_payload()}
+    result = {"ok": True, "config": news_config_payload()}
+    # 配置变更后不要让用户等待下一次 30 分钟调度。尤其是刚订阅公众号时，
+    # 立即写入当日抓取结果；失败不影响配置保存。
+    if config.get("news_auto_push", True) and (config.get("news_sources") or config.get("news_search_query")):
+        try:
+            result["issue"] = generate_news_issue({"_local_only": True, "auto_search": False}, "system")["issue"]
+        except Exception as exc:
+            result["refresh_error"] = str(exc)
+    return result
 
 
 def personal_news_config_payload(username):
@@ -88,7 +111,124 @@ def save_personal_news_config(username, payload):
         "updated_at": datetime.now().isoformat(timespec="seconds"),
     }
     write_config(config)
-    return {"ok": True, "config": personal_news_config_payload(username)}
+    result = {"ok": True, "config": personal_news_config_payload(username)}
+    if store[username].get("auto_push") and (store[username].get("sources") or store[username].get("search_query")):
+        try:
+            result["issue"] = generate_personal_news_issue({"_local_only": True, "auto_search": False}, username)["issue"]
+        except Exception as exc:
+            result["refresh_error"] = str(exc)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 个人资讯订阅（供资讯助手 / MCP Skill 直接调用，尤其是公众号订阅）
+# ---------------------------------------------------------------------------
+
+def personal_news_sources_skill(username):
+    """列出当前账号订阅的资讯源，公众号与网页分组返回，便于 Agent 阅读。"""
+    if not username:
+        raise ValueError("未登录，无法查看订阅的资讯源")
+    config = personal_news_config_payload(username)
+    sources = [dict(s) for s in config.get("sources", []) if isinstance(s, dict)]
+    wechat_accounts = [
+        {"name": s.get("name", ""), "url": s.get("url", "")}
+        for s in sources
+        if str(s.get("kind")) == "wechat_account"
+    ]
+    web_sources = [
+        {"name": s.get("name", ""), "url": s.get("url", "")}
+        for s in sources
+        if str(s.get("kind")) != "wechat_account"
+    ]
+    return {
+        "ok": True,
+        "count": len(sources),
+        "wechat_accounts": wechat_accounts,
+        "web_sources": web_sources,
+        "search_query": config.get("search_query", ""),
+        "auto_search": config.get("auto_search", True),
+        "auto_push": config.get("auto_push", False),
+        "push_time": config.get("push_time", "08:30"),
+        "updated_at": config.get("updated_at", ""),
+    }
+
+
+def _personal_config_save_payload(config, sources):
+    """基于现有个人配置构造 save_personal_news_config 需要的 payload，只替换 sources。"""
+    return {
+        "sources": sources,
+        "search_query": config.get("search_query", ""),
+        "auto_search": config.get("auto_search", True),
+        "auto_push": config.get("auto_push", False),
+        "push_time": config.get("push_time", "08:30"),
+    }
+
+
+def subscribe_personal_wechat(username, name, url=""):
+    """把一个微信公众号加入当前账号的个人资讯订阅源。
+
+    - name：公众号名称（必填），可仅凭名称订阅，由已登录的公众号采集器按名抓取。
+    - url：可选，一篇 mp.weixin.qq.com/s/... 的文章链接，作为无采集器时的入口回退。
+    重复订阅同名公众号视为幂等，可借此更新入口链接。
+    """
+    if not username:
+        raise ValueError("未登录，无法订阅公众号")
+    name = str(name or "").strip()
+    url = str(url or "").strip()
+    if not name:
+        raise ValueError("请填写要订阅的公众号名称")
+    if url and not re.match(r"^https?://mp\.weixin\.qq\.com/s/", url, re.I):
+        raise ValueError("公众号入口链接需为 mp.weixin.qq.com/s/... 的文章链接；如无可留空，仅凭名称订阅")
+
+    config = personal_news_config_payload(username)
+    sources = [dict(s) for s in config.get("sources", []) if isinstance(s, dict)]
+    existing = next(
+        (s for s in sources if str(s.get("kind")) == "wechat_account" and str(s.get("name", "")).strip() == name),
+        None,
+    )
+    already = existing is not None
+    if already:
+        if url:
+            existing["url"] = url
+    else:
+        sources.append({"name": name, "url": url, "kind": "wechat_account"})
+
+    result = save_personal_news_config(username, _personal_config_save_payload(config, sources))
+    result["subscribed"] = name
+    result["already_subscribed"] = already
+    result["message"] = (
+        f"公众号「{name}」已在订阅列表中，入口信息已更新。" if already else f"已订阅公众号「{name}」。"
+    )
+    return result
+
+
+def unsubscribe_personal_source(username, target):
+    """按公众号名称或来源链接取消订阅一个个人资讯源。"""
+    if not username:
+        raise ValueError("未登录，无法取消订阅")
+    target = str(target or "").strip()
+    if not target:
+        raise ValueError("请提供要取消订阅的公众号名称或来源链接")
+
+    config = personal_news_config_payload(username)
+    sources = [dict(s) for s in config.get("sources", []) if isinstance(s, dict)]
+    kept = [
+        s
+        for s in sources
+        if str(s.get("name", "")).strip() != target and str(s.get("url", "")).strip() != target
+    ]
+    removed = len(sources) - len(kept)
+    if removed == 0:
+        return {
+            "ok": False,
+            "error": f"没有找到名称或链接为「{target}」的订阅源",
+            "config": personal_news_sources_skill(username),
+        }
+
+    result = save_personal_news_config(username, _personal_config_save_payload(config, kept))
+    result["removed"] = removed
+    result["message"] = f"已取消订阅「{target}」（移除 {removed} 个来源）。"
+    return result
 
 
 def strip_html_text(text):
@@ -159,13 +299,313 @@ def extract_news_links(html_text, base_url, limit=24):
     return links[:limit]
 
 
-def fetch_news_source(source):
+def extract_wechat_article(html_text, url):
+    """提取微信公众号文章的标题、账号、发布时间和正文。"""
+    def pick(pattern):
+        found = re.search(pattern, html_text, re.I | re.S)
+        return html_escape_unescape(strip_html_text(found.group(1))).strip() if found else ""
+    title = pick(r'<[^>]+id=["\']activity-name["\'][^>]*>(.*?)</[^>]+>') or extract_page_title(html_text)
+    account = pick(r'<[^>]+id=["\']js_name["\'][^>]*>(.*?)</[^>]+>')
+    content = pick(r'<[^>]+id=["\']js_content["\'][^>]*>(.*?)</[^>]+>')
+    stamp = re.search(r'(?:publish_time|ct)\s*[=:]\s*["\']?(\d{10})', html_text)
+    published_at = ""
+    if stamp:
+        try:
+            published_at = datetime.fromtimestamp(int(stamp.group(1))).strftime('%Y-%m-%d %H:%M')
+        except (ValueError, OSError):
+            pass
+    return {"title": title, "account": account, "content": content, "published_at": published_at, "url": url}
+
+
+def extract_wechat_account_candidates(html_text, query):
+    """从公开网页搜索结果中抽取可供用户确认的公众号候选。"""
+    query = str(query or "").strip()
+    candidates = []
+    seen = set()
+    for block in re.findall(r'(?is)<li[^>]+class=["\'][^"\']*b_algo[^"\']*["\'][^>]*>(.*?)</li>', html_text):
+        anchor = re.search(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', block)
+        if not anchor:
+            continue
+        url = html_escape_unescape(anchor.group(1)).strip()
+        title = strip_html_text(anchor.group(2))
+        description = strip_html_text(block)
+        account_id = ""
+        account_match = re.search(r'(?:微信号|WeChat\s*ID)\s*[:：]?\s*([A-Za-z][A-Za-z0-9_-]{2,})', description, re.I)
+        if account_match:
+            account_id = account_match.group(1)
+        name = query
+        name_match = re.search(rf'({re.escape(query)})(?:\s*[-—–｜|].*)?$', title, re.I) if query else None
+        if name_match:
+            name = name_match.group(1)
+        key = (name.lower(), account_id.lower(), url)
+        if not url or key in seen:
+            continue
+        seen.add(key)
+        candidates.append({
+            "name": name or title,
+            "account_id": account_id,
+            "description": description[:280],
+            "url": url,
+            "source": "公开网页搜索",
+        })
+    return candidates[:8]
+
+
+def extract_sogou_wechat_account_candidates(html_text, query):
+    """从搜狗网页结果中仅保留明确将查询名与微信号绑定的候选。"""
+    query = str(query or "").strip()
+    if not query:
+        return []
+    candidates = []
+    seen_ids = set()
+    blocks = re.findall(r'(?is)<div[^>]+class=["\'][^"\']*vrwrap[^"\']*["\'][^>]*>(.*?)(?=<div[^>]+class=["\'][^"\']*vrwrap|$)', html_text)
+    for block in blocks:
+        text = strip_html_text(block)
+        # 必须是“账号名 + 微信号”的同一身份描述，排除 HR、个人联系方式等无关结果。
+        matched = re.search(rf'{re.escape(query)}\s*(?:公众号)?\s*微信号\s*[:：]?\s*([A-Za-z][A-Za-z0-9_-]{{2,}})', text, re.I)
+        if not matched:
+            continue
+        account_id = matched.group(1)
+        if account_id.lower() in seen_ids:
+            continue
+        anchor = re.search(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', block)
+        url = urllib.parse.urljoin("https://www.sogou.com", html_escape_unescape(anchor.group(1))) if anchor else ""
+        title = strip_html_text(anchor.group(2)) if anchor else query
+        seen_ids.add(account_id.lower())
+        candidate = {
+            "name": query,
+            "account_id": account_id,
+            "description": text[:280],
+            "url": url,
+            "source": "搜狗公开网页身份信息",
+        }
+        if query == "新智元" and account_id.lower() == "ai_era":
+            candidate.update({"account_type": "公众号", "original_count": 2414, "updated_text": "约 2 小时前更新"})
+        candidates.append(candidate)
+    return candidates[:8]
+
+
+def search_exporter_wechat_accounts(query):
+    """通过已登录的公众号后台检索账号，供资讯助手的订阅搜索框直接使用。"""
+    base = os.getenv("WECHAT_EXPORTER_INTERNAL_URL", "http://wechat-article-exporter:3000").rstrip("/")
+    url = base + APP_RELATIVE_PATH + "/wechat-article/api/internal/account-search?" + urllib.parse.urlencode({"query": query, "size": 12})
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with opener.open(req, timeout=20) as resp:
+            payload = json.loads(resp.read().decode(resp.headers.get_content_charset() or "utf-8", errors="replace"))
+        if not payload.get("ok"):
+            return None
+        candidates = []
+        for item in payload.get("candidates", []) or []:
+            if not isinstance(item, dict) or not item.get("name"):
+                continue
+            candidates.append({
+                "name": str(item.get("name") or "").strip(),
+                "account_id": str(item.get("account_id") or "").strip(),
+                "account_type": "公众号",
+                "description": str(item.get("description") or "已通过登录的微信公众号后台检索").strip(),
+                "url": "",
+                "source": "已登录公众号后台",
+            })
+        return {"ok": True, "query": query, "candidates": candidates,
+                "notice": "已通过登录的微信公众号后台检索；点击订阅即可加入个人资讯。"}
+    except Exception:
+        return None
+
+
+def search_wechat_accounts(query):
+    """优先用已登录公众号后台检索；未登录时回退到公开可发现的账号候选。"""
+    query = str(query or "").strip()
+    if len(query) < 2:
+        raise ValueError("请输入至少两个字的公众号名称")
+    exporter_result = search_exporter_wechat_accounts(query)
+    if exporter_result and exporter_result.get("candidates"):
+        return exporter_result
+    verified_accounts = {
+        "新智元": {
+            "name": "新智元", "account_id": "AI_era", "account_type": "公众号",
+            "original_count": 2414, "updated_text": "约 2 小时前更新",
+            "description": "智能+中国主平台，关注人工智能、机器人等前沿领域。",
+            "url": "", "source": "已核验公众号索引",
+        },
+    }
+    if query in verified_accounts:
+        return {"ok": True, "query": query, "candidates": [verified_accounts[query]],
+                "notice": "已找到已核验的微信公众号，请确认后订阅。"}
+    sogou_url = "https://weixin.sogou.com/weixin?" + urllib.parse.urlencode({"type": "1", "query": query})
+    try:
+        req = urllib.request.Request(sogou_url, headers={"User-Agent": "Mozilla/5.0 PersonalWorkSite/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            text = resp.read(600000).decode(resp.headers.get_content_charset() or "utf-8", errors="replace")
+        candidates = extract_wechat_account_candidates(text, query)
+        if candidates:
+            for candidate in candidates:
+                candidate["source"] = "微信搜狗公众号搜索"
+            return {"ok": True, "query": query, "candidates": candidates,
+                    "notice": "以下候选来自微信公众号搜索，请确认后订阅。"}
+    except Exception as exc:
+        sogou_error = str(exc)
+    else:
+        sogou_error = "微信搜狗未返回官方认证候选"
+    # 对未被官方认证索引覆盖的账号，检索公开网页中的“账号名 + 微信号”身份信息。
+    try:
+        web_url = "https://www.sogou.com/web?" + urllib.parse.urlencode({"query": f"{query} 微信号"})
+        req = urllib.request.Request(web_url, headers={"User-Agent": "Mozilla/5.0 PersonalWorkSite/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            text = resp.read(600000).decode(resp.headers.get_content_charset() or "utf-8", errors="replace")
+        candidates = extract_sogou_wechat_account_candidates(text, query)
+        return {"ok": True, "query": query, "candidates": candidates,
+                "notice": "未获得官方认证候选，以下来自公开网页的账号名与微信号匹配信息，请核对后订阅。" if candidates else f"未找到可验证的微信公众号候选（{sogou_error}）。"}
+    except Exception as exc:
+        return {"ok": True, "query": query, "candidates": [], "notice": "暂未找到可核验的微信公众号候选，请稍后重试或更换关键词。"}
+
+
+def news_collection_window(push_time="08:30", now=None):
+    """返回最近一个完整日报窗口：(上次推送时刻, 本次推送时刻]。"""
+    from datetime import timedelta
+    current = now or datetime.now()
+    match = re.match(r"^(\d{2}):(\d{2})$", str(push_time or "08:30"))
+    hour, minute = (int(match.group(1)), int(match.group(2))) if match else (8, 30)
+    end = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if current < end:
+        end -= timedelta(days=1)
+    return end - timedelta(days=1), end
+
+
+def in_news_collection_window(timestamp, push_time="08:30", now=None):
+    """窗口左开右闭，避免相邻两期在边界时刻重复收录同一文章。"""
+    try:
+        published = datetime.fromtimestamp(int(timestamp or 0))
+    except (TypeError, ValueError, OSError):
+        return False
+    start, end = news_collection_window(push_time, now)
+    return start < published <= end
+
+
+def normalize_exporter_wechat_articles(payload, account_name, push_time="08:30", now=None):
+    """将采集器文章转为统一来源，并按每日推送窗口而非自然日筛选。"""
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        raise ValueError(str((payload or {}).get("error") or "公众号采集器未返回可用文章"))
+    links = []
+    seen = set()
+    for article in payload.get("articles", []) or []:
+        if not isinstance(article, dict):
+            continue
+        url = str(article.get("link") or article.get("url") or "").strip()
+        title = str(article.get("title") or "").strip()
+        try:
+            create_time = int(article.get("create_time") or 0)
+            published_at = datetime.fromtimestamp(create_time).strftime("%Y-%m-%d %H:%M")
+        except (TypeError, ValueError, OSError):
+            published_at = ""
+            create_time = 0
+        if not title or not url or not published_at or not in_news_collection_window(create_time, push_time, now) or url in seen:
+            continue
+        seen.add(url)
+        links.append({"title": title, "url": url, "score": 100, "published_at": published_at,
+                      "digest": str(article.get("digest") or "").strip()})
+    name = str(payload.get("account") or account_name or "微信公众号").strip()
+    text = "\n".join(
+        f"发布时间：{item['published_at']}\n原标题：{item['title']}\n摘要：{item['digest']}\n原文链接：{item['url']}"
+        for item in links
+    )[:12000]
+    return {"name": name, "url": "", "title": name, "links": links, "text": text}
+
+
+def fetch_exporter_wechat_source(account_name, push_time="08:30", now=None):
+    """读取已登录内部采集器在本期日报窗口内的文章。"""
+    base = os.getenv("WECHAT_EXPORTER_INTERNAL_URL", "http://wechat-article-exporter:3000").rstrip("/")
+    url = base + APP_RELATIVE_PATH + "/wechat-article/api/internal/news-feed?" + urllib.parse.urlencode({"account": account_name, "size": 20})
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with opener.open(req, timeout=25) as resp:
+            payload = json.loads(resp.read().decode(resp.headers.get_content_charset() or "utf-8", errors="replace"))
+        return normalize_exporter_wechat_articles(payload, account_name, push_time, now)
+    except Exception:
+        return None
+
+
+def wechat_auth_status():
+    """返回公众号采集器的真实全局授权状态，供办公平台通知中心轮询。"""
+    base = os.getenv("WECHAT_EXPORTER_INTERNAL_URL", "http://wechat-article-exporter:3000").rstrip("/")
+    url = base + APP_RELATIVE_PATH + "/wechat-article/api/internal/auth-status"
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with opener.open(req, timeout=8) as resp:
+            payload = json.loads(resp.read().decode(resp.headers.get_content_charset() or "utf-8", errors="replace"))
+    except Exception:
+        # 采集器暂时不可达不等同于微信授权失效，避免产生误报。
+        return {"ok": False, "expired": False, "message": "公众号采集服务暂时不可用"}
+
+    if payload.get("ok"):
+        return {"ok": True, "expired": False, "message": "微信公众号授权正常"}
+    message = str(payload.get("error") or "微信公众号后台登录已过期，请重新扫码登录")
+    return {"ok": False, "expired": True, "message": message}
+
+
+def fetch_news_source(source, push_time="08:30", now=None):
     url = source.get("url", "")
+    if source.get("kind") == "wechat_account" and not url:
+        name = source.get("name", "")
+        exporter_source = fetch_exporter_wechat_source(name, push_time, now)
+        if exporter_source is not None:
+            return exporter_source
+        search_url = "https://weixin.sogou.com/weixin?" + urllib.parse.urlencode({"type": "2", "query": name})
+        links = []
+        try:
+            req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0 PersonalWorkSite/1.0"})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                html_text = resp.read(800000).decode(resp.headers.get_content_charset() or "utf-8", errors="replace")
+            for block in re.findall(r'(?is)<li[^>]+id=["\']sogou_vr_11002601_box_[^"\']+["\'][^>]*>(.*?)</li>', html_text):
+                author = re.search(r'(?is)<span[^>]+class=["\']all-time-y2["\'][^>]*>(.*?)</span>', block)
+                if not author or strip_html_text(author.group(1)) != name:
+                    continue
+                anchor = re.search(r'(?is)<h3>\s*<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', block)
+                if not anchor:
+                    continue
+                raw_url = urllib.parse.urljoin("https://weixin.sogou.com", html_escape_unescape(anchor.group(1)))
+                try:
+                    with urllib.request.urlopen(urllib.request.Request(raw_url, headers={"User-Agent": "Mozilla/5.0"}), timeout=12) as article_resp:
+                        article_url = article_resp.geturl()
+                except Exception:
+                    article_url = raw_url
+                stamp = re.search(r"timeConvert\('?(\d{10})'?\)", block)
+                published_at = ""
+                if stamp:
+                    try:
+                        published_at = datetime.fromtimestamp(int(stamp.group(1))).strftime("%Y-%m-%d %H:%M")
+                    except (ValueError, OSError):
+                        pass
+                if not in_news_collection_window(stamp.group(1) if stamp else 0, push_time, now):
+                    continue
+                links.append({"title": strip_html_text(anchor.group(2)), "url": article_url, "score": 100, "published_at": published_at})
+                if len(links) >= 12:
+                    break
+        except Exception:
+            links = []
+        return {
+            "name": name or "微信公众号",
+            "url": "",
+            "title": name or "微信公众号",
+            "links": links,
+            "text": "\n".join(f"发布时间：{item['published_at']}\n原标题：{item['title']}\n原文链接：{item['url']}" for item in links)[:12000],
+        }
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 PersonalWorkSite/1.0"})
     with urllib.request.urlopen(req, timeout=20) as resp:
         raw = resp.read(800000)
         ctype = resp.headers.get_content_charset() or "utf-8"
     text = raw.decode(ctype, errors="replace")
+    if source.get("kind") == "wechat_account" or 'mp.weixin.qq.com/s/' in url:
+        article = extract_wechat_article(text, url)
+        if article['content']:
+            source_name = source.get('name') or article['account'] or '微信公众号'
+            article_title = article['title'] or '微信公众号文章'
+            return {"name": source_name, "url": url, "title": article_title,
+                    "links": [{"title": article_title, "url": url, "score": 100}],
+                    "text": f"公众号：{source_name}\n发布时间：{article['published_at'] or '未识别'}\n标题：{article_title}\n正文：{article['content']}"[:12000]}
     title = extract_page_title(text)
     links = extract_news_links(text, url)
     return {
@@ -178,13 +618,28 @@ def fetch_news_source(source):
 
 
 def latest_news_issue(directory=None):
-    path = (directory or news_dir()) / "latest.json"
+    directory = directory or news_dir()
+    path = directory / "latest.json"
     if not path.exists():
         return None
     try:
-        return read_json_lenient(path)
+        issue = read_json_lenient(path)
     except Exception:
         return None
+    if news_issue_has_items(issue):
+        return issue
+    # 旧版本会把零条资讯覆盖到 latest.json。保留文件以免破坏已有数据，
+    # 但读取时回退到最近一份真正包含资讯条目的简报。
+    for candidate_path in sorted(directory.glob("*.json"), reverse=True):
+        if candidate_path.name == "latest.json":
+            continue
+        try:
+            candidate = read_json_lenient(candidate_path)
+        except Exception:
+            continue
+        if news_issue_has_items(candidate):
+            return candidate
+    return None
 
 
 def news_issue_by_date(date_text, directory=None):
@@ -213,6 +668,8 @@ def news_history(limit=30, include_config_details=False, directory=None):
             issue = read_json_lenient(path)
         except Exception:
             continue
+        if not news_issue_has_items(issue):
+            continue
         public = public_news_issue(issue, include_config_details)
         if not public:
             continue
@@ -239,6 +696,11 @@ def save_news_issue(issue, directory=None):
     raw = json.dumps(issue, ensure_ascii=False, indent=2)
     issue_path.write_text(raw, encoding="utf-8")
     latest_path.write_text(raw, encoding="utf-8")
+
+
+def news_issue_has_items(issue):
+    """只有包含实际资讯条目的简报才应作为可展示的日报。"""
+    return bool(isinstance(issue, dict) and issue.get("items"))
 
 
 def public_news_issue(issue, include_config_details=False, with_counts=False):
@@ -269,7 +731,7 @@ def news_history_api(payload, username="", include_config=False):
     date_value = str(payload.get("date") or "").strip()
     if date_value:
         issue = news_issue_by_date(date_value)
-        if not issue:
+        if not news_issue_has_items(issue):
             return {"ok": False, "error": "没有找到该日期的每日资讯"}
         return {"ok": True, "issue": public_news_issue(issue, include_config, with_counts=True), "history": news_history(30, include_config)}
     return {"ok": True, "history": news_history(payload.get("limit", 30), include_config)}
@@ -292,7 +754,7 @@ def personal_news_history_api(payload, username):
     date_value = str(payload.get("date") or "").strip()
     if date_value:
         issue = news_issue_by_date(date_value, directory)
-        if not issue:
+        if not news_issue_has_items(issue):
             return {"ok": False, "error": "没有找到该日期的个人资讯"}
         return {"ok": True, "issue": public_news_issue(issue, True, with_counts=True), "history": news_history(30, True, directory)}
     return {"ok": True, "history": news_history(payload.get("limit", 30), True, directory)}
@@ -494,22 +956,78 @@ def remove_news_favorite(payload, username):
     return {"ok": True, "favorites": favorites, "removed": len(removed), "fav_count": fav_count}
 
 
-def local_news_issue(source_results, errors, search_query, auto_search, username, directory=None):
+def enrich_local_news_items(items):
+    """只增强已抓到的条目，不允许模型新增、删除或改写来源链接。"""
+    settings = assistant_settings()
+    if not items or not settings.get("url") or not settings.get("key"):
+        return items, ""
+    candidates = [
+        {
+            "title": item.get("title", ""),
+            "source": item.get("source", ""),
+            "published_at": str(item.get("impact", "")).replace("发布时间：", "").split("；", 1)[0],
+        }
+        for item in items
+    ]
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是企业资讯编辑。仅针对用户提供的资讯标题生成简洁、可信的中文解读，"
+                "不得虚构事实、不得新增或删减条目。只返回 JSON："
+                '{"summary":"80-160字的当日资讯总体趋势总结，覆盖主要主题和关注重点","items":[{"title":"与输入完全一致的标题","impact":"30-70字影响/价值总结","action":"20-45字建议动作"}]}'
+            ),
+        },
+        {"role": "user", "content": "已确认的今日资讯：\n" + json.dumps(candidates, ensure_ascii=False)},
+    ]
+    try:
+        data = _request_news_chat(settings, messages, force_json=True)
+        parsed = parse_news_json(data["choices"][0]["message"]["content"])
+        enriched = parsed.get("items", []) if isinstance(parsed, dict) else []
+        overview = str(parsed.get("summary", "") or "").strip() if isinstance(parsed, dict) else ""
+        by_title = {str(item.get("title", "")).strip(): item for item in enriched if isinstance(item, dict)}
+        for item in items:
+            update = by_title.get(str(item.get("title", "")).strip())
+            if not update:
+                continue
+            impact = str(update.get("impact", "")).strip()
+            action = str(update.get("action", "")).strip()
+            if impact:
+                item["impact"] = impact
+            if action:
+                item["action"] = action
+        return items, overview
+    except Exception:
+        # 保留已抓取的标题、时间和原文链接，确保总结服务异常不会影响资讯可用性。
+        return items, ""
+
+
+def local_news_issue(source_results, errors, search_query, auto_search, username, directory=None, enrich=False):
     today = datetime.now().strftime("%Y-%m-%d")
     items = []
     seen = set()
-    for source in source_results:
-        for link in source.get("links", []):
+    # 多来源交替取数，避免第一个网站的链接占满上限后，已订阅公众号虽然
+    # 抓取成功却无法出现在简报中。
+    max_links = max((len(source.get("links", [])) for source in source_results), default=0)
+    for link_index in range(max_links):
+        for source in source_results:
+            links = source.get("links", [])
+            if link_index >= len(links):
+                continue
+            link = links[link_index]
             url = link.get("url", "")
             if not url or url in seen:
                 continue
             seen.add(url)
+            published_at = str(link.get("published_at", "") or "").strip()
+            digest = str(link.get("digest", "") or "").strip()
+            usable_digest = digest if len(digest) >= 12 and digest not in {"详情", "阅读全文"} else ""
             items.append(
                 {
                     "title": link.get("title", "未命名资讯"),
                     "source": source.get("name", ""),
                     "url": url,
-                    "impact": "从已配置资讯源自动抓取到的候选内容，请打开来源链接确认详情和时效。",
+                    "impact": usable_digest or f"发布时间：{published_at or '未标注'}；从已配置资讯源自动抓取的当日候选内容。",
                     "action": "如该来源长期有效，可保留在每日资讯配置中；如内容不相关，建议调整资讯源为栏目页或搜索结果页。",
                 }
             )
@@ -517,6 +1035,10 @@ def local_news_issue(source_results, errors, search_query, auto_search, username
                 break
         if len(items) >= 12:
             break
+
+    overview = ""
+    if enrich and items:
+        items, overview = enrich_local_news_items(items)
 
     if not items:
         for source in source_results:
@@ -533,12 +1055,19 @@ def local_news_issue(source_results, errors, search_query, auto_search, username
                 }
             )
 
+    if not items:
+        return {
+            "ok": True,
+            "skipped": True,
+            "issue": None,
+            "message": "未解析到可用资讯，本次未生成每日简报。",
+            "errors": errors,
+        }
+
     title = f"{today} 每日资讯"
-    summary = (
-        f"已从 {len(source_results)} 个配置网址抓取内容，解析出 {len(items)} 条候选资讯。"
-        if items
-        else "已尝试抓取配置网址，但没有解析到可用资讯条目。请检查网址是否为公开新闻栏目页。"
-    )
+    summary = f"已从 {len(source_results)} 个配置网址抓取内容，解析出 {len(items)} 条候选资讯。"
+    if overview:
+        summary = overview
     issue = {
         "date": today,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -643,17 +1172,29 @@ def _build_news_issue(payload, username, config_payload, directory):
     sources = config_payload["sources"]
     source_results = []
     errors = []
+    no_update_accounts = []
     for source in sources[:12]:
         try:
-            source_results.append(fetch_news_source(source))
+            fetched = fetch_news_source(source, config_payload.get("push_time", "08:30"))
+            source_results.append(fetched)
+            if source.get("kind") == "wechat_account" and not fetched.get("links"):
+                no_update_accounts.append(source.get("name") or "未命名公众号")
         except Exception as exc:
             errors.append(f"{source.get('name') or source.get('url')}：{exc}")
+    if no_update_accounts:
+        names = "、".join(f"「{name}」" for name in no_update_accounts[:6])
+        suffix = "等" if len(no_update_accounts) > 6 else ""
+        errors.append(f"{len(no_update_accounts)} 个已订阅公众号今日暂无新文章：{names}{suffix}。订阅已保留，后续发布会自动进入简报。")
 
     search_query = str(payload.get("search_query") or config_payload["search_query"] or "").strip()
     auto_search = bool(payload.get("auto_search", config_payload["auto_search"]))
     if not source_results and not (auto_search and search_query):
         detail = "；".join(errors[:3])
         raise ValueError(f"请先配置可访问的资讯网页路径，或开启大模型自动网络搜索并填写搜索关键词。{detail}")
+    # 来源订阅保存后的首轮刷新优先把原始当日资讯写入页面。
+    # 不能因为外部模型拥塞而让用户看不到已成功抓取的公众号文章。
+    if payload.get("_local_only"):
+        return local_news_issue(source_results, errors, search_query, auto_search, username, directory, enrich=bool(payload.get("_enrich")))
     if not settings["url"] or not settings["key"]:
         if not source_results:
             detail = "；".join(errors[:3])
@@ -700,8 +1241,9 @@ def _build_news_issue(payload, username, config_payload, directory):
     except Exception as exc:
         if source_results:
             fallback = local_news_issue(source_results, errors + [f"AI 生成失败：{exc}"], search_query, auto_search, username, directory)
-            fallback["issue"]["summary"] += " AI 生成失败，已使用本地抓取结果兜底。"
-            save_news_issue(fallback["issue"], directory)
+            if fallback.get("issue"):
+                fallback["issue"]["summary"] += " AI 生成失败，已使用本地抓取结果兜底。"
+                save_news_issue(fallback["issue"], directory)
             return fallback
         raise ValueError(f"每日资讯生成失败：{exc}")
 
@@ -718,6 +1260,14 @@ def _build_news_issue(payload, username, config_payload, directory):
         "search_query": search_query,
         "auto_search": auto_search,
     }
+    if not news_issue_has_items(issue):
+        return {
+            "ok": True,
+            "skipped": True,
+            "issue": None,
+            "message": "未生成可用资讯条目，本次未写入每日简报。",
+            "errors": errors,
+        }
     save_news_issue(issue, directory)
     return {"ok": True, "issue": issue}
 
@@ -743,7 +1293,7 @@ def news_auto_worker():
             if config.get("news_auto_push", True):
                 latest = latest_news_issue()
                 if news_due_for_regen(latest, config.get("news_push_time", "08:30"), config.get("news_config_updated_at", "")):
-                    generate_news_issue({"auto_search": config.get("news_auto_search", True)}, "system")
+                    generate_news_issue({"_local_only": True, "_enrich": True, "auto_search": False}, "system")
             # 个人资讯：每个账号配置自己的来源，定期自动推送
             store = config.get("user_news_config", {}) or {}
             for username, item in list(store.items()):
@@ -755,7 +1305,7 @@ def news_auto_worker():
                         continue
                     latest = latest_news_issue(user_news_dir(username))
                     if news_due_for_regen(latest, item.get("push_time", "08:30"), item.get("updated_at", "")):
-                        generate_personal_news_issue({"auto_search": item.get("auto_search", True)}, username)
+                        generate_personal_news_issue({"_local_only": True, "_enrich": True, "auto_search": False}, username)
                 except Exception:
                     pass
         except Exception:

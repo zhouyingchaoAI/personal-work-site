@@ -2,10 +2,10 @@ import { reactive } from 'vue'
 import { login, logout, session, type User } from './personalWorkApi'
 
 export const DEFAULT_ASSISTANT_PROMPT = `请帮我优化下面的工作内容，要求：
-1、拆分成1、2、3、4这样的编号要点，每点单独换行。
-2、语言简洁明了，体现实际工作量和推进成果。
+1、严格保留原有段落、编号、列表、表格和字段顺序，不拆分、合并或重新编号。
+2、语言准确、清晰，体现已有的实际工作量和推进成果。
 3、修正错别字、病句和不通顺表达。
-4、不要编造不存在的事项，不要写空话套话。`
+4、不要编造不存在的事项、数据、计划或结论，不写空话套话。`
 
 export const authState = reactive({
   checked: false,

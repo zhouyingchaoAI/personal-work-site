@@ -1,3 +1,11 @@
+import { apiTaskLabel, beginBackgroundTask, finishBackgroundTask } from '../utils/backgroundTasks'
+
+export interface InternalOrganizationNode { id: string; name: string; parent_id: string }
+export interface InternalOrganizationMember { username: string; name: string; employee_id: string; position: string; node_id: string }
+export interface InternalOrganizationData { ok: boolean; revision: string; nodes: InternalOrganizationNode[]; members: InternalOrganizationMember[]; updated_members?: number }
+export function getInternalOrganization() { return request<InternalOrganizationData>('/admin-organization/canvas') }
+export function saveInternalOrganization(payload: { revision: string; nodes: InternalOrganizationNode[]; assignments: Record<string,string> }) { return post<InternalOrganizationData>('/admin-organization/canvas', payload) }
+
 export interface User {
   username: string
   role: 'member' | 'admin' | 'superadmin'
@@ -5,8 +13,19 @@ export interface User {
   avatar_url: string
   bio: string
   hobbies: string[]
+  employee_id?: string
+  company?: string
+  department?: string
+  position?: string
+  organization_check?: {
+    status: 'present' | 'missing'
+    checked_at: string
+    source: string
+  } | null
+  email?: string
   is_admin: boolean
   is_superadmin: boolean
+  assistant_permissions?: Record<string, boolean>
 }
 
 export interface SessionResponse {
@@ -148,6 +167,7 @@ export interface GenerateWeeklyPayload {
   weekly_summary: WeeklyRowPayload[]
   weekly_follow: WeeklyRowPayload[]
   weekly_next: WeeklyRowPayload[]
+  project_id?: string
 }
 
 export interface GenerateTripPayload extends TripPayload {
@@ -188,6 +208,9 @@ export interface DiaryEntry {
   today_work: string
   tomorrow_plan: string
   thoughts: string
+  project_id?: string
+  project_ids?: string[]
+  project_notes?: Record<string, string>
   today_work_preview?: string
   created_at?: string
   updated_at?: string
@@ -215,6 +238,11 @@ export interface DiarySavePayload {
   today_work: string
   tomorrow_plan: string
   thoughts: string
+  project_id?: string
+  project_ids?: string[]
+  project_notes?: Record<string, string>
+  /** 网页编辑器保存完整表单；Skill 调用默认按字段补充已有日记。 */
+  replace?: boolean
 }
 
 export interface DiarySaveResponse {
@@ -285,9 +313,51 @@ export interface ForumAttachmentResponse {
   attachment: ForumAttachment
 }
 
+export interface Ticket {
+  id: string
+  title: string
+  body: string
+  module?: string
+  source: 'user' | 'ai' | string
+  author: string
+  created_at: string
+  updated_at: string
+  view_count: number
+  comment_count: number
+  pinned?: boolean
+  resolved?: boolean
+  closed?: boolean
+  status?: 'open' | 'accepted' | 'resolved' | 'rejected' | string
+  attachments?: ForumAttachment[]
+  comments?: ForumComment[]
+}
+
+export interface TicketListResponse {
+  ok: boolean
+  tickets: Ticket[]
+  summary: { total: number; open: number; closed: number }
+}
+
+export interface TicketResponse {
+  ok: boolean
+  ticket: Ticket
+}
+
 export interface NewsSource {
   name: string
   url: string
+  kind?: 'web' | 'wechat_account'
+}
+
+export interface WechatAccountCandidate {
+  name: string
+  account_id?: string
+  account_type?: string
+  original_count?: number
+  updated_text?: string
+  description?: string
+  url: string
+  source?: string
 }
 
 export interface NewsItem {
@@ -369,11 +439,15 @@ export interface NewsHistoryResponse {
 export interface NewsConfigResponse {
   ok: boolean
   config: NewsConfig
+  issue?: NewsIssue | null
+  refresh_error?: string
 }
 
 export interface NewsGenerateResponse {
   ok: boolean
-  issue: NewsIssue
+  issue: NewsIssue | null
+  skipped?: boolean
+  message?: string
 }
 
 export interface SendMailPayload {
@@ -423,6 +497,7 @@ export interface MailMessage {
   body?: string
   body_html?: string
   has_html?: boolean
+  is_read?: boolean
   attachments: MailAttachment[]
 }
 
@@ -430,6 +505,13 @@ export interface MailboxResponse {
   ok: boolean
   messages: MailMessage[]
   cached?: boolean
+  background_sync?: boolean
+  period_start?: string
+  total?: number
+  counts?: { all: number; unread: number; read: number }
+  unread_count?: number
+  read_count?: number
+  has_more?: boolean
 }
 
 export interface MailDetailResponse {
@@ -491,6 +573,7 @@ export interface MailConfigTestResponse {
 export interface AdminConfig {
   assistant_api_url: string
   assistant_model: string
+  assistant_reasoning_effort?: string
   assistant_prompt: string
   assistant_api_key?: string
   assistant_api_key_masked?: string
@@ -753,10 +836,55 @@ export interface ReimbursementScanResponse {
   error?: string
 }
 
+
+export interface ReimbursementScanChunk {
+  start: string
+  end: string
+  status: "pending" | "scanning" | "done" | "failed"
+  total_scanned: number
+  item_count: number
+  message: string
+}
+
+export interface ReimbursementSearchSummary {
+  id: string
+  title: string
+  account: 'company' | 'personal'
+  created_at: string
+  updated_at: string
+  ranges: { start: string; end: string }[]
+  scan_chunks?: ReimbursementScanChunk[]
+  item_count: number
+  total_scanned: number
+}
+
+export interface ReimbursementSearchRecord extends ReimbursementSearchSummary {
+  items: ReimbursementItem[]
+}
+
+export interface ReimbursementSearchListResponse {
+  ok: boolean
+  records: ReimbursementSearchSummary[]
+  error?: string
+}
+
+export interface ReimbursementSearchResponse {
+  ok: boolean
+  record: ReimbursementSearchRecord
+  error?: string
+}
+
 export interface ReimbursementMergeResponse {
   ok: boolean
   filename: string
   pages: number
+  error?: string
+}
+
+export interface ReimbursementZipResponse {
+  ok: boolean
+  filename: string
+  count: number
   error?: string
 }
 
@@ -773,7 +901,7 @@ const backendOrigin = backendUrlIsAbsolute ? new URL(backendUrl).origin : ''
 const backendBasePath = backendUrl ? new URL(backendUrl, 'http://relative-base').pathname.replace(/\/$/, '') : ''
 const defaultBackendBasePath = '/personal-office-assistant'
 const passthroughResourcePattern = /^(https?:|\/\/|data:|blob:|mailto:|tel:|cid:|#)/i
-const sessionFreePaths = new Set(['/login', '/logout', '/session'])
+const sessionFreePaths = new Set(['/login', '/logout', '/session', '/password-reset/captcha', '/password-reset/request', '/password-reset/confirm'])
 let loginRedirecting = false
 
 function normalizeResourcePath(path: string) {
@@ -785,21 +913,35 @@ function normalizeResourcePath(path: string) {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(backendUrl ? `${backendUrl}/api${path}` : `/personal-work-api${path}`, {
+  const label = apiTaskLabel(path, options?.method)
+  const taskId = label ? beginBackgroundTask(label) : 0
+  try {
+  const response = await fetch(backendUrl ? backendUrl + "/api" + path : "/personal-work-api" + path, {
     ...options,
-    credentials: 'include',
+    credentials: "include",
   })
   const rawText = await response.text()
+  const contentType = response.headers.get("content-type") || ""
   let data: unknown = {}
-  if (rawText) {
+  const looksLikeHtml = rawText.trim().startsWith("<")
+  if (rawText && contentType.includes("application/json") && !looksLikeHtml) {
     data = JSON.parse(rawText)
+  } else if (rawText && !looksLikeHtml) {
+    try {
+      data = JSON.parse(rawText)
+    } catch {
+      data = {}
+    }
   }
-  if (!response.ok) {
-    const message = typeof data === 'object' && data && 'error' in data ? String(data.error) : `请求失败（${response.status}）`
-    if (response.status === 401) redirectToLoginOnUnauthorized(path)
+  if (!response.ok || looksLikeHtml) {
+    const message = typeof data === "object" && data && "error" in data ? String(data.error) : looksLikeHtml ? "接口返回了页面内容，请重新登录后再重试" : "请求失败（" + response.status + "）"
+    if (response.status === 401 || looksLikeHtml) redirectToLoginOnUnauthorized(path)
     throw new Error(message)
   }
   return data as T
+  } finally {
+    if (taskId) finishBackgroundTask(taskId)
+  }
 }
 
 export function redirectToLoginOnUnauthorized(apiPath: string) {
@@ -821,6 +963,20 @@ export function login(username: string, password: string) {
   return post<LoginResponse>('/login', { username, password })
 }
 
+export function requestPasswordResetCaptcha() {
+  return post<{ ok: boolean; captcha_id: string; svg: string }>('/password-reset/captcha', {})
+}
+
+export function requestPasswordReset(identifier: string, captchaId: string, captcha: string) {
+  return post<{ ok: boolean; message: string }>('/password-reset/request', { identifier, captcha_id: captchaId, captcha })
+}
+
+export function confirmPasswordReset(identifier: string, code: string, newPassword: string) {
+  return post<{ ok: boolean; message: string }>('/password-reset/confirm', {
+    identifier, code, new_password: newPassword,
+  })
+}
+
 export function logout() {
   return post<{ ok: boolean }>('/logout', {})
 }
@@ -831,6 +987,19 @@ export function session() {
 
 export function saveProfile(payload: ProfilePayload) {
   return post<ProfileSaveResponse>('/profile', payload)
+}
+
+export interface NavPrefs {
+  order: string[]
+  hidden: string[]
+}
+
+export function getNavPrefs() {
+  return request<NavPrefs>('/nav-prefs')
+}
+
+export function saveNavPrefs(prefs: NavPrefs) {
+  return post<{ ok: boolean; prefs: NavPrefs }>('/nav-prefs', prefs)
 }
 
 export function changePassword(oldPassword: string, newPassword: string) {
@@ -901,6 +1070,226 @@ export function deleteDiary(date: string) {
   return post<{ ok: boolean }>('/diary/delete', { date })
 }
 
+export type ProjectMemberRole = 'manager' | 'echo' | 'delta'
+
+export interface ProjectMember {
+  username: string
+  roles: ProjectMemberRole[]
+  role_name?: string
+  joined_at?: string
+}
+
+export interface ProjectFile {
+  id: string
+  name: string
+  size: number
+  uploaded_by: string
+  created_at: string
+}
+
+export interface ProjectReport {
+  id: string
+  type: 'weekly' | 'trip'
+  name: string
+  author: string
+  period?: string
+  created_at: string
+}
+
+export interface Project {
+  id: string
+  name: string
+  description: string
+  status: 'active' | 'archived'
+  creator: string
+  members: ProjectMember[]
+  files: ProjectFile[]
+  reports: ProjectReport[]
+  created_at: string
+  updated_at: string
+}
+
+export interface ProjectTimelineItem {
+  type: 'daily' | 'weekly' | 'trip' | 'material'
+  title: string
+  author: string
+  created_at: string
+  file?: ProjectFile
+  report?: ProjectReport
+  diary?: DiaryEntry
+}
+
+export function listProjects() {
+  return request<{ ok: boolean; projects: Project[]; can_create: boolean; can_configure_admins: boolean }>('/projects')
+}
+
+export interface LedgerItem { id: string; project_name: string; project_code: string; customer: string; owner: string; stage: string; status: string; contract_amount: number; received_amount: number; contract_date: string; delivery_due: string; acceptance_due: string; payment_due: string; next_action: string; risk_note: string; updated_at: string }
+export interface LedgerSummary { total: number; normal: number; attention: number; overdue: number; contract_amount: number; received_amount: number }
+export function listLedger() { return request<{ ok: boolean; items: LedgerItem[]; summary: LedgerSummary }>('/ledger') }
+export interface ContractLine { id: string; name: string; spec: string; unit: string; quantity: string; source: string; brand?: string; unit_price?: string; amount?: string; remark?: string }
+export interface ContractPayment { name: string; percentage: string; amount: string; days: string; condition: string }
+export interface ContractRecord { extraction?: { template_id: string; template_name: string; mode: 'template' | 'general'; reason: string; evidence: string[]; version: number } }
+export interface ContractRecord { id: string; archived?: boolean; supplier?: string; total_amount?: string; tax_rate?: string; payment_terms?: string; acceptance_terms?: string; payments?: ContractPayment[]; filename: string; source_text: string; project_code: string; contract_no: string; customer: string; address: string; lines: ContractLine[]; revision: number; warning: string; documents: { id: string; kind: string; created_at: string; revision: number }[] }
+export function extractContract(id: string, revision: number) { return post<{contract: ContractRecord}>('/contracts/extract', { id, revision }) }
+export interface ContractSummary { id: string; filename: string; created_at: string; revision: number; contract_no: string; customer: string; archived: boolean; document_count: number }
+export function listContracts() { return request<{ contracts: ContractSummary[] }>('/contracts') }
+export function archiveContract(id: string, revision: number, archived: boolean) { return post<{ contract: ContractRecord }>('/contracts/archive', { id, revision, archived }) }
+export function contractOriginalUrl(id: string) { return downloadUrl(`/contracts/original?${new URLSearchParams({ id })}`) }
+export function getContract(id: string) { return request<{ contract: ContractRecord }>(`/contracts/get?id=${encodeURIComponent(id)}`) }
+export function uploadContract(name: string, content_base64: string) { return post<{ contract: ContractRecord }>('/contracts/upload', { name, content_base64 }) }
+export function saveContract(record: ContractRecord) { return post<{ contract: ContractRecord }>('/contracts/save', record) }
+export function generateContractDocument(payload: { id: string; revision: number; kind: string; confirmed: boolean; selections: { id: string; quantity: string; sn: string }[] }) { return post<{ contract: ContractRecord }>('/contracts/generate', payload) }
+export function contractDocumentUrl(id: string, document_id: string) { return downloadUrl(`/contracts/download?${new URLSearchParams({ id, document_id })}`) }
+export function saveLedger(payload: Partial<LedgerItem>) { return post<{ ok: boolean; item: LedgerItem }>('/ledger/save', payload) }
+export function deleteLedger(id: string) { return post<{ ok: boolean }>('/ledger/delete', { id }) }
+
+export interface CashflowEntry { id: string; date: string; milestone: string; receivable: number; received: number; procurement: number; special_procurement: number; reimbursement: number; personnel: number; other: number; guarantee: number; payment?: number; net_cashflow?: number; cumulative_cashflow?: number; funding_cost?: number }
+export interface CashflowScenario { id: string; project_name: string; project_code: string; region: string; customer: string; owner: string; annual_rate: number; note: string; entries: CashflowEntry[]; summary: { total_receivable: number; total_received: number; outstanding: number; total_payment: number; funding_gap: number; funding_cost: number; ending_cashflow: number }; updated_at: string }
+export interface CashflowGroup { name: string; projects: number; receivable: number; received: number; outstanding: number; funding_gap: number }
+export interface CashflowSummary { total: number; total_receivable: number; total_received: number; outstanding: number; funding_gap: number; funding_cost: number }
+export function listCashflow() { return request<{ ok: boolean; items: CashflowScenario[]; summary: CashflowSummary; by_region: CashflowGroup[]; by_customer: CashflowGroup[] }>('/cashflow') }
+export function saveCashflow(payload: Partial<CashflowScenario>) { return post<{ ok: boolean; item: CashflowScenario }>('/cashflow/save', payload) }
+export function deleteCashflow(id: string) { return post<{ ok: boolean }>('/cashflow/delete', { id }) }
+export interface CashflowWorkbookCell { value: string | number | boolean; formula: boolean; editable: boolean; fill?: string; bold?: boolean; align?: string; number_format?: string }
+export interface CashflowWorkbookSheet { name: string; rows: number; columns: number; cells: Record<string, CashflowWorkbookCell>; merged: string[]; column_widths?: Record<string, number>; row_heights?: Record<string, number> }
+export interface CashflowWorkbook { ok: boolean; template_name: string; sheets: CashflowWorkbookSheet[]; project_name: string; customer: string; region: string; cells: Record<string, Record<string, string>>; updated_at: string }
+export function getCashflowWorkbook() { return request<CashflowWorkbook>('/cashflow/workbook') }
+export function saveCashflowWorkbook(payload: { project_name: string; customer: string; region: string; cells: Record<string, Record<string, string>> }) { return post<{ ok: boolean; updated_at: string; filled_cells: number }>('/cashflow/workbook/save', payload) }
+export async function exportCashflowWorkbook() { const response = await fetch(backendUrl ? backendUrl + '/api/cashflow/workbook/export' : '/personal-work-api/cashflow/workbook/export', { credentials: 'include' }); if (!response.ok) throw new Error('导出资金测算表失败'); return { blob: await response.blob(), name: decodeURIComponent((response.headers.get('content-disposition') || '').split("filename*=UTF-8''")[1] || '项目资金测算.xlsx') } }
+export interface CashflowHistoryGroup { name: string; records: number; planned: number; received: number; unpaid: number; received_rate: number; difficult: number; long_term: number }
+export interface CashflowProjectRisk extends CashflowHistoryGroup { project_code: string; customer: string; region: string }
+export interface CashflowCustomerProfile extends CashflowHistoryGroup { average_collection_days: number | null; median_collection_days: number | null; p75_collection_days: number | null; p90_collection_days: number | null; collection_sample_count: number; on_time_collection_rate: number | null; median_schedule_variance_days: number | null; schedule_sample_count: number; cashflow_risk_score: number; cashflow_risk_level: string; recommended_collection_factor: number; traits: string[]; recommendation: string; payment_patterns: { name: string; amount: number; share: number }[]; stage_mix: { name: string; share: number }[] }
+export interface CashflowHistory { ok: boolean; source_name: string; imported_at: string; summary: { records: number; projects: number; planned_amount: number; received_amount: number; unpaid_amount: number; received_rate: number; average_collection_days: number | null }; by_region: CashflowHistoryGroup[]; by_customer: CashflowHistoryGroup[]; by_project_type: CashflowHistoryGroup[]; by_scale: CashflowHistoryGroup[]; by_status: CashflowHistoryGroup[]; by_year: CashflowHistoryGroup[]; customer_profiles: CashflowCustomerProfile[]; project_risks: CashflowProjectRisk[] }
+export function listCashflowHistory() { return request<CashflowHistory>('/cashflow/history') }
+export interface CashflowHistoryRecord { id: string; region: string; office: string; province: string; customer: string; project_code: string; project_name: string; project_type: string; contract_amount: number; planned_amount: number; received_amount: number; status: string; contract_date: string; planned_date: string; received_date: string; is_difficult: boolean; is_long_term: boolean }
+export function listCashflowHistoryRecords(params: { keyword?: string; region?: string; page?: number; page_size?: number } = {}) { return request<{ ok: boolean; items: CashflowHistoryRecord[]; total: number; page: number; page_size: number }>(`/cashflow/history/records?${new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined && value !== '').map(([key, value]) => [key, String(value)]))}`) }
+export function saveCashflowHistoryRecord(payload: Partial<CashflowHistoryRecord>) { return post<{ ok: boolean; item: CashflowHistoryRecord }>('/cashflow/history/save', payload) }
+export function deleteCashflowHistoryRecord(id: string) { return post<{ ok: boolean }>('/cashflow/history/delete', { id }) }
+
+// ---- 客户经营助手（CRM） ----
+export interface CrmUnit { business_region?: string; business_regions?: string[]; parent_unit_id?: string; organization_level?: 'company' | 'subsidiary' | 'unit' | ''; company_full_name?: string; subsidiary_full_name?: string; unit_name?: string; id: string; name: string; type: string; region: string; line_scale: string; bid_preference: string; history: string; win_rate: string; source: string; version: number }
+export interface CrmPerson { mobile?: string; office_phone?: string; email?: string; wechat?: string; importance?: string; support_level?: string; maintenance_days?: number | string; imported_history?: string; company_full_name?: string; subsidiary_full_name?: string; organization_unit_name?: string; organization_path?: string; department?: string; manager_id?: string; responsibilities?: string; id: string; name: string; unit_id: string; unit_name?: string; title: string; decision_role: string; power_radius: string; influence: number; stance: string; career_track: string[]; rotation_window: string; version: number }
+export interface CrmAction { next_step?: string; due_date?: string; owner?: string; supervisor?: string; created_by?: string; project_id?: string; completed_at?: string; id: string; relation_id: string; type: string; level: string; intel: string; cost: string; effective: boolean; bidirectional: boolean; decision_node: string; happened_at: string }
+export interface CrmRelation { _owner?: string; our_staff?: CrmStaff | null; our_member_label?: string; id: string; person_id: string; person_name?: string; our_member: string; source: string; intro_path: string; single_point_risk: boolean; strength: number; strength_label: string; score: number; radar: Record<string, number>; decay_state: 'normal' | 'warning' | 'alarm'; last_touch: string; days_since_touch: number | null; action_count: number; actions?: CrmAction[]; version: number }
+export interface CrmGraphNode { id: string; label: string; kind: 'self' | 'unit' | 'person' | 'group' | 'staff'; type: string; unit_id?: string; influence?: number }
+export interface CrmGraphEdge { relation_kind?: 'belongs' | 'reports' | 'contact'; our_member?: string; our_member_label?: string; source: string; target: string; strength: number; score: number; decay_state: string; days_since_touch: number | null; single_point_risk: boolean }
+export interface CrmWarning { relation_id: string; person_id: string; person_name: string; unit_name: string; tier: string; decay_state: string; days_since_touch: number | null; strength: number }
+export interface CrmInfra { redis: boolean; neo4j: boolean; redis_configured: boolean; neo4j_configured: boolean }
+export interface CrmOverview { ok: boolean; stats: { units: number; people: number; relations: number; trusted: number; warnings: number; single_point: number }; graph: { nodes: CrmGraphNode[]; edges: CrmGraphEdge[] }; warnings: CrmWarning[]; unit_types: string[]; infra?: CrmInfra }
+export interface CrmCoverageCell { applicable?: boolean; covered: boolean; strength: number }
+export interface CrmCoverage { matrix: Record<string, Record<string, CrmCoverageCell>>; nodes: string[]; unit_types: string[]; should_cover: number; covered: number; l3_plus: number }
+export interface CrmBattleMap { ok: boolean; battle_map: { target: string; who_goes: string; route: string; first_step: string; current_level: number; target_level: number }; candidates: { our_member: string; strength: number; score: number; path: string }[]; pipeline: { step: string; detail: string }[]; coverage: CrmCoverage | null; opportunity_context?: { code: string; name: string; owner_unit: string; stage: string; cancelled: boolean; matched_units: number; matched_people: number; relations: number; assigned_relations: number; strong_relations: number; single_point_risks: number }; graph_source?: 'neo4j' | 'memory'; graph_path?: { names: string[]; hops: number } | null }
+export interface CrmOpportunity { id: string; code: string; name: string; owner_unit: string; stage: string; win_rate: string; status: string; region: string; manager: string; bid_date: string; contract_date: string; amount: number; cancelled: boolean; cancel_reason: string; version?: number; _owner?: string }
+
+export function crmOverview() { return request<CrmOverview>('/crm/overview') }
+export function crmUnits() { return request<{ ok: boolean; units: CrmUnit[]; types: string[] }>('/crm/units') }
+export function crmPeople() { return request<{ ok: boolean; people: CrmPerson[]; roles: string[] }>('/crm/people') }
+export function crmRelations() { return request<{ ok: boolean; relations: CrmRelation[]; levels: Record<string, string> }>('/crm/relations') }
+export function crmOpportunities() { return request<{ ok: boolean; opportunities: CrmOpportunity[] }>('/crm/opportunities') }
+export function crmSaveUnit(payload: Partial<CrmUnit>) { return post<{ ok: boolean; unit?: CrmUnit; error?: string }>('/crm/unit/save', payload) }
+export function crmDeleteUnit(id: string) { return post<{ ok: boolean; deleted_id?: string; error?: string }>('/crm/unit/delete', { id }) }
+export function crmDepartmentNode(payload: { unit_id: string; department: string; action: 'add' | 'delete'; name?: string }) { return post<{ ok: boolean; unit?: CrmUnit; error?: string }>('/crm/department/node', payload) }
+export function crmSavePerson(payload: Partial<CrmPerson>) { return post<{ ok: boolean; person?: CrmPerson; error?: string }>('/crm/person/save', payload) }
+export function crmSaveRelation(payload: Partial<CrmRelation>) { return post<{ ok: boolean; relation?: CrmRelation; error?: string }>('/crm/relation/save', payload) }
+export function crmAddAction(payload: Partial<CrmAction>) { return post<{ ok: boolean; action?: CrmAction; relation?: CrmRelation; error?: string }>('/crm/action/add', payload) }
+export function crmSaveLink(payload: { id?: string; project_id: string; decision_node: string; person_id: string; our_member?: string }) { return post<{ ok: boolean; error?: string }>('/crm/link/save', payload) }
+export function crmImportOpportunities(payload: { filename: string; data: string }) { return post<{ ok: boolean; imported?: number; active?: number; archived?: number; error?: string }>('/crm/opportunities/import', payload) }
+export function crmSaveOpportunity(payload: Partial<CrmOpportunity>) { return post<{ ok: boolean; opportunity?: CrmOpportunity; error?: string }>('/crm/opportunity/save', payload) }
+export async function crmExportOpportunities(filters: { state?: 'all' | 'active' | 'archived'; stage?: string; keyword?: string } = {}) {
+  const query = new URLSearchParams()
+  if (filters.state && filters.state !== 'all') query.set('state', filters.state)
+  if (filters.stage && filters.stage !== 'all') query.set('stage', filters.stage)
+  if (filters.keyword?.trim()) query.set('keyword', filters.keyword.trim())
+  const base = backendUrl ? backendUrl + '/api/crm/opportunities/export' : '/personal-work-api/crm/opportunities/export'
+  const response = await fetch(`${base}?${query.toString()}`, { credentials: 'include' })
+  if (!response.ok) {
+    let message = '导出机会点表失败'
+    try { message = (await response.json()).error || message } catch { /* non-JSON error */ }
+    throw new Error(message)
+  }
+  const disposition = response.headers.get('content-disposition') || ''
+  const name = decodeURIComponent(disposition.split("filename*=UTF-8''")[1] || '机会点清单.xlsx')
+  return { blob: await response.blob(), name }
+}
+export function crmBulkUpdate(payload: { collection: 'units' | 'people' | 'relations'; ids: string[]; changes: Record<string, string | boolean | number> }) { return post<{ ok: boolean; updated: number }>('/crm/bulk-update', payload) }
+export function crmBatchAssignRelations(payload: { relation_ids: string[]; our_member?: string; transfer?: boolean; supervision?: { next_step: string; due_date?: string; supervisor?: string } }) { return post<{ ok: boolean; updated: number; plans_created: number; plans_transferred?: number; our_member: string; supervisor: string }>('/crm/relations/batch-assign', payload) }
+export async function crmExportRelationships(level: 'all' | 'region' | 'manager', target = '', region = '') {
+  const query = new URLSearchParams({ level, target })
+  if (region) query.set('region', region)
+  const base = backendUrl ? backendUrl + '/api/crm/excel/export' : '/personal-work-api/crm/excel/export'
+  const response = await fetch(`${base}?${query.toString()}`, { credentials: 'include' })
+  if (!response.ok) {
+    let message = '导出客户关系表失败'
+    try { message = (await response.json()).error || message } catch { /* binary or empty body */ }
+    throw new Error(message)
+  }
+  const disposition = response.headers.get('content-disposition') || ''
+  const name = decodeURIComponent(disposition.split("filename*=UTF-8''")[1] || '客户关系.xlsx')
+  return { blob: await response.blob(), name }
+}
+export async function crmExportCustomerOrganization() {
+  const base = backendUrl ? backendUrl + '/api/crm/organization/export' : '/personal-work-api/crm/organization/export'
+  const response = await fetch(base, { credentials: 'include' })
+  if (!response.ok) {
+    let message = '导出客户组织架构失败'
+    try { message = (await response.json()).error || message } catch { /* binary or empty body */ }
+    throw new Error(message)
+  }
+  const disposition = response.headers.get('content-disposition') || ''
+  const name = decodeURIComponent(disposition.split("filename*=UTF-8''")[1] || '客户组织架构.xlsx')
+  return { blob: await response.blob(), name }
+}
+export function crmRecordVersions(collection: string, recordId: string) { return request<{ ok: boolean; versions: Array<{ at: string; record: Record<string, unknown> }> }>(`/crm/history?${new URLSearchParams({ collection, record_id: recordId })}`) }
+export function crmProjectMap(projectId: string) { return request<{ ok: boolean; coverage: CrmCoverage }>(`/crm/project-map?project_id=${encodeURIComponent(projectId)}`) }
+export interface CrmPath { ok: boolean; ids: string[]; names: string[]; hops: number; source: 'neo4j' | 'memory'; error?: string }
+export function crmGraphPath(target: string) { return request<CrmPath>(`/crm/graph/path?target=${encodeURIComponent(target)}`) }
+export function crmBattleMap(payload: { stage?: string; project_id?: string; target_person_id: string; our_members?: string[] }) { return post<CrmBattleMap>('/crm/battle-map/generate', payload) }
+export function crmImportFromContract(contract_id: string) { return post<{ ok: boolean; unit?: CrmUnit; error?: string; note?: string }>('/crm/import-from-contract', { contract_id }) }
+
+export function getProject(id: string) {
+  return request<{ ok: boolean; project: Project; can_manage: boolean }>(`/projects/get?${new URLSearchParams({ id }).toString()}`)
+}
+
+export function getProjectTimeline(id: string) {
+  return request<{ ok: boolean; project: Project; timeline: ProjectTimelineItem[]; can_manage: boolean; users: Pick<User, 'username' | 'name'>[] }>(`/projects/timeline?${new URLSearchParams({ id }).toString()}`)
+}
+
+export function createProject(payload: { name: string; description?: string; members?: ProjectMember[] }) {
+  return post<{ ok: boolean; project: Project }>('/projects/create', payload)
+}
+
+export function updateProject(payload: { id: string; name?: string; description?: string; status?: 'active' | 'archived' }) {
+  return post<{ ok: boolean; project: Project }>('/projects/update', payload)
+}
+
+export function deleteProject(id: string) {
+  return post<{ ok: boolean; deleted_id: string }>('/projects/delete', { id })
+}
+
+export function saveProjectMembers(id: string, members: ProjectMember[]) {
+  return post<{ ok: boolean; project: Project }>('/projects/members', { id, members })
+}
+
+export function uploadProjectFile(id: string, name: string, contentBase64: string) {
+  return post<{ ok: boolean; file: ProjectFile; project: Project }>('/projects/upload', { id, name, content_base64: contentBase64 })
+}
+
+export function projectFileUrl(id: string, fileId: string) {
+  return downloadUrl(`/projects/file?${new URLSearchParams({ id, file_id: fileId }).toString()}`)
+}
+
+export function projectReportUrl(id: string, reportId: string) {
+  return downloadUrl(`/projects/report-file?${new URLSearchParams({ id, report_id: reportId }).toString()}`)
+}
+
+export function getProjectAdmins() {
+  return request<{ ok: boolean; admins: string[]; users: Pick<User, 'username' | 'name'>[]; can_configure: boolean }>('/projects/admins')
+}
+
+export function saveProjectAdmins(admins: string[]) {
+  return post<{ ok: boolean; admins: string[]; users: Pick<User, 'username' | 'name'>[]; can_configure: boolean }>('/projects/admins', { admins })
+}
+
 export function listForumTopics() {
   return request<ForumTopicsResponse>('/forum/topics')
 }
@@ -930,12 +1319,37 @@ export function toggleForumLike(topicId: string) {
   return post<ForumTopicResponse>('/forum/like', { topic_id: topicId })
 }
 
+export function setForumTopicPinned(topicId: string, pinned: boolean) {
+  return post<ForumTopicResponse>('/forum/pin', { topic_id: topicId, pinned })
+}
+
 export function createForumAiTopic(seed: string, chat: string, files: ForumAiTopicFile[]) {
   return post<ForumTopicResponse>('/forum/ai-topic', { seed, chat, files })
 }
 
 export function createForumAiComment(topicId: string) {
   return post<ForumTopicResponse>('/forum/ai-comment', { topic_id: topicId })
+}
+
+// ===== 工单系统（自金点子论坛拆分，附件复用论坛上传接口）=====
+export function listTickets() {
+  return request<TicketListResponse>('/tickets')
+}
+
+export function getTicket(id: string) {
+  return request<TicketResponse>(`/tickets/get?${new URLSearchParams({ id }).toString()}`)
+}
+
+export function createTicket(title: string, body: string, module: string, attachments: ForumAttachment[] = []) {
+  return post<TicketResponse>('/tickets/create', { title, body, module, attachments })
+}
+
+export function addTicketComment(ticketId: string, content: string, status = '', parentId = '', attachments: ForumAttachment[] = []) {
+  return post<TicketResponse>('/tickets/comment', { topic_id: ticketId, content, status, parent_id: parentId, attachments })
+}
+
+export function uploadTicketAttachment(file: File) {
+  return uploadForumAttachment(file)
 }
 
 export function fetchLatestNews() {
@@ -948,6 +1362,16 @@ export function fetchNewsHistory(date?: string, limit = 200) {
   if (limit) query.set('limit', String(limit))
   const suffix = query.toString()
   return request<NewsHistoryResponse>(`/news/history${suffix ? `?${suffix}` : ''}`)
+}
+
+export function searchWechatAccounts(query: string) {
+  return request<{ ok: boolean; query: string; candidates: WechatAccountCandidate[]; notice?: string }>(
+    `/news/wechat-accounts?query=${encodeURIComponent(query)}`,
+  )
+}
+
+export function fetchWechatAuthStatus() {
+  return request<{ ok: boolean; expired: boolean; message: string }>('/news/wechat-auth-status')
 }
 
 export function saveNewsConfig(payload: NewsConfig) {
@@ -995,10 +1419,12 @@ export function sendMail(payload: SendMailPayload) {
   return post<SendMailResponse>('/send', payload)
 }
 
-export function listMailbox(limit: string, refresh = false) {
+export function listMailbox(limit: string, refresh = false, offset = 0, readStatus: 'all' | 'unread' | 'read' = 'all', signal?: AbortSignal) {
   const query = new URLSearchParams({ limit })
+  if (offset) query.set('offset', String(offset))
+  if (readStatus !== 'all') query.set('read_status', readStatus)
   if (refresh) query.set('refresh', '1')
-  return request<MailboxResponse>(`/mailbox?${query.toString()}`)
+  return request<MailboxResponse>(`/mailbox?${query.toString()}`, { signal })
 }
 
 export function getMailboxDetail(uid: string, refresh = false) {
@@ -1007,9 +1433,13 @@ export function getMailboxDetail(uid: string, refresh = false) {
   return request<MailDetailResponse>(`/mailbox-detail?${query.toString()}`)
 }
 
-export function listSentMail(limit: string) {
+export function markMailboxRead(uid: string) {
+  return post<{ ok: boolean; uid: string; is_read: boolean }>('/mailbox-mark-read', { uid })
+}
+
+export function listSentMail(limit: string, signal?: AbortSignal) {
   const query = new URLSearchParams({ limit })
-  return request<MailboxResponse>(`/sent-mail?${query.toString()}`)
+  return request<MailboxResponse>(`/sent-mail?${query.toString()}`, { signal })
 }
 
 export function getSentMailDetail(uid: string) {
@@ -1184,6 +1614,73 @@ export function getKnowledgeDocChunks(datasetId: string, docId: string) {
   )
 }
 
+// ---- PDF 解析成 Markdown（DeepDoc OCR + 绘图框取校准）----
+export interface PdfMdPage {
+  page: number
+  width: number
+  height: number
+}
+export interface PdfMdJob {
+  id: string
+  filename: string
+  created_at: string
+  page_count: number
+  pages: PdfMdPage[]
+  zoom: number
+  ocr_engine: string
+  ocr_done: boolean
+  markdown: string
+  parse_status: 'idle' | 'running' | 'done' | 'failed'
+  parse_progress: number
+  parse_page: number
+  parse_error: string
+}
+export interface PdfMdJobBrief {
+  id: string
+  filename: string
+  created_at: string
+  page_count: number
+  ocr_engine: string
+  ocr_done: boolean
+}
+
+export function pdfMdPageImageUrl(jobId: string, page: number) {
+  const base = backendUrl ? `${backendUrl}/api` : '/personal-work-api'
+  return `${base}/knowledge/pdf-md/page?job_id=${encodeURIComponent(jobId)}&page=${page}`
+}
+
+export function listPdfMdJobs() {
+  return request<{ ok: boolean; jobs: PdfMdJobBrief[] }>('/knowledge/pdf-md/list')
+}
+
+export function getPdfMdJob(jobId: string) {
+  return request<{ ok: boolean; job: PdfMdJob }>(`/knowledge/pdf-md/get?job_id=${encodeURIComponent(jobId)}`)
+}
+
+export function createPdfMdJob(filename: string, data: string) {
+  return post<{ ok: boolean; job: PdfMdJob }>('/knowledge/pdf-md/create', { filename, data })
+}
+
+export function parsePdfMdJob(jobId: string) {
+  return post<{ ok: boolean; status: string; job: PdfMdJob }>('/knowledge/pdf-md/parse', { job_id: jobId })
+}
+
+export function regionOcrPdfMd(jobId: string, page: number, rect: { x0: number; y0: number; x1: number; y1: number }) {
+  return post<{ ok: boolean; markdown: string; page: number }>('/knowledge/pdf-md/region', { job_id: jobId, page, rect })
+}
+
+export function savePdfMdMarkdown(jobId: string, markdown: string) {
+  return post<{ ok: boolean }>('/knowledge/pdf-md/save', { job_id: jobId, markdown })
+}
+
+export function deletePdfMdJob(jobId: string) {
+  return post<{ ok: boolean }>('/knowledge/pdf-md/delete', { job_id: jobId })
+}
+
+export function pdfMdToKnowledge(jobId: string, markdown: string, scope: string) {
+  return post<{ ok: boolean; doc: KnowledgeDoc }>('/knowledge/pdf-md/to-kb', { job_id: jobId, markdown, scope })
+}
+
 export function getKnowledgeConfig() {
   return request<KnowledgeConfig>('/knowledge-config')
 }
@@ -1203,6 +1700,8 @@ export function uploadKnowledgeDoc(filename: string, data: string, scope = 'mine
 export interface KnowledgeKb {
   id: string
   name: string
+  parent_id?: string
+  root_type?: string
   shared: boolean
   default: boolean
   document_count: number
@@ -1305,6 +1804,23 @@ export function searchKnowledge(query: string, topK = 5, kbIds: string[] = []) {
   return post<{ ok: boolean; results: KnowledgeSearchResult[]; warning?: string }>('/knowledge/search', { query, top_k: topK, kb_ids: kbIds })
 }
 
+export interface KnowledgeExternalApiInfo {
+  ok: boolean
+  provider: string
+  public_url: string
+  ready: boolean
+  chat_id: string
+  base_url: string
+  completion_url: string
+  dataset_count: number
+  api_key_masked?: string
+  hint?: string
+}
+
+export function getKnowledgeExternalApiInfo() {
+  return request<KnowledgeExternalApiInfo>('/knowledge/external-info')
+}
+
 export function askKnowledge(question: string, topK = 5, kbIds: string[] = []) {
   return post<{ ok: boolean; answer: string; sources: KnowledgeAskSource[]; warning?: string }>('/knowledge/ask', { question, top_k: topK, kb_ids: kbIds })
 }
@@ -1400,12 +1916,20 @@ export function listAdminUsers() {
   return request<AdminUsersResponse>('/admin-users-list')
 }
 
-export function addAdminUser(payload: { username: string; password: string; name: string; role?: User['role'] }) {
+export function addAdminUser(payload: { username: string; password: string; name: string; role?: User['role']; employee_id?: string; company?: string; department?: string; position?: string; email?: string }) {
   return post<AdminUsersResponse>('/admin-users', payload)
 }
 
-export function updateAdminUser(payload: { username: string; name?: string; password?: string; role?: User['role'] }) {
+export function updateAdminUser(payload: { username: string; name?: string; password?: string; role?: User['role']; assistant_permissions?: Record<string, boolean>; email?: string }) {
   return post<AdminUsersResponse>('/admin-users-update', payload)
+}
+
+export function batchUpdateAdminUserPermissions(payload: { company: string; departments: string[]; assistant_ids: string[]; enabled: boolean }) {
+  return post<AdminUsersResponse & { updated: number; assistant_ids: string[]; enabled: boolean }>('/admin-users-batch-permissions', payload)
+}
+
+export function batchUpdateUsersForAssistant(payload: { assistant_id: string; usernames: string[]; enabled: boolean }) {
+  return post<AdminUsersResponse & { updated: number; assistant_id: string; enabled: boolean }>('/admin-users-assistant-batch', payload)
 }
 
 export function deleteAdminUser(username: string) {
@@ -1432,8 +1956,13 @@ export function runSkillTest(payload: { name: string; arguments: Record<string, 
   return post<SkillTestResponse>('/skill-test', payload)
 }
 
-export function agentChat(kind: AgentKind, messages: AgentMessage[], sessionId?: string) {
-  return post<AgentChatResponse>('/agent', { kind, messages, ...(sessionId ? { session_id: sessionId } : {}) })
+export function agentChat(kind: AgentKind, messages: AgentMessage[], sessionId?: string, fileIds: string[] = []) {
+  return post<AgentChatResponse>('/agent', {
+    kind,
+    messages,
+    ...(sessionId ? { session_id: sessionId } : {}),
+    ...(fileIds.length ? { file_ids: fileIds } : {}),
+  })
 }
 
 export function getAgentSession(sessionId: string, limit = 100) {
@@ -1555,6 +2084,27 @@ export function scanInvoiceAttachments(start: string, end: string, account: 'com
   return request<ReimbursementScanResponse>(`/reimbursement/scan?start=${start}&end=${end}&account=${account}`)
 }
 
+export function listReimbursementSearches() {
+  return request<ReimbursementSearchListResponse>('/reimbursement/searches')
+}
+
+export function loadReimbursementSearch(id: string) {
+  return request<ReimbursementSearchResponse>(`/reimbursement/search?id=${encodeURIComponent(id)}`)
+}
+
+export function saveReimbursementSearch(payload: {
+  id?: string
+  title?: string
+  account: 'company' | 'personal'
+  start?: string
+  end?: string
+  total_scanned?: number
+  items: ReimbursementItem[]
+  scan_chunks?: ReimbursementScanChunk[]
+}) {
+  return post<ReimbursementSearchResponse>('/reimbursement/search', payload)
+}
+
 export function uploadReimbursementFile(filename: string, dataB64: string) {
   return post<ReimbursementUploadResponse>('/reimbursement/upload', { filename, data: dataB64 })
 }
@@ -1573,11 +2123,18 @@ export function fetchReimbursementUrl(url: string, hintSubject?: string, hintBod
   })
 }
 
-export function mergeReimbursementPdf(items: { key: string }[], outputName: string, mergeTrainTickets = false) {
+export function mergeReimbursementPdf(items: Pick<ReimbursementItem, 'key' | 'invoice_type' | 'invoice_date' | 'invoice_amount'>[], outputName: string, mergeTrainTickets = false) {
   return post<ReimbursementMergeResponse>('/reimbursement/merge', {
     items,
     output_name: outputName,
     merge_train_tickets: mergeTrainTickets,
+  })
+}
+
+export function downloadReimbursementInvoicesZip(items: Pick<ReimbursementItem, 'key' | 'invoice_type' | 'invoice_date' | 'invoice_amount' | 'invoice_location' | 'invoice_from' | 'invoice_to'>[], outputName: string) {
+  return post<ReimbursementZipResponse>('/reimbursement/download-zip', {
+    items,
+    output_name: outputName,
   })
 }
 
@@ -1611,3 +2168,209 @@ export function reimbursementOutputUrl(filename: string) {
   const base = backendUrl ? `${backendUrl}/api` : '/personal-work-api'
   return `${base}/reimbursement/output?name=${encodeURIComponent(filename)}`
 }
+
+export interface WritingTemplate {
+  id: string
+  name: string
+  writing_type: string
+  prompt: string
+  builtin?: boolean
+  updated_at?: string
+}
+
+export interface WritingMaterial {
+  id: string
+  name: string
+  size?: number
+  text_preview?: string
+  created_at?: string
+}
+
+export interface WritingSource {
+  doc_name?: string
+  dataset_name?: string
+  text?: string
+  score?: number
+}
+
+export interface WritingHistoryItem {
+  id: string
+  title: string
+  writing_type: string
+  requirements?: string
+  outline?: string
+  content?: string
+  content_preview?: string
+  materials?: WritingMaterial[]
+  sources?: WritingSource[]
+  action?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface WritingGeneratePayload {
+  id?: string
+  title: string
+  writing_type: string
+  audience?: string
+  tone?: string
+  length?: string
+  requirements?: string
+  outline?: string
+  content?: string
+  rewrite_instruction?: string
+  file_ids?: string[]
+  files?: Array<{ name: string; data: string }>
+  use_knowledge?: boolean
+  kb_ids?: string[]
+  knowledge_top_k?: number
+}
+
+export function getWritingTemplates() {
+  return request<{ ok: boolean; templates: WritingTemplate[]; types: string[] }>('/writing/templates')
+}
+
+export function saveWritingTemplate(payload: Pick<WritingTemplate, 'name' | 'writing_type' | 'prompt'> & { id?: string }) {
+  return post<{ ok: boolean; template: WritingTemplate }>('/writing/templates', payload)
+}
+
+export function getWritingHistory() {
+  return request<{ ok: boolean; items: WritingHistoryItem[] }>('/writing/history')
+}
+
+export function getWritingHistoryItem(id: string) {
+  return request<{ ok: boolean; item: WritingHistoryItem }>(`/writing/history-item?id=${encodeURIComponent(id)}`)
+}
+
+export function uploadWritingFile(files: Array<{ name: string; data: string }>) {
+  return post<{ ok: boolean; files: WritingMaterial[] }>('/writing/upload', { files })
+}
+
+export function getWritingUploads() {
+  return request<{ ok: boolean; files: WritingMaterial[] }>('/writing/uploads')
+}
+
+export function deleteWritingUpload(id: string) {
+  return post<{ ok: boolean; deleted: string }>('/writing/upload-delete', { id })
+}
+
+export function generateWritingOutline(payload: WritingGeneratePayload) {
+  return post<{ ok: boolean; outline: string; mode?: string; sources?: WritingSource[] }>('/writing/outline', payload)
+}
+
+export function generateWritingDraft(payload: WritingGeneratePayload) {
+  return post<{ ok: boolean; mode?: string; item: WritingHistoryItem }>('/writing/generate', payload)
+}
+
+export function rewriteWritingDraft(payload: WritingGeneratePayload) {
+  return post<{ ok: boolean; mode?: string; item: WritingHistoryItem }>('/writing/rewrite', payload)
+}
+
+export function exportWritingDraft(payload: { id?: string; title?: string; content?: string; format: 'md' | 'txt' | 'docx' | 'xlsx' }) {
+  return post<{ ok: boolean; format: string; name: string; path: string; download_url: string }>('/writing/export', payload)
+}
+
+export function deleteWritingHistory(id: string) {
+  return post<{ ok: boolean; deleted: string }>('/writing/delete', { id })
+}
+
+export function writingDownloadUrl(path: string) {
+  if (!path) return ''
+  if (/^https?:\/\//.test(path)) return path
+  if (backendUrl) return path.startsWith('/api/') ? `${backendUrl}${path}` : `${backendUrl}/api${path}`
+  return path.replace(/^\/api/, '/personal-work-api')
+}
+
+export interface CrmRailStage { id: string; title: string; action: string; deliverable: string; gate: string }
+export interface CrmPlaybook { organizations: { type: string; label: string; departments: string; duty: string; evidence: string; stages: string[] }[]; stages: CrmRailStage[]; followups: (CrmAction & { person_name: string; can_complete?: boolean; owner_label?: string; overdue: boolean })[]; sources: { title: string; url: string }[] }
+export function crmPlaybook() { return request<CrmPlaybook>('/crm/playbook') }
+export function crmCompleteFollowup(id: string) { return post<{ ok: boolean; error?: string }>('/crm/followup/complete', { id }) }
+
+export interface CrmExcelError { sheet: string; row: number; error: string; headers?: string[]; values?: Record<string, string> }
+export interface CrmExcelResult { ok: boolean; created: number; skipped: number; pending?: number; errors: CrmExcelError[]; sheets: Record<string, { created: number; skipped: number; pending?: number; failed: number }> }
+export async function crmImportExcel(file: File) {
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
+    reader.onerror = () => reject(new Error('文件读取失败'))
+    reader.readAsDataURL(file)
+  })
+  return post<CrmExcelResult>('/crm/excel/import', { filename: file.name, data })
+}
+export function crmRetryExcelRows(rows: CrmExcelError[], overwrite = false) { return post<CrmExcelResult>('/crm/excel/retry-rows', { rows, overwrite }) }
+export interface CrmImportCompletionTask { id: string; status: 'pending' | 'completed'; uploader_username: string; uploader_name?: string; source_row: number; assignee_name: string; assignee_username: string; missing_fields: string[]; values: Record<string, string>; original_values: Record<string, string>; created_at: string; completed_at?: string; completed_by?: string }
+export function crmImportCompletionTasks() { return request<{ ok: boolean; can_manage: boolean; pending: number; tasks: CrmImportCompletionTask[] }>('/crm/import-completion/tasks') }
+export function crmCompleteImportCompletionTask(payload: { id: string; target_username?: string; values: { 公司全称: string; 姓名?: string; '姓名*'?: string; 单位类型: string; 部门?: string; 省份?: string; 城市?: string } }) { return post<{ ok: boolean; status: string; task: CrmImportCompletionTask }>('/crm/import-completion/complete', payload) }
+export async function crmExportImportCompletion(region = '', manager = '') {
+  const query = new URLSearchParams()
+  if (region) query.set('region', region)
+  if (manager) query.set('manager', manager)
+  const base = backendUrl ? backendUrl + '/api/crm/import-completion/excel' : '/personal-work-api/crm/import-completion/excel'
+  const response = await fetch(`${base}?${query.toString()}`, { credentials: 'include' })
+  if (!response.ok) {
+    let message = '导出资料补充表失败'
+    try { message = (await response.json()).error || message } catch { /* binary or empty body */ }
+    throw new Error(message)
+  }
+  const disposition = response.headers.get('content-disposition') || ''
+  const name = decodeURIComponent(disposition.split("filename*=UTF-8''")[1] || '资料补充.xlsx')
+  return { blob: await response.blob(), name }
+}
+export async function crmImportCompletionExcel(file: File) {
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
+    reader.onerror = () => reject(new Error('文件读取失败'))
+    reader.readAsDataURL(file)
+  })
+  return post<{ ok: boolean; completed: number; skipped: number; errors: { row: number; task_id?: string; error: string }[] }>('/crm/import-completion/excel', { filename: file.name, data })
+}
+
+export interface OrganizationExcelResult { ok: boolean; updated: number; skipped: number; imported?: number; pending?: number; created?: number; created_users?: {username: string; name: string}[]; notices?: { row: number; error: string }[]; errors: { row: number; error: string }[]; roster_check?: { applied: boolean; checked?: number; present?: number; missing?: number; checked_at?: string; source?: string; reason?: string; missing_users: { username: string; name: string; employee_id: string; company?: string; department?: string; position?: string }[] } }
+export async function importOrganizationExcel(file: File, createUsers = false) {
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
+    reader.onerror = () => reject(new Error('文件读取失败'))
+    reader.readAsDataURL(file)
+  })
+  return post<OrganizationExcelResult>('/admin-organization/import', { filename: file.name, data, create_users: createUsers })
+}
+
+export function crmQuickCreate(payload: { format?: 'business'; company_full_name?: string; subsidiary_full_name?: string; importance?: string; support_level?: string; history?: string; last_interaction?: string; weekly_plan?: string; due_date?: string; maintenance_days?: string; business_region?: string; department?: string; manager_id?: string; responsibilities?: string; unit_name: string; unit_type: string; name: string; city: string; title: string; role: string; our_member: string; source: string }) {
+  return post<{ ok: boolean; status?: 'created' | 'skipped'; error?: string }>('/crm/quick-create', payload)
+}
+
+export interface CrmCapabilities { role: string; read: boolean; write: boolean; register_action?: boolean; import: boolean; manage: boolean; appoint: boolean; batch_assign?: boolean; supervise?: boolean; expires_on: string; expired: boolean; data_scope?: 'self' | 'team' | 'organization' | 'regions' | 'all'; regions?: string[]; scope_company?: string; scope_departments?: string[] }
+export interface CrmSecurityUser { username: string; name: string; employee_id?: string; company?: string; department?: string; position?: string; liaison_region_override?: string; superadmin: boolean; capabilities: CrmCapabilities; grant: { role: string; register_action?: boolean; expires_on: string; data_scope?: CrmCapabilities['data_scope']; scope_company?: string; scope_departments?: string[]; regions?: string[]; manager?: boolean } | null }
+export interface CrmAuditEvent { outcome?: string; at: string; actor: string; operation: string; path: string; status: number; target: string; grant?: { role: string; expires_on: string } }
+export function crmSecurityMe() { return request<{ ok: boolean; capabilities: CrmCapabilities }>('/crm/security/me') }
+export interface CrmManagerView { username: string; name: string; department: string; member_keys: string[] }
+export function crmManagerDirectory() { return request<{ ok: boolean; managers: CrmManagerView[] }>('/crm/manager-directory') }
+export type CrmRegionCity = { province: string; city: string }
+export type CrmRegionSettings = { ok: boolean; regions: Record<string, string[]>; cities: Record<string, CrmRegionCity[]>; city_options: Record<string, string[]>; version: number; updated_at: string; updated_by: string }
+export function crmRegionSettings() { return request<CrmRegionSettings>('/crm/security/region-settings') }
+export interface CrmQualityRules {
+  personal_weights: number[]; personal_min_dimensions: number; personal_maintenance_days: number;
+  weights: number[]; good_threshold: number; fair_threshold: number; recent_days: number;
+  min_dimensions: number; backup_count: number; completeness_threshold: number; strength_weight: number;
+  support_scores: Record<string, number>; templates: Record<string, string[]>;
+}
+export interface CrmQualitySettings { ok: boolean; rules: CrmQualityRules; defaults: CrmQualityRules; roles: string[]; version: number; updated_at: string; updated_by: string }
+export function crmQualitySettings() { return request<CrmQualitySettings>('/crm/security/quality-settings') }
+export function crmSaveQualitySettings(payload: {rules: CrmQualityRules; version: number}) { return post<CrmQualitySettings>('/crm/security/quality-settings', payload) }
+export type CrmAmapSettings = { ok: boolean; key: string; enabled: boolean; has_security_code: boolean; version: number }
+export function crmAmapSettings() { return request<CrmAmapSettings>('/crm/security/amap-settings') }
+export function crmSaveAmapSettings(payload: { key: string; enabled: boolean; security_code: string; version: number }) { return post<CrmAmapSettings>('/crm/security/amap-settings', payload) }
+export function crmSaveRegionSettings(payload: { regions: Record<string, string[]>; cities?: Record<string, CrmRegionCity[]>; version: number }) { return post<CrmRegionSettings>('/crm/security/region-settings', payload) }
+export function crmSecurityUsers() { return request<{ ok: boolean; users: CrmSecurityUser[] }>('/crm/security/users') }
+export function crmSecurityAudit() { return request<{ ok: boolean; events: CrmAuditEvent[]; scope?: 'all' | 'limited' }>('/crm/security/audit') }
+export function crmSecurityGrant(payload: { username: string; role: string; register_action?: boolean; expires_on: string; data_scope?: CrmCapabilities['data_scope']; scope_company?: string; scope_departments?: string[]; regions?: string[] }) { return post<{ ok: boolean }>('/crm/security/grant', payload) }
+export function crmSecurityBatchGrant(payload: { company: string; departments: string[]; role: string; register_action?: boolean; expires_on: string; data_scope?: 'self' | 'team' }) { return post<{ ok: boolean; updated: number; role: string; expires_on: string }>('/crm/security/batch-grant', payload) }
+export function crmSaveLiaisonRegion(payload: { username: string; region: string }) { return post<{ ok: boolean; username: string; region: string }>('/crm/security/liaison-region', payload) }
+
+export function crmSecurityAppoint(username: string, manager: boolean) { return post<{ ok: boolean }>('/crm/security/appoint', { username, manager, role: 'disabled' }) }
+
+export interface CrmStaff { id: string; name: string; member_key: string; username?: string; company: string; department: string; title: string; manager_id: string; business_region: string; responsibilities: string; version: number }
+export function crmStaff() { return request<{ok:boolean;staff:CrmStaff[]}>('/crm/staff') }
+export function crmSaveStaff(payload: Partial<CrmStaff>) { return post<{ok:boolean;staff?:CrmStaff;error?:string}>('/crm/staff/save',payload) }

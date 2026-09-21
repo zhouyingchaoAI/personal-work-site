@@ -11,6 +11,7 @@ import {
   MagicStick,
   Plus,
   Refresh,
+  Search,
   Upload,
   View,
 } from '@element-plus/icons-vue'
@@ -22,6 +23,7 @@ import {
   getForumTopic,
   listForumTopics,
   resourceUrl,
+  setForumTopicPinned,
   toggleForumLike,
   uploadForumAttachment,
   type ForumAiTopicFile,
@@ -57,6 +59,7 @@ interface ForumAiForm {
 }
 
 const topics = ref<ForumTopic[]>([])
+const topicSearchKeyword = ref('')
 const selectedTopicId = ref('')
 const detailTopic = ref<ForumTopic | null>(null)
 const commentText = ref('')
@@ -89,6 +92,7 @@ const loading = reactive({
   comment: false,
   aiComment: false,
   like: false,
+  pin: false,
 })
 
 const pageSize = 8
@@ -99,6 +103,28 @@ const sortedTopics = computed(() => {
     return pinnedDiff || b.updated_at.localeCompare(a.updated_at)
   })
 })
+const normalizedTopicSearchKeyword = computed(() => topicSearchKeyword.value.trim().toLocaleLowerCase())
+const filteredTopics = computed(() => {
+  const keyword = normalizedTopicSearchKeyword.value
+  if (!keyword) return sortedTopics.value
+  return sortedTopics.value.filter((topic) => {
+    const searchableText = [
+      topic.title,
+      topic.body,
+      topic.author,
+      topic.source,
+      sourceName(topic.source),
+      topic.preset,
+      presetName(topic.preset),
+    ].join(' ').toLocaleLowerCase()
+    return searchableText.includes(keyword)
+  })
+})
+const topicCountText = computed(() => (
+  normalizedTopicSearchKeyword.value
+    ? `找到 ${filteredTopics.value.length} / ${sortedTopics.value.length} 个话题`
+    : `${sortedTopics.value.length} 个话题`
+))
 const selectedTopic = computed(() => detailTopic.value || topics.value.find((topic) => topic.id === selectedTopicId.value) || null)
 const topicComments = computed(() => detailTopic.value?.comments || [])
 // 评论按 parent_id 分组，顶层评论分页展示，二级回复跟随父评论展示。
@@ -117,6 +143,7 @@ const canSubmitComment = computed(() => !!selectedTopic.value && !!commentText.v
 const currentUserName = computed(() => authState.user?.name || authState.user?.username || '成员')
 const currentUserAvatar = computed(() => (authState.user?.avatar_url ? resourceUrl(authState.user.avatar_url) : ''))
 const currentUserInitial = computed(() => authorInitial(currentUserName.value))
+const canManageTopicPin = computed(() => !!authState.user?.is_superadmin && !isPlatformTicket(selectedTopic.value))
 
 function sourceName(source: string) {
   return source === 'ai' ? '智能体' : '成员发起'
@@ -516,6 +543,21 @@ async function likeTopic() {
   }
 }
 
+async function toggleTopicPin() {
+  if (!selectedTopic.value) return
+  loading.pin = true
+  try {
+    const result = await setForumTopicPinned(selectedTopic.value.id, !selectedTopic.value.pinned)
+    detailTopic.value = result.topic
+    showNotice(result.topic.pinned ? '话题已置顶' : '已取消置顶')
+    await refreshTopicList()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loading.pin = false
+  }
+}
+
 async function submitAiComment() {
   if (!selectedTopic.value) return
   loading.aiComment = true
@@ -554,11 +596,6 @@ onMounted(loadInitialTopics)
 
 <template>
   <section class="forum-main">
-    <header class="forum-page-head">
-      <h1>金点子论坛</h1>
-      <p>围绕创意、改进和机会发起话题，团队成员一起讨论和沉淀观点。</p>
-    </header>
-
     <section v-if="forumNotice" class="forum-notice" role="status">
       <span>
         <el-icon><CircleCheckFilled /></el-icon>
@@ -574,7 +611,7 @@ onMounted(loadInitialTopics)
         <header class="forum-list-head">
           <div class="forum-list-title">
             <h2>全部历史话题</h2>
-            <span>{{ sortedTopics.length }} 个话题</span>
+            <span>{{ topicCountText }}</span>
           </div>
           <div class="forum-list-actions">
             <button type="button" class="forum-outline-button" @click="createOpen = !createOpen">
@@ -587,6 +624,21 @@ onMounted(loadInitialTopics)
             </button>
           </div>
         </header>
+
+        <label class="forum-topic-search">
+          <el-icon><Search /></el-icon>
+          <input
+            v-model="topicSearchKeyword"
+            type="search"
+            maxlength="80"
+            placeholder="搜索标题、内容、作者或话题类型"
+            aria-label="搜索论坛话题"
+            @keydown.esc="topicSearchKeyword = ''"
+          />
+          <button v-if="topicSearchKeyword" type="button" aria-label="清空搜索" @click="topicSearchKeyword = ''">
+            <el-icon><Close /></el-icon>
+          </button>
+        </label>
 
         <section v-if="createOpen" class="forum-create-drawer">
           <header class="forum-create-head">
@@ -601,13 +653,6 @@ onMounted(loadInitialTopics)
               <span>1</span>
               <strong>手动发起话题</strong>
             </div>
-            <label class="forum-field forum-field--line">
-              <span>话题类型</span>
-              <select v-model="createForm.preset" class="forum-select">
-                <option value="">普通话题</option>
-                <option value="platform_ticket">平台工单</option>
-              </select>
-            </label>
             <label class="forum-field forum-field--line">
               <span>话题标题</span>
               <input v-model="createForm.title" maxlength="60" type="text" placeholder="输入一个清晰的标题，便于大家讨论和搜索" />
@@ -712,7 +757,7 @@ onMounted(loadInitialTopics)
 
         <div class="forum-topic-list">
           <button
-            v-for="topic in sortedTopics"
+            v-for="topic in filteredTopics"
             :key="topic.id"
             type="button"
             :class="['forum-topic-item', { active: topic.id === selectedTopicId }]"
@@ -761,14 +806,17 @@ onMounted(loadInitialTopics)
               <em title="浏览"><el-icon><View /></el-icon>{{ topic.view_count }}</em>
             </span>
           </button>
-          <div v-if="!sortedTopics.length && !loading.list" class="forum-empty-state forum-empty-state--topics">
+          <div v-if="!filteredTopics.length && !loading.list" class="forum-empty-state forum-empty-state--topics">
             <span class="forum-empty-art forum-empty-art--topic">
               <i></i>
               <b></b>
             </span>
-            <strong>暂无话题，先发起一个金点子吧</strong>
-            <p>分享你的创意或改进建议，和团队一起讨论并沉淀有价值的观点。</p>
+            <strong>{{ topicSearchKeyword.trim() ? '没有匹配的话题' : '暂无话题，先发起一个金点子吧' }}</strong>
+            <p>{{ topicSearchKeyword.trim() ? '请尝试更换关键词，或清空搜索查看全部历史话题。' : '分享你的创意或改进建议，和团队一起讨论并沉淀有价值的观点。' }}</p>
             <div>
+              <button v-if="topicSearchKeyword.trim()" type="button" class="forum-outline-button" @click="topicSearchKeyword = ''">
+                清空搜索
+              </button>
               <button type="button" class="forum-primary-button" @click="createOpen = true">
                 <el-icon><Plus /></el-icon>
                 发起话题
@@ -789,12 +837,23 @@ onMounted(loadInitialTopics)
             <div>
               <h2>{{ selectedTopic.title }}</h2>
             </div>
-            <button
-              type="button"
-              :class="['forum-like-cta', { liked: selectedTopic.liked }]"
-              :disabled="loading.like"
-              @click="likeTopic"
-            >
+            <div class="forum-detail-actions">
+              <button
+                v-if="canManageTopicPin"
+                type="button"
+                class="forum-pin-cta"
+                :class="{ pinned: selectedTopic.pinned }"
+                :disabled="loading.pin"
+                @click="toggleTopicPin"
+              >
+                {{ selectedTopic.pinned ? '取消置顶' : '置顶话题' }}
+              </button>
+              <button
+                type="button"
+                :class="['forum-like-cta', { liked: selectedTopic.liked }]"
+                :disabled="loading.like"
+                @click="likeTopic"
+              >
               <svg class="forum-stat-icon forum-like-icon" viewBox="0 0 16 16" aria-hidden="true">
                 <path
                   v-if="selectedTopic.liked"
@@ -810,8 +869,9 @@ onMounted(loadInitialTopics)
                   stroke-width="1.3"
                 />
               </svg>
-              点赞
-            </button>
+                点赞
+              </button>
+            </div>
           </header>
 
           <div class="forum-detail-scroll">

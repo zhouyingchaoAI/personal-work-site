@@ -31,6 +31,14 @@ DIGITAL_HUMAN_SYSTEM_PROMPT = (
     "4. 只输出一个 JSON 对象，格式：{\"text\": \"回答内容\", \"action\": \"动作名或null\"}，不要输出其他内容。"
 )
 
+WEEKLY_STAGE_CONVERSATION_PROMPT = (
+    "你正在协助用户分阶段撰写周报，当前阶段是：{stage}。\n"
+    "这不是一次性生成周报的请求：只围绕当前阶段与用户多轮讨论。结合用户的附件内容和上下文，"
+    "先澄清或润色，再给出一版可直接放入该阶段的简洁中文草稿。"
+    "不要进入下一阶段，不要生成完整周报，也不要说已写入页面。"
+    "回答不超过 180 字；草稿尽量按“分类：内容”分行。"
+)
+
 # 接口异常时按关键词兜底选动作，保证数字人仍有肢体反馈。
 DIGITAL_HUMAN_ACTION_KEYWORDS = (
     ("greet", ("你好", "您好", "嗨", "哈喽", "hello", "hi")),
@@ -315,8 +323,39 @@ def save_digital_human_kb(payload: dict, username: str) -> dict:
 def digital_human_chat(payload: dict, username: str = "") -> dict:
     payload = payload or {}
     message = str(payload.get("message", "") or "").strip()
+    weekly_stage = str(payload.get("weekly_stage", "") or "").strip()
     if not message:
         raise ValueError("message is required")
+    file_ids = payload.get("file_ids") or []
+    if file_ids:
+        try:
+            attachment_context = writing_agent_attachment_context(file_ids, username)
+            if attachment_context:
+                message += attachment_context
+        except Exception as exc:
+            raise ValueError(f"附件读取失败：{exc}") from exc
+
+    # 周报由专用 Agent 工作流生成结构化草稿。先在对话中完整展示供用户确认，
+    # 只有明确点击确认后才交给前端周报编辑器，避免未经核对直接写入页面。
+    if username and _weekly_intent(message, "weekly") and not weekly_stage:
+        runtime_chat = globals().get("agent_chat")
+        if runtime_chat:
+            weekly_result = runtime_chat({"kind": "weekly", "messages": [{"role": "user", "content": message}]}, username)
+            if weekly_result.get("ok"):
+                result = {
+                    "ok": True,
+                    "text": str(weekly_result.get("reply") or "周报草稿已生成。"),
+                    "action": None,
+                    "source": "weekly-agent",
+                }
+                for call in weekly_result.get("skill_calls") or []:
+                    if call.get("name") == "weekly.compose":
+                        draft = (call.get("result") or {}).get("draft")
+                        if draft:
+                            result["ui_action"] = {"type": "weekly_draft_review", "draft": draft}
+                            result["text"] += " 我已按周报三区格式整理出完整草稿，请先核对内容；确认无误后点击“确认写入周报编辑页”，再进行人工调整和邮件发送。"
+                            break
+                return result
 
     # 用户开启「连接知识库」时，先检索指定知识库，命中片段作为参考资料注入（龙虾/本地模型分支共用）。
     kb_pref = get_digital_human_kb(username) if username else {"enabled": False, "kb_ids": []}
@@ -360,21 +399,28 @@ def digital_human_chat(payload: dict, username: str = "") -> dict:
         raise ValueError("尚未配置智能助手接口，请先在管理页配置模型地址和密钥")
 
     messages = [{"role": "system", "content": DIGITAL_HUMAN_SYSTEM_PROMPT}]
+    if weekly_stage:
+        messages.append({
+            "role": "system",
+            "content": WEEKLY_STAGE_CONVERSATION_PROMPT.format(stage=weekly_stage[:40]),
+        })
     if kb_note:
         messages.append({"role": "system", "content": kb_note})
     history = payload.get("history", [])
     if isinstance(history, list):
-        for item in history[-8:]:
+        # 周报草稿本身可能很长；数字人仅需要短上下文来承接修改请求，避免把整份
+        # 草稿重复送入网关导致 400（上下文超限）。完整草稿始终留在前端审核卡中。
+        for item in history[-4:]:
             if not isinstance(item, dict):
                 continue
             role = item.get("role")
             content = str(item.get("content", "") or "").strip()
             if role in ("user", "assistant") and content:
-                messages.append({"role": role, "content": content[:500]})
-    messages.append({"role": "user", "content": message[:500]})
+                messages.append({"role": role, "content": content[:220]})
+    messages.append({"role": "user", "content": message[:800]})
 
     body = json.dumps(
-        {"model": settings["model"], "messages": messages, "temperature": 0.6},
+        assistant_generation_payload(settings, {"model": settings["model"], "messages": messages, "temperature": 0.6}),
         ensure_ascii=False,
     ).encode("utf-8")
     request = urllib.request.Request(
@@ -386,8 +432,12 @@ def digital_human_chat(payload: dict, username: str = "") -> dict:
         },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=60) as response:
-        data = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "ignore")[:300]
+        raise ValueError(f"对话模型返回 {exc.code}：{detail or '请求失败'}") from exc
     content = data["choices"][0]["message"]["content"]
     reply = _parse_digital_human_reply(content)
     if not reply["text"]:

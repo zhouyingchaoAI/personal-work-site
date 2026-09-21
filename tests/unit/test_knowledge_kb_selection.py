@@ -58,6 +58,26 @@ class KnowledgeKbSelectionTests(unittest.TestCase):
 
         self.assertEqual(dataset_ids, ["personal"])
 
+    def test_ragflow_retrieval_uses_minimum_page_size_then_honors_requested_limit(self):
+        """RAGFlow returns no chunks for a page size of one on this deployment."""
+        captured = {}
+
+        def fake_request(settings, method, path, body=None, **kwargs):
+            self.assertEqual((method, path), ("POST", "/api/v1/retrieval"))
+            captured.update(body)
+            return {
+                "chunks": [
+                    {"document_id": "doc-1", "dataset_id": "shared", "document_keyword": "制度.pdf", "content": "第一条", "similarity": 0.9},
+                    {"document_id": "doc-2", "dataset_id": "shared", "document_keyword": "制度.pdf", "content": "第二条", "similarity": 0.8},
+                ]
+            }
+
+        rt._ragflow_request = fake_request
+        result = rt._ragflow_search("报销制度", 1, {"ragflow_api_key": "service-key"}, ["shared"])
+
+        self.assertEqual(captured["page_size"], 2)
+        self.assertEqual([item["doc_id"] for item in result["results"]], ["doc-1"])
+
     def test_chat_cache_key_is_isolated_by_dataset_selection(self):
         settings = {"ragflow_api_key": "user-key"}
         created = []

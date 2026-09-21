@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from backend import runtime  # loads all modules into one namespace
 
@@ -69,6 +70,84 @@ class PasswordHashingTests(unittest.TestCase):
         self.assertTrue(stored.startswith("pbkdf2_sha256$"))
         self.assertTrue(runtime.verify_password("newpass1", stored))
         self.assertFalse(runtime.verify_password("oldpass", stored))
+
+    def test_public_user_exposes_organization_profile_without_password(self):
+        account = {
+            "username": "zhangsan",
+            "password": runtime.hash_password("123456"),
+            "role": "member",
+            "name": "张三",
+            "employee_id": "120001",
+            "company": "湖南承希科技有限公司",
+            "department": "服务解决方案中心 / 服务交付部",
+            "position": "交付工程师",
+        }
+        result = runtime.public_user(account)
+        self.assertEqual(result["employee_id"], "120001")
+        self.assertEqual(result["company"], "湖南承希科技有限公司")
+        self.assertEqual(result["department"], "服务解决方案中心 / 服务交付部")
+        self.assertEqual(result["position"], "交付工程师")
+        self.assertNotIn("password", result)
+
+    def test_add_user_persists_optional_organization_profile(self):
+        self._write_users([{"username": "root", "password": runtime.hash_password("rootpass"), "role": "superadmin"}])
+        payload = {
+            "username": "newmember",
+            "password": "123456",
+            "name": "新增成员",
+            "role": "member",
+            "employee_id": "900001",
+            "company": "湖南承希科技有限公司",
+            "department": "服务解决方案中心 / 服务交付部",
+            "position": "交付工程师",
+        }
+        with patch.object(runtime, "_provision_gateway_key", return_value=None), patch.object(runtime, "openclaw_sync_user"):
+            runtime.add_user(payload, "root")
+        created = next(item for item in self._read_users() if item["username"] == "newmember")
+        self.assertEqual(created["employee_id"], "900001")
+        self.assertEqual(created["company"], "湖南承希科技有限公司")
+        self.assertEqual(created["department"], "服务解决方案中心 / 服务交付部")
+        self.assertEqual(created["position"], "交付工程师")
+        self.assertEqual(created["email"], "newmember@chencytech.com")
+
+    def test_batch_permissions_updates_selected_department_and_delegates_crm_policy(self):
+        self._write_users([
+            {"username": "root", "password": runtime.hash_password("rootpass"), "role": "superadmin"},
+            {"username": "a", "password": "x", "role": "member", "company": "承希科技", "department": "交付部"},
+            {"username": "b", "password": "x", "role": "member", "company": "承希科技", "department": "销售部"},
+        ])
+        with patch.object(runtime, "openclaw_sync_user"), patch.object(runtime, "crm_security_batch_grant") as crm_grant:
+            result = runtime.batch_update_assistant_permissions({
+                "company": "承希科技", "departments": ["交付部"], "assistant_ids": ["knowledge", "crm"], "enabled": False,
+            }, "root")
+        users = {item["username"]: item for item in self._read_users()}
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual(result["assistant_ids"], ["knowledge", "crm"])
+        self.assertFalse(users["a"]["assistant_permissions"]["knowledge"])
+        self.assertNotIn("crm", users["a"].get("assistant_permissions", {}))
+        self.assertNotIn("assistant_permissions", users["b"])
+        crm_grant.assert_called_once()
+
+    def test_selected_users_can_have_one_assistant_revoked_together(self):
+        self._write_users([
+            {"username": "root", "password": "x", "role": "superadmin"},
+            {"username": "a", "password": "x", "role": "member", "assistant_permissions": {"knowledge": True}},
+            {"username": "b", "password": "x", "role": "member", "assistant_permissions": {"knowledge": True}},
+        ])
+        with patch.object(runtime, "openclaw_sync_user"):
+            result = runtime.batch_update_assistant_users({"assistant_id": "knowledge", "usernames": ["a", "b"], "enabled": False}, "root")
+        self.assertEqual(result["updated"], 2)
+        self.assertFalse(next(item for item in self._read_users() if item["username"] == "a")["assistant_permissions"]["knowledge"])
+
+    def test_selected_users_can_enable_crm_through_its_special_policy(self):
+        self._write_users([
+            {"username": "root", "password": "x", "role": "superadmin"},
+            {"username": "a", "password": "x", "role": "member"},
+        ])
+        with patch.object(runtime, "crm_security_grant") as crm_grant, patch.object(runtime, "openclaw_sync_user"):
+            result = runtime.batch_update_assistant_users({"assistant_id": "crm", "usernames": ["a"], "enabled": True}, "root")
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual(crm_grant.call_args.args[0]["role"], "viewer")
 
 
 if __name__ == "__main__":
