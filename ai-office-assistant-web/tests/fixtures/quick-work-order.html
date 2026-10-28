@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="UTF-8"><title>快速工单测试</title><div id="app"></div>
+<script type="module">
+import { createApp } from 'vue/dist/vue.esm-bundler.js'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import QuickWorkOrder from '../../src/components/QuickWorkOrder.vue'
+import BusinessAnalysis from '../../src/views/CrmAssistantView/BusinessAnalysis.vue'
+import { authState } from '../../src/services/authSession'
+authState.user = { username:'fixture', name:'测试用户', role:'member' }
+const router = createRouter({ history:createMemoryHistory(), routes:[{path:'/workspace/:menu',component:{template:'<div />'}}] })
+await router.push('/workspace/crm')
+createApp({ components:{QuickWorkOrder,BusinessAnalysis}, data:() => ({dataset:window.__REGION_DATA__}), template:'<main><h1>联指经营助手</h1><button role="tab" aria-selected="true">经营分析</button><BusinessAnalysis v-if="dataset" :data="dataset" :can-import="false" /><nav v-else class="ba-dashboard-nav"><button class="active">5 产业经营</button></nav><p>图表测试内容</p><input type="password" value="private-value" /><QuickWorkOrder /></main>' }).use(router).use(ElementPlus).mount('#app')
+window.testRouter = router
+</script>
+<style>body{font-family:sans-serif;background:#eef4fa;margin:24px}main{min-height:800px;padding:24px;background:color-mix(in srgb, #fff 96%, #2786d8)}nav{color:oklch(45% .12 250);box-shadow:0 2px 8px color-mix(in srgb, #2786d8 20%, transparent)}</style>
+</html>

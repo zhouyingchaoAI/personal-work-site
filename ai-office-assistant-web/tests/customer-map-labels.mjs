@@ -2,7 +2,7 @@ import ts from 'typescript'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import assert from 'node:assert/strict'
-const directory = new URL('../src/views/CrmAssistantView/dashboard/', import.meta.url)
+const directory = new URL('../packages/joint-command/frontend/dashboard/', import.meta.url)
 function load(name, require = () => { throw new Error('Unexpected import') }) {
   const exports = {}
   const source = fs.readFileSync(new URL(name, directory), 'utf8')

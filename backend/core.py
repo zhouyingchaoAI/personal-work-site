@@ -143,6 +143,9 @@ def request_username():
 
 
 def read_config():
+    scoped = getattr(_CONFIG_SCOPE, "value", None)
+    if scoped is not None:
+        return scoped
     config = {
         "leader_email": "",
         "cc": "",
@@ -173,10 +176,34 @@ def read_config():
     }
     if CONFIG_PATH.exists():
         try:
-            config.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
-        except json.JSONDecodeError:
+            config.update(_read_config_file(CONFIG_PATH))
+        except (json.JSONDecodeError, OSError):
             pass
     return config
+
+
+# config.json backs the user directory, permissions and staff aliases, so it is
+# parsed by nearly every request; an administrator's CRM snapshot alone parsed
+# it 170 times (~0.5 s). Read-only bulk operations wrap themselves in
+# config_read_scope() so every read_config() inside shares one parsed copy.
+# Callers inside a scope must treat the result as read-only.
+_CONFIG_SCOPE = threading.local()
+
+
+class config_read_scope:
+    def __enter__(self):
+        self.previous = getattr(_CONFIG_SCOPE, "value", None)
+        _CONFIG_SCOPE.value = None
+        _CONFIG_SCOPE.value = read_config()
+        return _CONFIG_SCOPE.value
+
+    def __exit__(self, *exc):
+        _CONFIG_SCOPE.value = self.previous
+        return False
+
+
+def _read_config_file(path):
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def write_config(config):
@@ -217,7 +244,7 @@ def openclaw_sync_user(user, action="upsert"):
     if not user:
         return {"ok": False, "skipped": True}
     target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
-    secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "")
+    secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "openclaw-office-sso-dev")
     info = public_user(user)
     payload = {
         "action": action,
@@ -257,7 +284,7 @@ def openclaw_sync_user(user, action="upsert"):
 
 def openclaw_sync_deleted_username(username):
     target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
-    secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "")
+    secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "openclaw-office-sso-dev")
     payload = {"action": "delete", "username": username}
     parsed_target = urllib.parse.urlparse(target)
     targets = [target + "/api/auth/office-user-sync"]
@@ -287,8 +314,10 @@ def public_user(user):
     role = user.get("role", "member")
     username = user.get("username", "")
     avatar_url = user.get("avatar_url", "")
-    if not avatar_url and username and (user_profile_dir(username) / "avatar.png").exists():
-        avatar_url = f"/user-avatar/{urllib.parse.quote(username)}.png?v={int((user_profile_dir(username) / 'avatar.png').stat().st_mtime)}"
+    if not avatar_url and username:
+        avatar_stat = office_blob_stat("platform", user_profile_dir(username) / "avatar.png")
+        if avatar_stat:
+            avatar_url = f"/user-avatar/{urllib.parse.quote(username)}.png?v={int(avatar_stat['mtime'])}"
     return {
         "username": username,
         "role": role,
@@ -959,22 +988,21 @@ def save_user_profile(payload, username):
     target["hobbies"] = hobbies[:300]
     avatar_preset = str(payload.get("avatar_preset", "") or "").strip()
     avatar_data = str(payload.get("avatar_data", "") or "").strip()
-    profile_dir = user_profile_dir(username)
-    profile_dir.mkdir(parents=True, exist_ok=True)
-    avatar_path = profile_dir / "avatar.png"
+    avatar_path = user_profile_dir(username) / "avatar.png"
     if avatar_preset == "assistant":
         src = BASE_DIR / "assets" / "ai-assistant-avatar.png"
         if src.exists():
-            avatar_path.write_bytes(src.read_bytes())
+            office_blob_write("platform", avatar_path, src.read_bytes(), content_type="image/png")
     elif avatar_data:
         if "," in avatar_data:
             avatar_data = avatar_data.split(",", 1)[1]
         raw = base64.b64decode(avatar_data)
         if len(raw) > 3 * 1024 * 1024:
             raise ValueError("头像文件不能超过 3MB")
-        avatar_path.write_bytes(raw)
-    if avatar_path.exists():
-        target["avatar_url"] = f"/user-avatar/{urllib.parse.quote(username)}.png?v={int(avatar_path.stat().st_mtime)}"
+        office_blob_write("platform", avatar_path, raw, content_type="image/png")
+    avatar_stat = office_blob_stat("platform", avatar_path)
+    if avatar_stat:
+        target["avatar_url"] = f"/user-avatar/{urllib.parse.quote(username)}.png?v={int(avatar_stat['mtime'])}"
     write_config(config)
     openclaw_sync_user(target, "upsert")
     return {"ok": True, "user": public_user(target)}
@@ -1002,13 +1030,7 @@ def load_nav_prefs(username):
     empty = {"order": [], "hidden": []}
     if not username:
         return empty
-    path = nav_prefs_path(username)
-    if not path.exists():
-        return empty
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return empty
+    data = office_doc_read("platform", nav_prefs_path(username), None)
     if not isinstance(data, dict):
         return empty
     return {
@@ -1025,9 +1047,7 @@ def save_nav_prefs(payload, username):
         "order": _sanitize_nav_ids(payload.get("order")),
         "hidden": _sanitize_nav_ids(payload.get("hidden")),
     }
-    path = nav_prefs_path(username)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(prefs, ensure_ascii=False, indent=2), encoding="utf-8")
+    office_doc_write("platform", nav_prefs_path(username), prefs)
     return {"ok": True, "prefs": prefs}
 
 
@@ -1074,6 +1094,9 @@ def assistant_generation_payload(settings, payload):
     """Attach the platform-wide reasoning level to any chat-completions payload."""
     result = dict(payload or {})
     result.setdefault("reasoning_effort", str((settings or {}).get("reasoning_effort") or "off"))
+    model = str(result.get("model") or (settings or {}).get("model") or "").lower()
+    if "minimax" in model and result.get("reasoning_effort") in {"off", "minimal"}:
+        result["reasoning_effort"] = "low"
     return result
 
 

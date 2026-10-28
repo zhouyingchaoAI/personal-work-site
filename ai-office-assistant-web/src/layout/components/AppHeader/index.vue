@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import HelpCenter from '../HelpCenter/index.vue'
 import mascotImage from '../../../assets/mascot.png'
 import { authState } from '../../../services/authSession'
+import { openWorkOrderPopup } from '../../../services/workOrderPopup'
 import { activeBackgroundTaskCount, backgroundTasks } from '../../../utils/backgroundTasks'
 import type { MenuId } from '../../menu'
 import { changePassword, fetchWechatAuthStatus, resourceUrl, saveProfile, type User } from '../../../services/personalWorkApi'
@@ -219,7 +220,7 @@ onUnmounted(() => {
         </div>
       </el-popover>
       <el-tooltip content="工单系统 · 提交产品建议与问题" placement="bottom">
-        <el-button class="header-tool-button" circle size="large" :icon="Tickets" aria-label="工单系统" @click="emit('navigate', 'workorder')" />
+        <el-button class="header-tool-button" circle size="large" :icon="Tickets" aria-label="工单系统" @click="['admin', 'superadmin'].includes(user.role) ? emit('navigate', 'workorder') : openWorkOrderPopup()" />
       </el-tooltip>
       <el-tooltip content="帮助中心" placement="bottom">
         <el-button class="header-tool-button" circle size="large" :icon="QuestionFilled" aria-label="帮助中心" @click="helpCenter?.show()" />

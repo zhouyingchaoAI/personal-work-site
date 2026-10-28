@@ -8,6 +8,7 @@ const mongo = new MongoClient(process.env.MONGODB_URI);
 const redis = new Redis(process.env.REDIS_URL);
 const secret = process.env.SSO_SECRET;
 const kbBridgeSecret = process.env.FASTGPT_KB_BRIDGE_SECRET;
+if (!kbBridgeSecret) throw new Error('FASTGPT_KB_BRIDGE_SECRET is required');
 
 function personalApiDatasetToken(username) {
   return crypto.createHmac('sha256', kbBridgeSecret).update(`apidataset:personal:${username}`).digest('hex');

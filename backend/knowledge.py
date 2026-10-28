@@ -148,17 +148,12 @@ def _ragflow_ready(settings: dict):
 
 
 def _kb_mapping(filename: str) -> dict:
-    path = _kb_dir() / filename
-    if path.exists():
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    return {}
+    data = office_doc_read("knowledge", _kb_dir() / filename, {})
+    return data if isinstance(data, dict) else {}
 
 
 def _kb_mapping_save(filename: str, mapping: dict):
-    (_kb_dir() / filename).write_text(json.dumps(mapping, ensure_ascii=False), encoding="utf-8")
+    office_doc_write("knowledge", _kb_dir() / filename, mapping)
 
 
 def _kb_is_admin(username: str) -> bool:
@@ -166,7 +161,15 @@ def _kb_is_admin(username: str) -> bool:
     return bool(user and user.get("role") in ("admin", "superadmin"))
 
 
+KB_DATASET_INIT_LOCK = threading.RLock()
+
+
 def _ragflow_named_dataset(settings: dict, name: str, cache_key: str, permission: str = "") -> str:
+    with KB_DATASET_INIT_LOCK:
+        return _ragflow_named_dataset_locked(settings, name, cache_key, permission)
+
+
+def _ragflow_named_dataset_locked(settings: dict, name: str, cache_key: str, permission: str = "") -> str:
     """按名称取（必要时创建）数据集，ID 缓存在映射文件。"""
     mapping = _kb_mapping("ragflow_datasets.json")
     cached = str(mapping.get(cache_key) or "").strip()
@@ -305,7 +308,18 @@ def _ragflow_join_shared_team(settings: dict, email: str, user_auth: str):
         print(f"[knowledge] 加入 RAGFlow 共享团队失败（{email}）：{exc}")
 
 
+KB_RAGFLOW_ACCOUNT_LOCK = threading.RLock()
+
+
 def _ragflow_user_account(settings: dict, username: str) -> dict:
+    entry = _kb_mapping("ragflow_accounts.json").get(str(username or "anonymous")) or {}
+    if entry.get("api_key"):
+        return entry
+    with KB_RAGFLOW_ACCOUNT_LOCK:
+        return _ragflow_user_account_locked(settings, username)
+
+
+def _ragflow_user_account_locked(settings: dict, username: str) -> dict:
     """取/自动开通用户专属 RAGFlow 账号：注册 → API Key → 同步模型 → 加入共享团队。幂等。"""
     key = str(username or "anonymous")
     accounts = _kb_mapping("ragflow_accounts.json")
@@ -314,6 +328,8 @@ def _ragflow_user_account(settings: dict, username: str) -> dict:
         return entry
     email = entry.get("email") or _ragflow_user_email(key)
     password = entry.get("password") or "Rf@" + secrets.token_hex(8)
+    accounts[key] = {**entry, "email": email, "password": password}
+    _kb_mapping_save("ragflow_accounts.json", accounts)
     encrypted = _ragflow_encrypt_password(password)
     try:
         _ragflow_web_request(settings, "/v1/user/register", {"nickname": key[:30] or "user", "email": email, "password": encrypted})
@@ -565,7 +581,11 @@ def _ragflow_user_chat_id(settings: dict, username: str, dataset_ids) -> str:
         data = _ragflow_request(settings, "GET", f"/api/v1/chats?page=1&page_size=100&name={urllib.parse.quote(name)}") or []
     except ValueError:
         data = []
-    chat = next((item for item in data if item.get("name") == name), None)
+    if isinstance(data, dict):
+        data = data.get("chats") or data.get("items") or data.get("data") or []
+    if not isinstance(data, list):
+        raise ValueError("RAGFlow 助手列表格式异常，请检查服务版本")
+    chat = next((item for item in data if isinstance(item, dict) and item.get("name") == name), None)
     if not chat:
         chat = _ragflow_request(settings, "POST", "/api/v1/chats", {
             "name": name,
@@ -785,13 +805,7 @@ def _ragflow_session_cache_key(username: str, office_session_id: str = "") -> st
 
 
 def _ragflow_session_id(settings: dict, chat_id: str, username: str, office_session_id: str = "") -> str:
-    path = _kb_dir() / "ragflow_tenant_sessions.json"
-    sessions = {}
-    if path.exists():
-        try:
-            sessions = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            sessions = {}
+    sessions = _kb_mapping("ragflow_tenant_sessions.json")
     cache_key = _ragflow_session_cache_key(username, office_session_id)
     if office_session_id and chat_id:
         cache_key = f"{cache_key}::chat::{chat_id}"
@@ -802,7 +816,7 @@ def _ragflow_session_id(settings: dict, chat_id: str, username: str, office_sess
     data = _ragflow_request(settings, "POST", f"/api/v1/chats/{chat_id}/sessions", {"name": f"office-{username}{suffix}"})
     session_id = data["id"]
     sessions[cache_key] = session_id
-    path.write_text(json.dumps(sessions, ensure_ascii=False), encoding="utf-8")
+    _kb_mapping_save("ragflow_tenant_sessions.json", sessions)
     return session_id
 
 
@@ -834,7 +848,7 @@ def _ragflow_ask(question: str, top_k: int, username: str, settings: dict, offic
         data = _completion(session_id)
     except ValueError:
         # 会话可能在 RAGFlow 侧被删除，重建一次。
-        (_kb_dir() / "ragflow_tenant_sessions.json").unlink(missing_ok=True)
+        office_doc_delete("knowledge", _kb_dir() / "ragflow_tenant_sessions.json")
         session_id = _ragflow_session_id(user_settings, chat_id, username or "anonymous", office_session_id)
         data = _completion(session_id)
     data = data or {}
@@ -1092,9 +1106,7 @@ def _kb_chunk_text(text: str):
 # ---------------------------------------------------------------------------
 
 def _kb_dir():
-    path = USER_DATA_DIR / "knowledge"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    return USER_DATA_DIR / "knowledge"
 
 
 def _kb_doc_path(doc_id: str):
@@ -1105,10 +1117,21 @@ def _kb_doc_path(doc_id: str):
 
 
 def _kb_load_doc(path):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
+    record = office_doc_read("knowledge", path, None)
+    return record if isinstance(record, dict) else None
+
+
+def _kb_local_docs():
+    """本地内置知识库的文档记录（不含 ragflow_*.json 映射），按 id 倒序：[(id, record)]。"""
+    entries = office_doc_list("knowledge", _kb_dir())
+    docs = []
+    for name, record, _ in sorted(entries, key=lambda entry: entry[0], reverse=True):
+        stem = name[:-5]
+        if not re.match(r"^[0-9A-Za-z_-]+$", stem) or stem.startswith(("ragflow_", "knowledge_legacy_")):
+            continue
+        if isinstance(record, dict) and record.get("id"):
+            docs.append((stem, record))
+    return docs
 
 
 def kb_upload(payload: dict, username: str = "") -> dict:
@@ -1156,7 +1179,7 @@ def kb_upload(payload: dict, username: str = "") -> dict:
         record["chunks"] = []
     else:
         record["chunks"] = [{"text": chunk, "vector": vector} for chunk, vector in zip(chunks, vectors)]
-    _kb_doc_path(doc_id).write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+    office_doc_write("knowledge", _kb_doc_path(doc_id), record)
     return {"ok": True, "doc": _kb_doc_meta(record)}
 
 
@@ -1183,11 +1206,7 @@ def kb_list(scope: str = "mine", username: str = "") -> dict:
         result["provider"] = "ragflow"
         result["can_manage"] = scope != "shared" or _kb_is_admin(username)
         return result
-    docs = []
-    for path in sorted(_kb_dir().glob("*.json"), reverse=True):
-        record = _kb_load_doc(path)
-        if record:
-            docs.append(_kb_doc_meta(record))
+    docs = [_kb_doc_meta(record) for _, record in _kb_local_docs()]
     current_model = kb_embedding_settings()["model"]
     stale = [d["name"] for d in docs if d["embedding_model"] and d["embedding_model"] != current_model]
     return {"ok": True, "docs": docs, "embedding_model": current_model, "stale_docs": stale, "provider": "builtin"}
@@ -1205,7 +1224,7 @@ def kb_delete(payload: dict, username: str = "") -> dict:
         _ragflow_request(scope_settings, "DELETE", f"/api/v1/datasets/{dataset_id}/documents", {"ids": [str(payload.get("id", "") or "")]})
         return {"ok": True}
     path = _kb_doc_path(str(payload.get("id", "") or ""))
-    record = _kb_load_doc(path) if path.exists() else None
+    record = _kb_load_doc(path)
     if record:
         user = find_user(username)
         is_admin = bool(user and user.get("role") in ("admin", "superadmin"))
@@ -1213,7 +1232,7 @@ def kb_delete(payload: dict, username: str = "") -> dict:
             raise ValueError("只能删除自己上传的文档")
         if record.get("store") == "qdrant":
             _qdrant_delete_doc(kb_embedding_settings(), record.get("embedding_model", ""), record.get("id", ""))
-        path.unlink()
+        office_doc_delete("knowledge", path)
     return {"ok": True}
 
 
@@ -1262,7 +1281,7 @@ def _kb_rerank(query: str, candidates, top_k: int, settings: dict):
 # FastGPT ⇄ RAGFlow 打通：内网适配器，供 FastGPT 工作流的 HTTP 节点实时检索
 # RAGFlow 知识库。用管理端（服务账号）RAGFlow Key，默认检索其可见的全部有内容
 # 数据集（含共享企业知识库）；由 RAGFlow 出检索结果，FastGPT 无需再配嵌入模型。
-FASTGPT_KB_BRIDGE_SECRET = __import__("os").environ.get("FASTGPT_KB_BRIDGE_SECRET") or __import__("secrets").token_hex(32)
+FASTGPT_KB_BRIDGE_SECRET = os.environ.get("FASTGPT_KB_BRIDGE_SECRET") or read_config().get("fastgpt_kb_bridge_secret", "")
 
 
 def fastgpt_kb_list() -> dict:
@@ -1336,6 +1355,8 @@ def fastgpt_apidataset_personal_token(username: str) -> str:
     username = str(username or "").strip()
     if not username:
         return ""
+    if not FASTGPT_KB_BRIDGE_SECRET:
+        raise ValueError('请配置 FASTGPT_KB_BRIDGE_SECRET 后使用知识库桥接服务')
     return hmac.new(
         FASTGPT_KB_BRIDGE_SECRET.encode("utf-8"),
         ("apidataset:personal:" + username).encode("utf-8"),
@@ -1539,13 +1560,10 @@ def kb_search(payload: dict, username: str = "") -> dict:
     if settings["vector_store"] == "qdrant":
         scored.extend(_qdrant_search(settings, query_vector, recall_k))
     # 路径二：本地 JSON 向量（旧数据或 local 模式），与 Qdrant 同为余弦分数可直接合并。
-    for path in _kb_dir().glob("*.json"):
-        record = _kb_load_doc(path)
-        if not record:
-            continue
+    for stem, record in _kb_local_docs():
         # 不同嵌入模型的向量空间不兼容，跳过并提示重新入库。
         if record.get("embedding_model") and record["embedding_model"] != settings["model"]:
-            skipped.append(record.get("name", path.stem))
+            skipped.append(record.get("name", stem))
             continue
         for index, chunk in enumerate(record.get("chunks", [])):
             vector = chunk.get("vector")
@@ -1670,7 +1688,30 @@ def _ragflow_web_request(settings: dict, path: str, body=None, auth: str = "", m
         method=method or ("POST" if body is not None else "GET"),
     )
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(request, timeout=60) as response:
+    try:
+        response = opener.open(request, timeout=60)
+    except urllib.error.HTTPError as error:
+        routes = {
+            "/v1/user/login": ("/api/v1/auth/login", "POST"),
+            "/v1/user/register": ("/api/v1/users", "POST"),
+            "/v1/system/new_token": ("/api/v1/system/tokens", "POST"),
+            "/v1/system/token_list": ("/api/v1/system/tokens", "GET"),
+            "/v1/system/version": ("/api/v1/system/version", "GET"),
+            "/v1/user/tenant_info": ("/api/v1/users/me/models", "GET"),
+            "/v1/user/set_tenant_info": ("/api/v1/users/me/models", "PATCH"),
+        }
+        invite = re.fullmatch(r"/v1/tenant/([^/]+)/user", path)
+        agree = re.fullmatch(r"/v1/tenant/agree/([^/]+)", path)
+        if invite:
+            routes[path] = (f"/api/v1/tenants/{invite.group(1)}/users", "POST")
+        if agree:
+            routes[path] = (f"/api/v1/tenants/{agree.group(1)}", "PATCH")
+        if path in routes and error.code in (404, 405):
+            error.close()
+            target, target_method = routes[path]
+            return _ragflow_web_request(settings, target, body, auth, target_method)
+        raise
+    with response:
         return json.loads(response.read().decode("utf-8")), response.headers
 
 
@@ -2236,17 +2277,13 @@ def _kb_delete_ragflow_session(username: str, office_session_id: str = ""):
     metadata = (office_session or {}).get("metadata") or {}
     chat_id = str(metadata.get("ragflow_chat_id") or chat_id or "").strip()
     session_id = str(metadata.get("ragflow_session_id") or session_id or "").strip()
-    path = _kb_dir() / "ragflow_tenant_sessions.json"
-    if path.exists():
-        try:
-            sessions = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            sessions = {}
+    sessions = _kb_mapping("ragflow_tenant_sessions.json")
+    if sessions:
         sessions.pop(_ragflow_session_cache_key(username, office_session_id), None)
         for key, value in list(sessions.items()):
             if session_id and value == session_id:
                 sessions.pop(key, None)
-        path.write_text(json.dumps(sessions, ensure_ascii=False), encoding="utf-8")
+        _kb_mapping_save("ragflow_tenant_sessions.json", sessions)
     if chat_id and session_id:
         try:
             user_settings = _ragflow_user_settings(settings, username)
@@ -2378,13 +2415,7 @@ def _kb_chat_session_ids(username: str, office_session_id: str = ""):
     """当前用户的 (chat_id, ragflow_session_id)，任一不存在返回空串。"""
     entry = _kb_mapping("ragflow_tenant_chats.json").get(username or "anonymous")
     chat_id = (entry.get("id") if isinstance(entry, dict) else entry) or ""
-    path = _kb_dir() / "ragflow_tenant_sessions.json"
-    sessions = {}
-    if path.exists():
-        try:
-            sessions = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            sessions = {}
+    sessions = _kb_mapping("ragflow_tenant_sessions.json")
     key = _ragflow_session_cache_key(username or "anonymous", office_session_id)
     return chat_id, str(sessions.get(key, "") or "")
 

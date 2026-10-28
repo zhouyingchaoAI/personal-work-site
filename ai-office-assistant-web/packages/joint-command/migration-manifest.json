@@ -1,0 +1,1162 @@
+[
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/AmapSettings.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/AmapSettings.vue",
+    "original_sha256": "2293166cc787f9c475614484b71b9930ec9d29b4882cf459bf4399af0a3597cd",
+    "expected_sha256": "a2b84d741715d3edaad5ab7763070d896124ee6250c30bed3ceb6c9becd29f05"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/AssessmentOverview.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/AssessmentOverview.vue",
+    "original_sha256": "c05f04f40bca7b47f914fd71372ee1f3046059a7983a4daa2fabe18966df9645",
+    "expected_sha256": "c7f520a255e3ac3b60dd007a2eef885ab60ff0c2f51c8387ef2a20748f0156ad"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/AuditTrail.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/AuditTrail.vue",
+    "original_sha256": "15567d164fb172d1ac81c2934239bb3ee4c2f31cc18c368c3737d6859ecd5987",
+    "expected_sha256": "01abab662ce80a7561d3892285e9a43ae604b12274567efdcc701514bea3e6b7"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/BattleRosterPanel.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/BattleRosterPanel.vue",
+    "original_sha256": "fb839ee6ec330d58919190c834c0d0a08d5f7affba191edd845a0909223f3afb",
+    "expected_sha256": "84b86a3c2a63717a36a36daca3b0ff9f74c6e1657b2525b2c5f2070a5d279520"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/BoardOverview.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/BoardOverview.vue",
+    "original_sha256": "f1cbb0cf08b81182ce9e15ed5784a3ffeda4c942dd338eae9d32fb62442b0ca2",
+    "expected_sha256": "ccc9f16b340caa9f2ee1c07da0f9cb0d0384df1ae91dcb52a9ae6125b5facf19"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/BusinessAnalysis.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/BusinessAnalysis.vue",
+    "original_sha256": "983b0b1d160c7a5fe47d0407be0a42e537604e03721d043824b49770cc74bda5",
+    "expected_sha256": "64ea8e68f38e366d839dca6decbaffcbbd88e465d2c9d32819a25f10eaba661b"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/BusinessDataQuality.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/BusinessDataQuality.vue",
+    "original_sha256": "ebb531832698875f42dd7a2924f58dcd2d1809f83f705a3e8def53bcffaa36ca",
+    "expected_sha256": "1015d1c37dd94664f2fa7c2689c99fad53a420c37adf4f3af6bcd744637a9f47"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/ChartStyleEditor.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/ChartStyleEditor.vue",
+    "original_sha256": "bd0d38edbd1cdc012a0fea28f02f7ef5a45b5a6414e6cec8014c9c36130723fc",
+    "expected_sha256": "bd0d38edbd1cdc012a0fea28f02f7ef5a45b5a6414e6cec8014c9c36130723fc"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/Cockpit.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/Cockpit.vue",
+    "original_sha256": "302295dcad52a9d8609759f7dc62b3b00b058f1ad28b9f84626450e1b00ab161",
+    "expected_sha256": "0690cffb7b23107cc02e8fd5906d8f72986590b4895204dd98e0e6ec067ffcf2"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/CommandSummary.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/CommandSummary.vue",
+    "original_sha256": "6144d675d6b9aa951fac8cf6aff4f913553d9a8d1a01d626bddcaa1c9bac3fe6",
+    "expected_sha256": "a69e4a90e9c9cc0b7b4bda580839f6c41b2c8a0a4127d1ca9ee9a88d157494b9"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/CompanyFields.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/CompanyFields.vue",
+    "original_sha256": "715664545d50e0c491a65b36b251a585e7d8ca1f42b956a17b1b69cf98d935dd",
+    "expected_sha256": "715664545d50e0c491a65b36b251a585e7d8ca1f42b956a17b1b69cf98d935dd"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/CompanyOrders.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/CompanyOrders.vue",
+    "original_sha256": "f58e5a2501ad5ed962518bd8ac104af7a62762461b12099e4637826265b5c8d8",
+    "expected_sha256": "8be07771a61f451bea97db2221a9033cc1f7c9faa3bccc9cf7be38b7c27cb058"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/CrmSettings.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/CrmSettings.vue",
+    "original_sha256": "5bdd8450e609abd6d6652edf39ed4d04ffd5e5ee34f827fd30746ba69d98a18a",
+    "expected_sha256": "af6b2cfe33dc1a441c57e519f1eb50b5eb6306e29cd5ad6fdf0b2e1d7f4cc2a6"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/CustomerWorkspace.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/CustomerWorkspace.vue",
+    "original_sha256": "2904f8480be97ddf899fe47b66189afac3656926782d7852f335078880891510",
+    "expected_sha256": "2174559044c1013c26bd98d643da84e5857311b569961abe042a07c99dd50bad"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/ExcelImport.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/ExcelImport.vue",
+    "original_sha256": "28e76397726c29df0b936b5a2547f95598ee7508713e3337483e5b61a8f3700b",
+    "expected_sha256": "faaf9676da58b04bb3dee23d009bd4469cdd25412dbb87025db4ed55a37b3fd7"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/FollowupDialog.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/FollowupDialog.vue",
+    "original_sha256": "712ae31ce166fbfcbcfff67e8a4fa4609ca6c2d403be5332de73c1045933ec06",
+    "expected_sha256": "f65be0c785c94510335430c5d10d0e4404c8b0ca83771f26dffd80178ea45108"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/FollowupOrganization.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/FollowupOrganization.vue",
+    "original_sha256": "4537dfd7e64c10e11cb3f2ce90e6fc69e7d907ecfdd587b747bf6b7e49804131",
+    "expected_sha256": "6b8949659c4afadcdb57ef0f1ca4e520919b77081b84eb182caf717bd913c6f0"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/HolographicBoard.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/HolographicBoard.vue",
+    "original_sha256": "44c8825f46833697d64a1fcb371a4018df4a92f2f516bff640d661d2d3b7d3ef",
+    "expected_sha256": "2ce286f93a08d2c17d150ce75f2d73b6f0e1eebd2e7a2876fa2e2baadd54cf2a"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/ImportCompletionTasks.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/ImportCompletionTasks.vue",
+    "original_sha256": "4a4f8d0f7bcb8f2f5c95b3c9a1913cb899d57fa8428590bb8fa5a1b251afa91c",
+    "expected_sha256": "cf4626cf6952f47efaf476aa8d9d08b1e2c746f1466246beead1765e7648adb0"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/InternalOrganizationCanvas.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/InternalOrganizationCanvas.vue",
+    "original_sha256": "e5636e5c54629e22ad5384f09f5ee303cc298333f4d41ee78e6961668e3552de",
+    "expected_sha256": "1b01b1840b95ab8e8c971f35a009b412d308f209737b89b91ca833324372d3e2"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/InternalOrganizationEntry.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/InternalOrganizationEntry.vue",
+    "original_sha256": "64f7263923ffb934db298086bff47813a5e4c831850de2120f9282b13e2ffde6",
+    "expected_sha256": "e37234ebfcc9590648289d96627a0afa17661e3f74913fdd331018b917e7e4fd"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/LiaisonDirectory.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/LiaisonDirectory.vue",
+    "original_sha256": "55bf32659c265591e4f5a5b83a16231854dd68e9e494e584d77f73f49006311a",
+    "expected_sha256": "69a5e8a4888d444b09ec33196e2f24afbbbf574d6037ae9e94510679dc0c5747"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/ManagementQueue.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/ManagementQueue.vue",
+    "original_sha256": "0b97b725c6edc7ee095994b8f8233c7a1b980cd6d239a52ec67ea760c2af77b4",
+    "expected_sha256": "319ad69c218c1cb07a69e4f2b5801a24ccbe3986d19439c6b7806ae80a19c13f"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/MonthlyBattle.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/MonthlyBattle.vue",
+    "original_sha256": "557e77018f96e54ccb7bcf79bd7594fa1682cdecef2390bb7a9c11ea3484dd79",
+    "expected_sha256": "7ac3d559d90adab1a657f86ad8d805b6f04eab1b4682383fc54ae629ce158eec"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/NetworkExplorer.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/NetworkExplorer.vue",
+    "original_sha256": "72ded2a0f16879e0f60a68830a680fd0f0a502c550e1f6f1f6d11da87f2f85f0",
+    "expected_sha256": "fd86aeeddc8938c5d8bf197dadd5b62b0fa11671ff6e029dd6683e4ce83fac27"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/OpportunityAnalytics.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/OpportunityAnalytics.vue",
+    "original_sha256": "db33b058bd658c625165202e62d5db61062703eab94da311d080bee2304d49ab",
+    "expected_sha256": "918997e4e2a908f47ab6e41660573e2eea392fb55d727566e047c74910b409bc"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/OpportunityExecutiveSummary.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/OpportunityExecutiveSummary.vue",
+    "original_sha256": "11e4d154ad65b318cd929341db95028e1f675df03a2e742fb792320685ad9845",
+    "expected_sha256": "93e0678f9fcc4ef236a77f97e75cb437438e26e485543352af293a158153c20e"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/OpportunityGrowthAnalytics.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/OpportunityGrowthAnalytics.vue",
+    "original_sha256": "40e4f25be91f84d8aaa8a2fe439c51e90555943012fcd58e7d7040aed20a30a0",
+    "expected_sha256": "849bd54c722b3baea479528f05656dfe4c722e45be2c18480f47cf386c68d8a7"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/OpportunityManagement.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/OpportunityManagement.vue",
+    "original_sha256": "ecc5a70a5c2d913a99bec7c0ac2533a82ef6fb0e9c0d6ec433539fae3360fcc7",
+    "expected_sha256": "5ea6d8913cb31bf1960b18b8de9e7e18dfe30d1521072f7f00da2c204f9b399c"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/OpportunityStagePanel.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/OpportunityStagePanel.vue",
+    "original_sha256": "d777ca016b097d6f0f8ee1c76cabb6cdc2d67b14cc56d398fa2baae94096be4a",
+    "expected_sha256": "cfb6ea2c19a49e09115a226ea5bfde14ae255c68f6143eaf07a44003939adbed"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/OrganizationBranch.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/OrganizationBranch.vue",
+    "original_sha256": "6c870fc77bf23e444bd4063a75913ec77b4caa704c1c923f44a8d772b585c104",
+    "expected_sha256": "7be8a1f5bdb2c625c3ca14a3fc76350ccf1c85be1b8defd801205b43a625903a"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/OrganizationCanvas.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/OrganizationCanvas.vue",
+    "original_sha256": "fc93e9da9e90e677cbeb319c945815f23f5b1ccaed657a0310546c0aa9472da2",
+    "expected_sha256": "96773654cefac282aa5761f0b4bacef067f0063a799d77cf3a2aa726ae5c5a76"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/OrganizationEditor.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/OrganizationEditor.vue",
+    "original_sha256": "d332066e5935138d20bc50360018327475b22e49575e95e2cc7ea6f34c5058a2",
+    "expected_sha256": "23414cbc11aa61b4b8082a4083dbd94d0f7f1704dd727b667e2bfa98db397678"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/OrganizationMap.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/OrganizationMap.vue",
+    "original_sha256": "28a284f490cd66f249d395ff5dce261ef24497c09797df9c39c60207f098e902",
+    "expected_sha256": "fa90aa2472430a9ec5422c2e407ffc225b201d3d2f48e9e7cbc2520fa0fab0dd"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/OrganizationQuality.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/OrganizationQuality.vue",
+    "original_sha256": "1fce5be50617b47d7186d847cf512db066cfc4f4650a06147996811de7cbde53",
+    "expected_sha256": "2649ca4649eb8af09d0caf81b68307c1e23b85830b13dfa093e0ea7270ae2fb8"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/OrganizationTree.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/OrganizationTree.vue",
+    "original_sha256": "511f3eed781c7d6898e1232060c79f03e66499fc346e8ba703c020ce63c0e349",
+    "expected_sha256": "4da87035912920f67cc4cb73768e02472edc20722b0dd6941bb33a402ddb672d"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/OwnOrganization.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/OwnOrganization.vue",
+    "original_sha256": "0ab747924a6ddcae64569ebc434f502ce4537503a090ffd401d175cbb462d71e",
+    "expected_sha256": "a71e1796c1869f76f9fbbdd3f49e9d39f9d74125a697fc283f7094e3fb992a91"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/PersonFlags.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/PersonFlags.vue",
+    "original_sha256": "de0729b31c11d23746e83cdc7bb61e556bc3e28a4862abc9c61afce5c6961c96",
+    "expected_sha256": "de0729b31c11d23746e83cdc7bb61e556bc3e28a4862abc9c61afce5c6961c96"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/PersonalRelationshipAssessment.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/PersonalRelationshipAssessment.vue",
+    "original_sha256": "427e662ad7a68b36046c9e91f4719add4e637fa084f53fbf6238622a172862dd",
+    "expected_sha256": "45aeea9aea351b6f3568c5f3deee66dfa6dee406dc29300b4bc4bc1859d85952"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/QualityRuleSettings.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/QualityRuleSettings.vue",
+    "original_sha256": "76044d30c2cd207b00a5b5d980d10208cba3bbc66e9eb9706b267615a7fcd524",
+    "expected_sha256": "d223deb7fd0270ba69c7f2404653326d827590acad444627e57e4916d3d169ab"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/QuickCapture.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/QuickCapture.vue",
+    "original_sha256": "7bb26fce5ae99dbdf6d1201124e7988b141718a2849a11545ec884c2790760a4",
+    "expected_sha256": "8bf3295fb6f0e154097ab88e5ae868b42375c900a050c8eafd08e00cd12a0115"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/RadialOrganization.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/RadialOrganization.vue",
+    "original_sha256": "5c5fad6fbe20621a5d925c9addec191739343052a8fc2976eeab10c42e355d0c",
+    "expected_sha256": "fa443394a2d6d544a6374d86e75d6b42acac32869dbea979fcebcf017473c165"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/RailWorkflow.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/RailWorkflow.vue",
+    "original_sha256": "6e7a895f6a4001a6323409b5871c9e80aa124b8610ffd825ebdf17206b76f96a",
+    "expected_sha256": "49f2bf99bde99203252df9ed2ef44025efb307e32545f5cf77a7a388c3261cc3"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/RegionDataDetails.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/RegionDataDetails.vue",
+    "original_sha256": "61a090319109c2f3436551e264dedf01ac17e11c71398080269adbfec1cc2f69",
+    "expected_sha256": "02c4f3dad74d32a08a5ea6897d8368b4f1245bb1a54700f03e97a7b09b9d7bc4"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/RegionSettings.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/RegionSettings.vue",
+    "original_sha256": "85b4ff4e05b1e129c2e4df0dd62e31890341398c37902699fd2943cd333592c8",
+    "expected_sha256": "046638d3f272b56d479d394ded2de1d11b755f7c1d2db47968bb496748b3e91b"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/RelationGraph.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/RelationGraph.vue",
+    "original_sha256": "f769ed9943d2323a3dab83b6856df6149a1700394f45dd56ff48494b48a58219",
+    "expected_sha256": "94fbb0f5f7621ecc974ac9b3f2748903087cfe2258fd355bfb9064912200f46d"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/RelationshipAssessment.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/RelationshipAssessment.vue",
+    "original_sha256": "4a01c35d8603b219688ad05b79862a1b750c5d5dfe065e28f024becb9c50e099",
+    "expected_sha256": "9fb2fa0258d6866b773b714c788d45338b152c6d38ff428081cf68dfa1a96594"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/RelationshipLinks.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/RelationshipLinks.vue",
+    "original_sha256": "bd413ba83ce859db233f034b87cbf0b1d7a0b804d3681424eac512aaa8738fe4",
+    "expected_sha256": "51160186ad318578f236402b56a73b688e728f8b7f5f94f098bfc36fbec5fdaf"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/RelationshipWorkbench.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/RelationshipWorkbench.vue",
+    "original_sha256": "43df1886daf074a5ba5d58f2f0d98e59a07c535517d80cf44db2230257446f81",
+    "expected_sha256": "625cc5230ed6b78871951c1df3e862effc3f7a197eb3531e6b86851c5c547155"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/SalesContractManagement.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/SalesContractManagement.vue",
+    "original_sha256": "90bd7daddad84ed97f4650336d6c4a78cd79d5eb2938e9696a221cc7dfd171ef",
+    "expected_sha256": "1793da03c18e455c50b6111f5a746f9582605f2b0f61cd4c8748672a57ed11df"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/ScopeFilters.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/ScopeFilters.vue",
+    "original_sha256": "95683ad5aa3bb4e471930dbb83a41b8f05f46f41c8853b60395e16aa5e3638c2",
+    "expected_sha256": "95683ad5aa3bb4e471930dbb83a41b8f05f46f41c8853b60395e16aa5e3638c2"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/SecurityPanel.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/SecurityPanel.vue",
+    "original_sha256": "a4eb687456f7f66a5563a91d5e007ba973185f0b823e3f4285773163d21743e0",
+    "expected_sha256": "95878563debe6a0ef6a861015e4761f288571c8a91dd610ba2ab61d7861cf90b"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/SimpleAssignment.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/SimpleAssignment.vue",
+    "original_sha256": "aa2ca8b5fbb61b3890cc2e5a3a8a078d4cac78f43995042d1815d8fbfcef569f",
+    "expected_sha256": "c078f42c105ee5dc5eb6b3f08bcc3d83514ec38d6f0d529f723ac5943c7555b9"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/StaffPicker.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/StaffPicker.vue",
+    "original_sha256": "fdc1213c312adfa0884d395bd7f955a0e1f520c06cbe5f731c2d7c8a67259951",
+    "expected_sha256": "cc4c74d6927fc7c7af145012a8db010c85974e64181f8b0943dfbb3e6e04f8c8"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/UsageGuide.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/UsageGuide.vue",
+    "original_sha256": "d820c77b2a57a41e06a18e33ce978adeaa25e7ac2f4e4a1059664cb2e072c6e2",
+    "expected_sha256": "21594d92664873d9f0db5a1dbfd44bfbd5c93c1265456da0da309d239216b31c"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/Workbench.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/Workbench.vue",
+    "original_sha256": "b180185ce00ad8aad97e0f5d001404f83db41b69d7fa623e841049b0900bf6ff",
+    "expected_sha256": "37bbfbd9a03a424832d0b36c2011d0ba8038462a97738eae69fa88168d08f02f"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/assessmentOverview.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/assessmentOverview.ts",
+    "original_sha256": "0199d4041f78508125065da5fb2c22f207aace155ea8730c688863e9d7b79360",
+    "expected_sha256": "22f3426cba81ee6d680ef762e7ca4747e6885cc6eaf87646d9493d1b8c6a7aba"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/businessAnalysisReport.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/businessAnalysisReport.ts",
+    "original_sha256": "1629e6aba290c0fe71bbd1d061fe96f736cc6bb674c6498237f6cb7db217da91",
+    "expected_sha256": "07c45266f986ed46aa0cbd956d4a0632bf12ff904fdf15f82af6ac9fcaad3ac5"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/businessCartesianChart.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/businessCartesianChart.ts",
+    "original_sha256": "35eafb58bfcf9a072edd77cfb21c84b88868d1f594c2904f1f143c8d71282158",
+    "expected_sha256": "35eafb58bfcf9a072edd77cfb21c84b88868d1f594c2904f1f143c8d71282158"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/businessDarkControls.css",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/businessDarkControls.css",
+    "original_sha256": "b53affdc65fe3b142a871f5a52afd2d3c1e970b8bdc122494241050e3de9faa8",
+    "expected_sha256": "b53affdc65fe3b142a871f5a52afd2d3c1e970b8bdc122494241050e3de9faa8"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/businessDashboard.scss",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/businessDashboard.scss",
+    "original_sha256": "43ec42cbecd9e335c93fd3e232bcaf7b64e6a0d455ae7f6e4d4c84674e7ac9da",
+    "expected_sha256": "43ec42cbecd9e335c93fd3e232bcaf7b64e6a0d455ae7f6e4d4c84674e7ac9da"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/businessDataQuality.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/businessDataQuality.ts",
+    "original_sha256": "9e3b6bd69484150a6d5c493e914e2101f3cfc074506a783448e93672eb2c94eb",
+    "expected_sha256": "8cc5542e90dc810863cca816b54f866a2a72624433c89100386354ab3dc31773"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/businessExecutiveDesign.css",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/businessExecutiveDesign.css",
+    "original_sha256": "ea4b1191730d4d2d3fda2bdab3c5173695ef17f70a89f5b281a5c23a1367d034",
+    "expected_sha256": "ea4b1191730d4d2d3fda2bdab3c5173695ef17f70a89f5b281a5c23a1367d034"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/businessExecutiveDesign.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/businessExecutiveDesign.ts",
+    "original_sha256": "4845f281cc109f627659f0efeb5d538860fda5e715229274f21fe78ba0f2bfe8",
+    "expected_sha256": "4845f281cc109f627659f0efeb5d538860fda5e715229274f21fe78ba0f2bfe8"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/businessIcons.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/businessIcons.ts",
+    "original_sha256": "87e102a1db172810b3a2bc55733771dabffbbcd0e6b90c0628a1dde936d2cc4b",
+    "expected_sha256": "87e102a1db172810b3a2bc55733771dabffbbcd0e6b90c0628a1dde936d2cc4b"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/businessRegionDesign.css",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/businessRegionDesign.css",
+    "original_sha256": "7c9490216e788c8a555c6a7dd9e102151e0a10809d8f4a0c3024f0a2d5e09cbc",
+    "expected_sha256": "7c9490216e788c8a555c6a7dd9e102151e0a10809d8f4a0c3024f0a2d5e09cbc"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/businessRegionPeriods.css",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/businessRegionPeriods.css",
+    "original_sha256": "5e7c7e95a5948fa013bdb8ef5fe3484b6bdb878417fe10d3de2cf327eb3e68db",
+    "expected_sha256": "5e7c7e95a5948fa013bdb8ef5fe3484b6bdb878417fe10d3de2cf327eb3e68db"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/businessRegionTone.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/businessRegionTone.ts",
+    "original_sha256": "4b017b5f8ce8d10b37a11c4097463b48aa4feaa54e478fd626ec7668ed26e394",
+    "expected_sha256": "4b017b5f8ce8d10b37a11c4097463b48aa4feaa54e478fd626ec7668ed26e394"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/businessReportCharts.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/businessReportCharts.ts",
+    "original_sha256": "5736c1e2a96a8e0b54d45df133575d10c1ef2ca687aa78108abfd5b75bd4f1d4",
+    "expected_sha256": "5736c1e2a96a8e0b54d45df133575d10c1ef2ca687aa78108abfd5b75bd4f1d4"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/chartAppearance.css",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/chartAppearance.css",
+    "original_sha256": "a75e218ae8f0a56e3c1a0ae2ad85972580927046f83b5f69bb021719004a0f23",
+    "expected_sha256": "a75e218ae8f0a56e3c1a0ae2ad85972580927046f83b5f69bb021719004a0f23"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/chartAppearance.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/chartAppearance.ts",
+    "original_sha256": "c3e0384dad82c5b1614abb7574cc1793757377f4b54e8b7aca2f474618d5682f",
+    "expected_sha256": "c3e0384dad82c5b1614abb7574cc1793757377f4b54e8b7aca2f474618d5682f"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/chartLayoutSize.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/chartLayoutSize.ts",
+    "original_sha256": "a701059f5ccad4f21856a887a0c78bb014e86ad340eecd916a7b7314fffdaec0",
+    "expected_sha256": "a701059f5ccad4f21856a887a0c78bb014e86ad340eecd916a7b7314fffdaec0"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/chartTypeEditor.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/chartTypeEditor.ts",
+    "original_sha256": "922a9cb0339845b3a959c8e896151f2c657e496aef2e93dbbaef5919a3a77d1f",
+    "expected_sha256": "922a9cb0339845b3a959c8e896151f2c657e496aef2e93dbbaef5919a3a77d1f"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/charts/DimensionBars.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/charts/DimensionBars.vue",
+    "original_sha256": "2a12ebc2d9b729737b2f1f6ef4262f899f38fcf891592bc6e7f919d432478af3",
+    "expected_sha256": "2a12ebc2d9b729737b2f1f6ef4262f899f38fcf891592bc6e7f919d432478af3"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/charts/FunnelSteps.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/charts/FunnelSteps.vue",
+    "original_sha256": "933886fd2cc58590f0195e9b238ccb842108c1b77cac497da3831b23113b0fb7",
+    "expected_sha256": "933886fd2cc58590f0195e9b238ccb842108c1b77cac497da3831b23113b0fb7"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/charts/GradeBar.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/charts/GradeBar.vue",
+    "original_sha256": "8c376de98c90a4f4cbbbaf2a825713c2b0c4b2d531cb7fa1b8825069e35abdcb",
+    "expected_sha256": "8c376de98c90a4f4cbbbaf2a825713c2b0c4b2d531cb7fa1b8825069e35abdcb"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/charts/RadarChart.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/charts/RadarChart.vue",
+    "original_sha256": "f00f49791b24f2fdc6eb8166df29c051e8c5a00e5063adec0a1a02d374d913ac",
+    "expected_sha256": "f00f49791b24f2fdc6eb8166df29c051e8c5a00e5063adec0a1a02d374d913ac"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/charts/ScoreGauge.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/charts/ScoreGauge.vue",
+    "original_sha256": "6e833cbb61f5655e63fd65d0bfabdab199d20b8ec641949bf5cdd85590359e37",
+    "expected_sha256": "6e833cbb61f5655e63fd65d0bfabdab199d20b8ec641949bf5cdd85590359e37"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/CommandActionBoard.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/CommandActionBoard.vue",
+    "original_sha256": "5edcafb831570a22bea7657c82b42330ca568af1d874f65ad41007404acfaac7",
+    "expected_sha256": "897a25c3254aff8d3480b412067c4552d438db339f5e4ad45e2fd6002c022289"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/CommandBattleMap.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/CommandBattleMap.vue",
+    "original_sha256": "b719951a107445d4488011af1e65dfe66961544d49be57f3e9f923f4b05205fa",
+    "expected_sha256": "98bd2bec2936f99e20511f073d75b6289dfe9917930a8a882dab0ff4f7f20f84"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/CommandBizAnalysis.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/CommandBizAnalysis.vue",
+    "original_sha256": "ba169adadfd6e488551acbb2bacfb7a9bac9dc3cc0349c7e937765fb0db03a7e",
+    "expected_sha256": "1c6757952fc7dee10f3bd6d7ec16749f53f1b1d5a2740bc28fc1f66437b83378"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/CommandFiveInOne.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/CommandFiveInOne.vue",
+    "original_sha256": "1510c71b0b04200494bcd945ca75ad33044fd0a4d83a1bb0bffa564c9bf05805",
+    "expected_sha256": "8dda5e911834d35534634fa6168bac367bb61a7b0284256f92936e6b5a966177"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/CommandHealthRadar.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/CommandHealthRadar.vue",
+    "original_sha256": "7cf3a2466aa9ea5305a1b76cf94b1c6de8b3a364c22840b25eac5e1c0de45aa7",
+    "expected_sha256": "c1b6bdcd331af9ebe7b6255aba49fc997a22f2f244edb360936c5f808b9b243a"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/CommandOpportunity.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/CommandOpportunity.vue",
+    "original_sha256": "9b5e7f0ba4a9423aff6e0627a6d64c54945441292de3fd95542e7925914ca125",
+    "expected_sha256": "b335556606e5daeda0b9fa83fb345f4f1d1e4e0000bcfc222043f6d21f00a35e"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/CommandOverviewScreen.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/CommandOverviewScreen.vue",
+    "original_sha256": "e53994a7dbcbeec8ab23e155fd1b65fdb01f92d68bcef0fbf16391f6bce6c622",
+    "expected_sha256": "2dc7a57b12bc50c3a99c46c2fa0cb046251937f6d56868344f6ca7cfe9dd00f2"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/CommandPanel.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/CommandPanel.vue",
+    "original_sha256": "c63e819274d593dd79445a2d5437ba9051708514c4075b0da28d6e68c6eed0dc",
+    "expected_sha256": "c63e819274d593dd79445a2d5437ba9051708514c4075b0da28d6e68c6eed0dc"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/CommandProjectMap.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/CommandProjectMap.vue",
+    "original_sha256": "2a8c687dbf5eb389c30609ee96dc4df96de8fd0608e23831b2861870f93cdba6",
+    "expected_sha256": "af95add053367878d71b92525477452f29249782eea941cc26f7926471d6c16a"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/CommandRecentFeed.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/CommandRecentFeed.vue",
+    "original_sha256": "48ff59734bc8688d6d1d0161228f6970405d289703100f819e9cba37148c6103",
+    "expected_sha256": "511924df022466ac443e23145529e56a9f474d4c5dc11ce3bc1d0a1ef6d86ed8"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/CommandRegionCard.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/CommandRegionCard.vue",
+    "original_sha256": "f12e85dad609989578c2e7b3ebac4554cca3efbe10ca4108bee1543ee69344d2",
+    "expected_sha256": "f12e85dad609989578c2e7b3ebac4554cca3efbe10ca4108bee1543ee69344d2"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/CommandRiskPanel.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/CommandRiskPanel.vue",
+    "original_sha256": "fba50bd015c35378970c239ed2c91c24da8f674ff7f294938f00906d2e5d74be",
+    "expected_sha256": "546d8ed2af2fd8148af6441ef4d378c7faf63ab2529407289fad66168a3e7cb8"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/CommandZoneGraph.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/CommandZoneGraph.vue",
+    "original_sha256": "2b8c48b81d8c55579141ac7115f08201a3d5f5989fae4a307f476080159ca921",
+    "expected_sha256": "2b8c48b81d8c55579141ac7115f08201a3d5f5989fae4a307f476080159ca921"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/CountUp.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/CountUp.vue",
+    "original_sha256": "83e80eeafc6153f3e21b23797d3f7c55fa2b424d2c0b77194973c630d51e60e4",
+    "expected_sha256": "83e80eeafc6153f3e21b23797d3f7c55fa2b424d2c0b77194973c630d51e60e4"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/TipLine.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/TipLine.vue",
+    "original_sha256": "e0d5954950e5845fda39b78e8cfe0f5684e19cbcaa3661b4723b5259922c8a63",
+    "expected_sha256": "e0d5954950e5845fda39b78e8cfe0f5684e19cbcaa3661b4723b5259922c8a63"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/command-canvas.scss",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/command-canvas.scss",
+    "original_sha256": "3d49951066123e21d23b3b24afa38e756d5b5b4090cd6e269d1f00d6e2becc87",
+    "expected_sha256": "3d49951066123e21d23b3b24afa38e756d5b5b4090cd6e269d1f00d6e2becc87"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/commandOverview.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/commandOverview.ts",
+    "original_sha256": "b7b198f927d40e35885c9129b699878906a04d8d7258048feac0688649283070",
+    "expected_sha256": "cb342fd5e9ecc6bc6a2f33858b38b0789e617e833ecc6cd83802306b81d46e45"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/bg.jpg",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/bg.jpg",
+    "original_sha256": "910939db1d5a6e817fc5b1da318a3799fb758b16e979346e47e3a7b83c5bffd0",
+    "expected_sha256": "910939db1d5a6e817fc5b1da318a3799fb758b16e979346e47e3a7b83c5bffd0",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/frame-blue.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/frame-blue.png",
+    "original_sha256": "523f21eb17d882857a224ecdf3a20fa0e2f5ee3ea14f1e0a3cf7be312b8a9c8a",
+    "expected_sha256": "523f21eb17d882857a224ecdf3a20fa0e2f5ee3ea14f1e0a3cf7be312b8a9c8a",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/frame-orange.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/frame-orange.png",
+    "original_sha256": "6ec161d0259201f8f5e22cfbe909eb3be4418878641fb46b1b6048db8133996d",
+    "expected_sha256": "6ec161d0259201f8f5e22cfbe909eb3be4418878641fb46b1b6048db8133996d",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/frame-purple.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/frame-purple.png",
+    "original_sha256": "eebdf93d8fb8f71a7f9b434773657f51616e94e90073186b02d4642ce997ce08",
+    "expected_sha256": "eebdf93d8fb8f71a7f9b434773657f51616e94e90073186b02d4642ce997ce08",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/frame-teal.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/frame-teal.png",
+    "original_sha256": "327085a1250dbc9faa4ac294798d26cfb749f5d583a9c342e391ca53d5248228",
+    "expected_sha256": "327085a1250dbc9faa4ac294798d26cfb749f5d583a9c342e391ca53d5248228",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-kpi-cost.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-kpi-cost.png",
+    "original_sha256": "989d04c39f0ceadea7f519831548033046ec61ce5bd20ac40dcdbf461cd19d49",
+    "expected_sha256": "989d04c39f0ceadea7f519831548033046ec61ce5bd20ac40dcdbf461cd19d49",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-kpi-gross.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-kpi-gross.png",
+    "original_sha256": "0b104d9d2dd6bd779bb8ed692f09cdd565d7c5431a02eaea1f54f7d855bb723c",
+    "expected_sha256": "0b104d9d2dd6bd779bb8ed692f09cdd565d7c5431a02eaea1f54f7d855bb723c",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-kpi-profit.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-kpi-profit.png",
+    "original_sha256": "e18a28b2f5d08f416d8dbb3860a762097b71e8bf6ba51a1739153772e89085ce",
+    "expected_sha256": "e18a28b2f5d08f416d8dbb3860a762097b71e8bf6ba51a1739153772e89085ce",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-panel-analysis.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-panel-analysis.png",
+    "original_sha256": "5fdab4da431adb8a5987195df714859ec12b174e00c3554622d30df00ab96d28",
+    "expected_sha256": "5fdab4da431adb8a5987195df714859ec12b174e00c3554622d30df00ab96d28",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-panel-biz.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-panel-biz.png",
+    "original_sha256": "2b451041ab2ea51bc76c05c75d8f83ca9d373e1434e593bce38ed6a5c271b818",
+    "expected_sha256": "2b451041ab2ea51bc76c05c75d8f83ca9d373e1434e593bce38ed6a5c271b818",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-panel-five.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-panel-five.png",
+    "original_sha256": "bfa566ba16d5fd4d07068ad269e63809b46eaca9812282654e66ba844e348303",
+    "expected_sha256": "bfa566ba16d5fd4d07068ad269e63809b46eaca9812282654e66ba844e348303",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-panel-map.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-panel-map.png",
+    "original_sha256": "212ba65a33029960cf5eb251bf0496cd0503c9cc1544f2fe856b10be172ebf62",
+    "expected_sha256": "212ba65a33029960cf5eb251bf0496cd0503c9cc1544f2fe856b10be172ebf62",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-todo-flag.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-todo-flag.png",
+    "original_sha256": "2afe3a9e6122ea5f61a2bd1f249f1fb66c62a9ee3d3429227838c393bed13f7b",
+    "expected_sha256": "2afe3a9e6122ea5f61a2bd1f249f1fb66c62a9ee3d3429227838c393bed13f7b",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-todo-overdue.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-todo-overdue.png",
+    "original_sha256": "3a499365a27b03d18d13dcf062e26280fd3b8938288e18c3191a8d58fc912db3",
+    "expected_sha256": "3a499365a27b03d18d13dcf062e26280fd3b8938288e18c3191a8d58fc912db3",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-todo-today.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-todo-today.png",
+    "original_sha256": "21a20502a57fc55e8c144e2f656e6041c6ac56c5be765b36946033a5e9c70bf5",
+    "expected_sha256": "21a20502a57fc55e8c144e2f656e6041c6ac56c5be765b36946033a5e9c70bf5",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-todo-week.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-todo-week.png",
+    "original_sha256": "875d0e9316ca16eed9dd35bc162d11fbe4b74b8fe8d49b2cbdcf4feac2955433",
+    "expected_sha256": "875d0e9316ca16eed9dd35bc162d11fbe4b74b8fe8d49b2cbdcf4feac2955433",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-type-design.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-type-design.png",
+    "original_sha256": "511c6a698f44cccef463a38241bfadfe0d8ea016cd74354be36ad893f7667595",
+    "expected_sha256": "511c6a698f44cccef463a38241bfadfe0d8ea016cd74354be36ad893f7667595",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-type-general.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-type-general.png",
+    "original_sha256": "eb34385f972d7e8aa9a018c339a37e109b4d37547b73db3b44e5a6a1347c5bd6",
+    "expected_sha256": "eb34385f972d7e8aa9a018c339a37e109b4d37547b73db3b44e5a6a1347c5bd6",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-type-owner.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-type-owner.png",
+    "original_sha256": "3932e6b4a6c1f57797452b99683718449c49f24dfc22cd15264301aa502cefb9",
+    "expected_sha256": "3932e6b4a6c1f57797452b99683718449c49f24dfc22cd15264301aa502cefb9",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/ic-type-vendor.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/ic-type-vendor.png",
+    "original_sha256": "2243c640867fcf1a4433c5d36570e43b262da2585ebaa2b68b6312474fd5ed81",
+    "expected_sha256": "2243c640867fcf1a4433c5d36570e43b262da2585ebaa2b68b6312474fd5ed81",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/logo.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/logo.png",
+    "original_sha256": "ad7b4a59111aea9b6df4955febfae787716b771d00f7e51c33be713e55b96f9a",
+    "expected_sha256": "ad7b4a59111aea9b6df4955febfae787716b771d00f7e51c33be713e55b96f9a",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/nav-analysis.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/nav-analysis.png",
+    "original_sha256": "20319996d2a0309197786a5b0dbdcb62654ea610594dee7992d57f923f5495a2",
+    "expected_sha256": "20319996d2a0309197786a5b0dbdcb62654ea610594dee7992d57f923f5495a2",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/nav-biz.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/nav-biz.png",
+    "original_sha256": "93bfa30bf38614ee863c26481d256e032209b472b70d2a70d79f2cff9c617d1d",
+    "expected_sha256": "93bfa30bf38614ee863c26481d256e032209b472b70d2a70d79f2cff9c617d1d",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/nav-five.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/nav-five.png",
+    "original_sha256": "599b30cad702de23e2360d97c51b69c309f785447f74cd392ee0a868a4bb069f",
+    "expected_sha256": "599b30cad702de23e2360d97c51b69c309f785447f74cd392ee0a868a4bb069f",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/nav-home.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/nav-home.png",
+    "original_sha256": "9ed5f2d59f9f07f9c219154cbd7dc991c2faf6b21240041f5958a4699016ee7f",
+    "expected_sha256": "9ed5f2d59f9f07f9c219154cbd7dc991c2faf6b21240041f5958a4699016ee7f",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/nav-map.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/nav-map.png",
+    "original_sha256": "9e516349e0253dbbfe7cd6f98b44f0d2431af554db26823f4ed2bb8ddc3f5ccb",
+    "expected_sha256": "9e516349e0253dbbfe7cd6f98b44f0d2431af554db26823f4ed2bb8ddc3f5ccb",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/node-blue.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/node-blue.png",
+    "original_sha256": "4d0f05776d7315d46067238417599ea9d65ee6893e250a39d5d411ee4520d188",
+    "expected_sha256": "4d0f05776d7315d46067238417599ea9d65ee6893e250a39d5d411ee4520d188",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/node-gold.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/node-gold.png",
+    "original_sha256": "c3b6acffd4be6144e53e7367745c1a065ce25934112e4a703f340ae91a9342c5",
+    "expected_sha256": "c3b6acffd4be6144e53e7367745c1a065ce25934112e4a703f340ae91a9342c5",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/node-orange.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/node-orange.png",
+    "original_sha256": "3d2965becba083d9b56dfc6757f4b14f818028636855102aa7f1032db13c53bf",
+    "expected_sha256": "3d2965becba083d9b56dfc6757f4b14f818028636855102aa7f1032db13c53bf",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/node-purple.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/node-purple.png",
+    "original_sha256": "b4c67342afd803523cbcdd0a06fa2d6e0f06c51ca7d386a70cfd84cbe035d857",
+    "expected_sha256": "b4c67342afd803523cbcdd0a06fa2d6e0f06c51ca7d386a70cfd84cbe035d857",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/node-teal.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/node-teal.png",
+    "original_sha256": "59a67ed4e687fc576eae1598e5cba098141ca976b9975217e22d69abccfe2885",
+    "expected_sha256": "59a67ed4e687fc576eae1598e5cba098141ca976b9975217e22d69abccfe2885",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img/node-yellow.png",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img/node-yellow.png",
+    "original_sha256": "b7156f02e807378da16489831572e4a6b7802b4ef77725436ceef01c750a4c44",
+    "expected_sha256": "b7156f02e807378da16489831572e4a6b7802b4ef77725436ceef01c750a4c44",
+    "binary": true
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/img.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/img.ts",
+    "original_sha256": "db41c01769828bb30047a78a43f08c62bff6c9ef4202dbe48c5eb7895c93c791",
+    "expected_sha256": "db41c01769828bb30047a78a43f08c62bff6c9ef4202dbe48c5eb7895c93c791"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/command/useCanvasScale.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/command/useCanvasScale.ts",
+    "original_sha256": "c5654d0993098ae63e65560f917603b01c508498d6889cc97cb11a37547695fe",
+    "expected_sha256": "c5654d0993098ae63e65560f917603b01c508498d6889cc97cb11a37547695fe"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/companyOrders.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/companyOrders.ts",
+    "original_sha256": "f80a4392588197a2ed3e9b0b02876d35d0e8b8a4f7a5e40b7313632c4e023be7",
+    "expected_sha256": "554a12f9694592d5f5dad0ea26d3447af8acbe0013334a940ca1f6bc6a33ecb8"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/crmCompletion.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/crmCompletion.ts",
+    "original_sha256": "3c264f537a1c3df4f38b95b3a36ce1efaef0285fe9d897a3ec6e3dcf4a1dff8e",
+    "expected_sha256": "069374c3d9445d7cc26abb10cf5241d6b803ae2b4725e75314b3d32dcea52911"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/customerWorkspace.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/customerWorkspace.ts",
+    "original_sha256": "8b7752c22c772015ca8e6bfeeaf38ee703c6cd146ce241f40322d25869ae0683",
+    "expected_sha256": "59967ccca7de6c0656bab76c087ee1e9c32594f1edbf339efe1261ae29f52429"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/ActionCenter.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/ActionCenter.vue",
+    "original_sha256": "21ef2884dcd5f530c8f8b23f837900de930655eb2a96f57904fcc32f5c4dbe38",
+    "expected_sha256": "c6509accdfeb4f879bdae0fb9287509add39c69fe4c6bf578f47102dbb1be311"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/AmapBaseMap.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/AmapBaseMap.vue",
+    "original_sha256": "748f7c78e81e19d1c20f4f424a67fa02b90f3eacc7167b20b58df8b829b88083",
+    "expected_sha256": "102c08635cb57b7a647b635228e8555d9e6e58423a9178e2af99c2b80266c9d4"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/CustomerDistribution.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/CustomerDistribution.vue",
+    "original_sha256": "471524ab26f8b5d3d86bbd11f84619b9642005d7d6f39ce35fb9fbaf3fe38fa1",
+    "expected_sha256": "471524ab26f8b5d3d86bbd11f84619b9642005d7d6f39ce35fb9fbaf3fe38fa1"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/DashboardHeader.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/DashboardHeader.vue",
+    "original_sha256": "e3fdca4693bf1a61e9caa45989eab9d311d67235ed09b6af27b15b9f1acf9f80",
+    "expected_sha256": "e3fdca4693bf1a61e9caa45989eab9d311d67235ed09b6af27b15b9f1acf9f80"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/DashboardPanel.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/DashboardPanel.vue",
+    "original_sha256": "2ae0483af17a2a45fd7d62d144e89fce1e457e9887eb1613c4a6b5ee71ac435e",
+    "expected_sha256": "2ae0483af17a2a45fd7d62d144e89fce1e457e9887eb1613c4a6b5ee71ac435e"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/DashboardSidebar.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/DashboardSidebar.vue",
+    "original_sha256": "ace3e7bde73e3e2be2f1d5a84d9902d5109b424068a03479e4b00adc1288200b",
+    "expected_sha256": "ace3e7bde73e3e2be2f1d5a84d9902d5109b424068a03479e4b00adc1288200b"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/KpiOverview.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/KpiOverview.vue",
+    "original_sha256": "5949d767929781c08ca39c0742f3a8d8b0dd7062f77841b17746828eb8ed4b06",
+    "expected_sha256": "5949d767929781c08ca39c0742f3a8d8b0dd7062f77841b17746828eb8ed4b06"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/MapSupport.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/MapSupport.vue",
+    "original_sha256": "2f0bf32a3d2b29799d6401f7513326e747049e1beed4165a3903f82281b8b537",
+    "expected_sha256": "372dc04711e98e0596ff9ecc64a4877a07004bbd92ccb5ec8586f5e3ac3d41bc"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/RegionInspector.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/RegionInspector.vue",
+    "original_sha256": "0ed96c7a041d6e3f5c2b71a7c7a6c743caac96657ba899d789155d29f6a05f74",
+    "expected_sha256": "55afd40eae704887fe91141599828b1687b53e0fa60c14817494d349ebe69639"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/RegionMap.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/RegionMap.vue",
+    "original_sha256": "06c8831a03b677d934ccd2d0ef177bdababb29104e70b9940c77be51946dbb55",
+    "expected_sha256": "d4294d5030edce4df23b3cd30e373f5c5413f72548650f54f2b1bff8e31b3d92"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/RegionOverview.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/RegionOverview.vue",
+    "original_sha256": "ce06a527331432b16b979c62bbe7ed085f55601fe70eb260278ccd3e93cad9c2",
+    "expected_sha256": "ce06a527331432b16b979c62bbe7ed085f55601fe70eb260278ccd3e93cad9c2"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/RelationshipCenter.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/RelationshipCenter.vue",
+    "original_sha256": "8e12ed38ebdb889f71fe35de3f17860afd9b56c6b635d09c0ee603b7af6b3612",
+    "expected_sha256": "4d150e5eeb5e40231f3a1c4a71b67687d0f01ff1814d44b8badde18af3596f05"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/RelationshipQuality.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/RelationshipQuality.vue",
+    "original_sha256": "448a852d41edc378eaf321b0bb6af7f6d713637d4063f105c0077f14e7661ddf",
+    "expected_sha256": "448a852d41edc378eaf321b0bb6af7f6d713637d4063f105c0077f14e7661ddf"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/RiskRadar.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/RiskRadar.vue",
+    "original_sha256": "0d667abaac37271e3f86ad1e08141aa63809fbb72326dd042f93f6fc5c13676d",
+    "expected_sha256": "228f7940e7ebcb482967a20ff3b3521a8b2498e6e362bc98794f11664b6b3a92"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/amapDistrictCache.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/amapDistrictCache.ts",
+    "original_sha256": "a7c93bb93336499a74ee24212266b6a41e08e30feede0d09ee058b775efb7ef8",
+    "expected_sha256": "a7c93bb93336499a74ee24212266b6a41e08e30feede0d09ee058b775efb7ef8"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/amapLoader.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/amapLoader.ts",
+    "original_sha256": "e45d1c8b1c71d49916b74bfc58741785861891fb31037f166915dd5db82e84a7",
+    "expected_sha256": "e45d1c8b1c71d49916b74bfc58741785861891fb31037f166915dd5db82e84a7"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/chinaMapData.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/chinaMapData.ts",
+    "original_sha256": "9562e924a5e8d20eb9a86eae387c07250991311c761cdfaab94cabb6ae7d5690",
+    "expected_sha256": "9562e924a5e8d20eb9a86eae387c07250991311c761cdfaab94cabb6ae7d5690"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/cityCenters.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/cityCenters.ts",
+    "original_sha256": "0d575b683594561239d8b5a84b3b2a9438cc894692fb607851855977fa27ed23",
+    "expected_sha256": "0d575b683594561239d8b5a84b3b2a9438cc894692fb607851855977fa27ed23"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/cityProvince.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/cityProvince.ts",
+    "original_sha256": "094101b9b889fadfdc79e29c2cd6e58226ce8fbecd55e3814ae5fd833fd224e6",
+    "expected_sha256": "094101b9b889fadfdc79e29c2cd6e58226ce8fbecd55e3814ae5fd833fd224e6"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/customerMapLabels.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/customerMapLabels.ts",
+    "original_sha256": "105197118306cdea739e02974b81727c9b281f7e60bbc60be2108db3ea85cfe3",
+    "expected_sha256": "0450b97c412bce91e7740414175b69524531129111598b95e0873d52372f4e56"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/dashboard/dashboard-theme.scss",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/dashboard/dashboard-theme.scss",
+    "original_sha256": "e34121aa58ab5fe71272c07578cf2e42a55ce70ee91217ceecae82ec9405d6d1",
+    "expected_sha256": "e34121aa58ab5fe71272c07578cf2e42a55ce70ee91217ceecae82ec9405d6d1"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/index.scss",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/index.scss",
+    "original_sha256": "f29c08b310f20d091a29df59a4dbddad84661f8d5782de0bae38465d321518cf",
+    "expected_sha256": "f29c08b310f20d091a29df59a4dbddad84661f8d5782de0bae38465d321518cf"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/index.vue",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/index.vue",
+    "original_sha256": "3fb8b5e39a16e74449d11883761314517254db226b27d86037e8d7ba12f19f8f",
+    "expected_sha256": "4f3d06f2d6db9e1bc11e6c83d7a9c56540eecc45973dd5a0ba3a465d71902dd7"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/liaisonRegions.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/liaisonRegions.ts",
+    "original_sha256": "215706081a99827563f206355aa36939869588a0ea4c017774644e765ede2787",
+    "expected_sha256": "215706081a99827563f206355aa36939869588a0ea4c017774644e765ede2787"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/managementRegion.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/managementRegion.ts",
+    "original_sha256": "2c8788df8403378800e0db42d4968929dbd38af3c4719cad77f0facf9115cb13",
+    "expected_sha256": "09de3644935a67a92edc504716220618922b9dd32f55d7b1fb50957899e9baa9"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/managerReview.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/managerReview.ts",
+    "original_sha256": "52fdfe2f683f13704275e2e881a94fbeb0576be2151b376533fa6c61db630abb",
+    "expected_sha256": "a480a265bcabde41d777e3a3fbbe2caf7c12837939d213ab77b41d12afbb6fc6"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/monthlyBattleDesign.css",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/monthlyBattleDesign.css",
+    "original_sha256": "523bed8f691b53e148ae61531c78f73a4840497901fc43fedd6bdfac6bcbe3cd",
+    "expected_sha256": "523bed8f691b53e148ae61531c78f73a4840497901fc43fedd6bdfac6bcbe3cd"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/opportunityDetail.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/opportunityDetail.ts",
+    "original_sha256": "b027cc9f2a1009410d43d5ec3e6ac4d3f150aea4ce63ae280664dfd80a64074a",
+    "expected_sha256": "47a4e18e6f365e24964752182a5c99e8e8a3f016b7335f984024896bec349e62"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/opportunityProbability.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/opportunityProbability.ts",
+    "original_sha256": "be4d212f884be7d31002dfcd196c80df3bb4c70406ba97d55ef0deba0be70f1b",
+    "expected_sha256": "29074c1a4bdc80bfd88ecdaaab4987e45b72127b940042318fc9caa7b487541b"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/opportunityResults.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/opportunityResults.ts",
+    "original_sha256": "23f5ad055df97d3dda7152999f2312404c18a7256760c54138f1daa4f4717530",
+    "expected_sha256": "23f5ad055df97d3dda7152999f2312404c18a7256760c54138f1daa4f4717530"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/opportunityStages.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/opportunityStages.ts",
+    "original_sha256": "602d6a3db45385d053568b82238191478dad4874202ef4a6460208696fdae1b9",
+    "expected_sha256": "602d6a3db45385d053568b82238191478dad4874202ef4a6460208696fdae1b9"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/organizationExport.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/organizationExport.ts",
+    "original_sha256": "c8633e5a58affbe065d504c3815eaa236a29adbce431d7b93ed2ec49d338895c",
+    "expected_sha256": "c8633e5a58affbe065d504c3815eaa236a29adbce431d7b93ed2ec49d338895c"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/organizationGraph.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/organizationGraph.ts",
+    "original_sha256": "b406b27b460c3e280f0d577a7a1b63108b46ebab9e6dca73e2ce816ab22e1d63",
+    "expected_sha256": "244935a78ee8121a65d22f21e529bbb3ab25086e2650c4ac29e4a7650a7d1245"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/organizationLayout.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/organizationLayout.ts",
+    "original_sha256": "b7e8cb04bcf26308dacf3979c3c783d2357ea62f29e61a20aa19fc73f102b7c1",
+    "expected_sha256": "b7e8cb04bcf26308dacf3979c3c783d2357ea62f29e61a20aa19fc73f102b7c1"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/organizationMembership.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/organizationMembership.ts",
+    "original_sha256": "45dec20ab6d3641d099e3a578cd275d1a8f574fe881c53636682c6853fe72cd1",
+    "expected_sha256": "45dec20ab6d3641d099e3a578cd275d1a8f574fe881c53636682c6853fe72cd1"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/organizationQuality.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/organizationQuality.ts",
+    "original_sha256": "f0403c93018e0c2f497047929cadc5c2f6b2c899637efd2cb23a9e38c46cf330",
+    "expected_sha256": "725074adcf2178914baa532cfe3f85c612c9ddfc65b692ff7fc5474cf8af3cab"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/organizationRegionFilter.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/organizationRegionFilter.ts",
+    "original_sha256": "85c8743a66b4cb9c61982cf2b59eadc56ad627dee8cdd206643f507c6bb025cb",
+    "expected_sha256": "fb21077f6d49ea1ee964459df7096c4ac7655ec6d219291a43fed87c4ada731d"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/organizationStats.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/organizationStats.ts",
+    "original_sha256": "5f750204823165d7480a27757b5b75393607d0d0d1537efdf20a590915d54841",
+    "expected_sha256": "5f750204823165d7480a27757b5b75393607d0d0d1537efdf20a590915d54841"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/personOrganization.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/personOrganization.ts",
+    "original_sha256": "29643e2376ba226ba47d1024aff87cbb64da396a157ac8a7041857ea3b12e18f",
+    "expected_sha256": "c984c40d148d0004e09f84bf0e3e5b5c7555ff0af6ce20fc5e93a6642a137286"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/personalFollowups.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/personalFollowups.ts",
+    "original_sha256": "c804facea03689e97f6bb0da87f8498e7889a89c10e333126dbe319a33ebea12",
+    "expected_sha256": "bac786472cc7f3571c0b6281e8930cc76c1ab95dedadf09cdffa2f06de3ae417"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/personalOrganizationQuality.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/personalOrganizationQuality.ts",
+    "original_sha256": "9a1195ae928e7b8905744d3f8fbcc95d34a330116886ab79904d2703965923ab",
+    "expected_sha256": "72f39021b0f715d5a4c95187a6a9c34fe6ba84b431327e6180b185adf5c57ff8"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/personalRelationshipQuality.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/personalRelationshipQuality.ts",
+    "original_sha256": "4e90e3624ad7677cd52990d0e4af8ea06e5a26af326a4a09188b2f3b4f0f367b",
+    "expected_sha256": "a5ef3bc28c87dda4baca33ba8c3e2279c8eeff882dd1cf4f6e63e9470aa586a5"
+  },
+  {
+    "from": "ai-office-assistant-web/src/views/CrmAssistantView/useChartLayout.ts",
+    "to": "ai-office-assistant-web/packages/joint-command/frontend/useChartLayout.ts",
+    "original_sha256": "ee02ae841a92aaa3775b1dc44f602248e5b431e98fa3b472f5371b45d4e5cbbd",
+    "expected_sha256": "ee02ae841a92aaa3775b1dc44f602248e5b431e98fa3b472f5371b45d4e5cbbd"
+  },
+  {
+    "from": "backend/crm.py",
+    "to": "ai-office-assistant-web/packages/joint-command/backend/crm.py",
+    "original_sha256": "45d7271ab7725d5051e8959d4331dfbfe140cbb4a0939763cb0856c6e517b159",
+    "expected_sha256": "45d7271ab7725d5051e8959d4331dfbfe140cbb4a0939763cb0856c6e517b159"
+  },
+  {
+    "from": "backend/crm_amap.py",
+    "to": "ai-office-assistant-web/packages/joint-command/backend/crm_amap.py",
+    "original_sha256": "63f47a3acecab953fbcb13d449416a3fc06d1290584e5fedae60edbaa44c00bf",
+    "expected_sha256": "63f47a3acecab953fbcb13d449416a3fc06d1290584e5fedae60edbaa44c00bf"
+  },
+  {
+    "from": "backend/crm_configuration.py",
+    "to": "ai-office-assistant-web/packages/joint-command/backend/crm_configuration.py",
+    "original_sha256": "00f4e9d9f561cd57c5a8e049e235e39c5533c24cb8f7934048ae08bee814a391",
+    "expected_sha256": "00f4e9d9f561cd57c5a8e049e235e39c5533c24cb8f7934048ae08bee814a391"
+  },
+  {
+    "from": "backend/crm_excel.py",
+    "to": "ai-office-assistant-web/packages/joint-command/backend/crm_excel.py",
+    "original_sha256": "450077ba2031b63ed2e7b095ffb8d313c25641ad721637ca226751ec7b312d3b",
+    "expected_sha256": "450077ba2031b63ed2e7b095ffb8d313c25641ad721637ca226751ec7b312d3b"
+  },
+  {
+    "from": "backend/crm_graph.py",
+    "to": "ai-office-assistant-web/packages/joint-command/backend/crm_graph.py",
+    "original_sha256": "aaf339c89a717019caa916b6928c5dd84ede9fe2ecd333cc4479f34c8cf0b13d",
+    "expected_sha256": "aaf339c89a717019caa916b6928c5dd84ede9fe2ecd333cc4479f34c8cf0b13d"
+  },
+  {
+    "from": "backend/crm_monthly_battle.py",
+    "to": "ai-office-assistant-web/packages/joint-command/backend/crm_monthly_battle.py",
+    "original_sha256": "34561e647794e7b351e57447e3eb41a082fea7acd9ce7491ef899fc1ae370dd8",
+    "expected_sha256": "34561e647794e7b351e57447e3eb41a082fea7acd9ce7491ef899fc1ae370dd8"
+  },
+  {
+    "from": "backend/crm_quality.py",
+    "to": "ai-office-assistant-web/packages/joint-command/backend/crm_quality.py",
+    "original_sha256": "23930ef32730011ed6465e67a7e2f66d8e9e789c56c519a6ebdcacce29ef4491",
+    "expected_sha256": "23930ef32730011ed6465e67a7e2f66d8e9e789c56c519a6ebdcacce29ef4491"
+  },
+  {
+    "from": "backend/crm_rail.py",
+    "to": "ai-office-assistant-web/packages/joint-command/backend/crm_rail.py",
+    "original_sha256": "19e2e55eff9e3d79ea3316c4c43d94f6161c8037a64db4b9d7c3cbdac07d3280",
+    "expected_sha256": "19e2e55eff9e3d79ea3316c4c43d94f6161c8037a64db4b9d7c3cbdac07d3280"
+  },
+  {
+    "from": "backend/crm_region_identity.py",
+    "to": "ai-office-assistant-web/packages/joint-command/backend/crm_region_identity.py",
+    "original_sha256": "fe8ea74b2d49a72c04c7e6a314868b83a45023f0e9e3158706184758965123a6",
+    "expected_sha256": "fe8ea74b2d49a72c04c7e6a314868b83a45023f0e9e3158706184758965123a6"
+  },
+  {
+    "from": "backend/crm_region_materials.py",
+    "to": "ai-office-assistant-web/packages/joint-command/backend/crm_region_materials.py",
+    "original_sha256": "2f50dfed22808bcdf0d05e36f88cbf7199ba7ccd09f0ec51f5faf318f931738c",
+    "expected_sha256": "2f50dfed22808bcdf0d05e36f88cbf7199ba7ccd09f0ec51f5faf318f931738c"
+  },
+  {
+    "from": "backend/crm_region_periods.py",
+    "to": "ai-office-assistant-web/packages/joint-command/backend/crm_region_periods.py",
+    "original_sha256": "730d803c85f6dce749472c49c78639726aebf0806dbd1edac10edd270d931f3e",
+    "expected_sha256": "730d803c85f6dce749472c49c78639726aebf0806dbd1edac10edd270d931f3e"
+  },
+  {
+    "from": "backend/crm_security.py",
+    "to": "ai-office-assistant-web/packages/joint-command/backend/crm_security.py",
+    "original_sha256": "f374f1b3bb6c4364da4d1fe685c0bc4630ce4ff93dc6540310c0308a4387fe8a",
+    "expected_sha256": "f374f1b3bb6c4364da4d1fe685c0bc4630ce4ff93dc6540310c0308a4387fe8a"
+  },
+  {
+    "from": "backend/crm_store.py",
+    "to": "ai-office-assistant-web/packages/joint-command/backend/crm_store.py",
+    "original_sha256": "c857a946ab267317eedcc87cf343d15bb724fb713b22c12ff227b3454d6ee541",
+    "expected_sha256": "c857a946ab267317eedcc87cf343d15bb724fb713b22c12ff227b3454d6ee541"
+  }
+]

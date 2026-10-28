@@ -6,16 +6,19 @@ through the runtime during this incremental modularization.
 """
 
 def news_dir():
-    path = USER_DATA_DIR / "_news"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    return USER_DATA_DIR / "_news"
 
 
 def user_news_dir(username):
     """每个账号的个人资讯存储目录。"""
-    path = user_root(username) / "news"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    return user_root(username) / "news"
+
+
+def _news_issues(directory):
+    """目录下全部简报文件（不含 latest.json），按文件名倒序：[(文件名, 内容)]。"""
+    entries = office_doc_list("news", directory)
+    return [(name, payload) for name, payload, _ in sorted(entries, key=lambda entry: entry[0], reverse=True)
+            if name != "latest.json"]
 
 
 def clean_news_sources(sources):
@@ -619,24 +622,14 @@ def fetch_news_source(source, push_time="08:30", now=None):
 
 def latest_news_issue(directory=None):
     directory = directory or news_dir()
-    path = directory / "latest.json"
-    if not path.exists():
-        return None
-    try:
-        issue = read_json_lenient(path)
-    except Exception:
+    issue = office_doc_read("news", directory / "latest.json", None)
+    if issue is None:
         return None
     if news_issue_has_items(issue):
         return issue
     # 旧版本会把零条资讯覆盖到 latest.json。保留文件以免破坏已有数据，
     # 但读取时回退到最近一份真正包含资讯条目的简报。
-    for candidate_path in sorted(directory.glob("*.json"), reverse=True):
-        if candidate_path.name == "latest.json":
-            continue
-        try:
-            candidate = read_json_lenient(candidate_path)
-        except Exception:
-            continue
+    for _, candidate in _news_issues(directory):
         if news_issue_has_items(candidate):
             return candidate
     return None
@@ -646,13 +639,7 @@ def news_issue_by_date(date_text, directory=None):
     date_value = str(date_text or "").strip()
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", date_value):
         raise ValueError("资讯日期格式应为 YYYY-MM-DD")
-    path = (directory or news_dir()) / f"{date_value}.json"
-    if not path.exists():
-        return None
-    try:
-        return read_json_lenient(path)
-    except Exception:
-        return None
+    return office_doc_read("news", (directory or news_dir()) / f"{date_value}.json", None)
 
 
 def news_history(limit=30, include_config_details=False, directory=None):
@@ -661,13 +648,8 @@ def news_history(limit=30, include_config_details=False, directory=None):
     except Exception:
         limit = 30
     issues = []
-    for path in sorted((directory or news_dir()).glob("*.json"), reverse=True):
-        if path.name == "latest.json":
-            continue
-        try:
-            issue = read_json_lenient(path)
-        except Exception:
-            continue
+    for name, issue in _news_issues(directory or news_dir()):
+        stem = name[:-5]
         if not news_issue_has_items(issue):
             continue
         public = public_news_issue(issue, include_config_details)
@@ -675,8 +657,8 @@ def news_history(limit=30, include_config_details=False, directory=None):
             continue
         issues.append(
             {
-                "date": public.get("date") or path.stem,
-                "title": public.get("title") or f"{path.stem} 每日资讯",
+                "date": public.get("date") or stem,
+                "title": public.get("title") or f"{stem} 每日资讯",
                 "summary": public.get("summary", ""),
                 "generated_at": public.get("generated_at", ""),
                 "generated_by": public.get("generated_by", ""),
@@ -691,11 +673,8 @@ def news_history(limit=30, include_config_details=False, directory=None):
 
 def save_news_issue(issue, directory=None):
     directory = directory or news_dir()
-    issue_path = directory / f"{issue['date']}.json"
-    latest_path = directory / "latest.json"
-    raw = json.dumps(issue, ensure_ascii=False, indent=2)
-    issue_path.write_text(raw, encoding="utf-8")
-    latest_path.write_text(raw, encoding="utf-8")
+    office_doc_write("news", directory / f"{issue['date']}.json", issue)
+    office_doc_write("news", directory / "latest.json", issue)
 
 
 def news_issue_has_items(issue):
@@ -765,20 +744,12 @@ def user_news_favorites_path(username):
 
 
 def read_news_favorites(username):
-    path = user_news_favorites_path(username)
-    if not path.exists():
-        return []
-    try:
-        data = read_json_lenient(path)
-        return data if isinstance(data, list) else []
-    except Exception:
-        return []
+    data = office_doc_read("news", user_news_favorites_path(username), [])
+    return data if isinstance(data, list) else []
 
 
 def write_news_favorites(username, favorites):
-    user_news_favorites_path(username).write_text(
-        json.dumps(favorites, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    office_doc_write("news", user_news_favorites_path(username), favorites)
 
 
 def favorite_match_key(item):
@@ -798,42 +769,33 @@ def news_stats_path():
 
 
 def read_news_stats():
-    path = news_stats_path()
-    if not path.exists():
+    data = office_doc_read("news", news_stats_path(), None)
+    if data is None:
         return rebuild_news_stats()
-    try:
-        data = read_json_lenient(path)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def write_news_stats(stats):
-    news_stats_path().write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
+    office_doc_write("news", news_stats_path(), stats)
 
 
 def rebuild_news_stats():
     """扫描所有账号的收藏夹，重建全站收藏统计（首次或文件丢失时）。"""
     stats = {}
     try:
-        for entry in USER_DATA_DIR.iterdir():
-            if not entry.is_dir() or entry.name.startswith("_") or entry.name == "templates":
-                continue
-            fav_path = entry / "news" / "favorites.json"
-            if not fav_path.exists():
-                continue
-            try:
-                favorites = read_json_lenient(fav_path)
-            except Exception:
-                continue
+        owners = office_doc_owners("news") if officedb_enabled("news") else [
+            entry.name for entry in USER_DATA_DIR.iterdir()
+            if entry.is_dir() and not entry.name.startswith("_") and entry.name != "templates"]
+        for owner in owners:
+            favorites = office_doc_read("news", USER_DATA_DIR / owner / "news" / "favorites.json", None)
             if not isinstance(favorites, list):
                 continue
             for item in favorites:
                 if not isinstance(item, dict):
                     continue
                 holders = stats.setdefault(favorite_match_key(item), [])
-                if entry.name not in holders:
-                    holders.append(entry.name)
+                if owner not in holders:
+                    holders.append(owner)
     except Exception:
         pass
     try:

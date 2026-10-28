@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import backend.runtime as r
+from tests.unit.officedb_testing import db_variant
 
 
 class CashflowAssistantTests(unittest.TestCase):
@@ -98,8 +99,9 @@ class CashflowAssistantTests(unittest.TestCase):
             self.assertEqual(workbook["sheets"][0]["name"], "项目概算表模板")
             __import__("json").dumps(workbook)
             r.cashflow_workbook_save({"project_name": "示例项目", "cells": {"项目概算表模板": {"B2": "250"}}}, "tester")
-            exported = r.cashflow_workbook_export("tester")
-        exported_book = load_workbook(exported, data_only=False)
+            exported_name, exported_raw = r.cashflow_workbook_export("tester")
+        self.assertTrue(exported_name.startswith("示例项目-") and exported_name.endswith(".xlsx"))
+        exported_book = load_workbook(__import__("io").BytesIO(exported_raw), data_only=False)
         self.assertEqual(exported_book["项目概算表模板"]["B2"].value, "250")
         self.assertEqual(exported_book["项目概算表模板"]["C2"].value, "=B2*2")
 
@@ -118,3 +120,6 @@ class CashflowAssistantTests(unittest.TestCase):
         for name in ("项目情况确认", "项目概算表模板--成本", "项目概算表模板-现金流", "假设清单风险清单", "人力成本明细表", "会议记录"):
             self.assertIn(name, view)
         self.assertIn("cashflow-timeline", view)
+
+
+CashflowAssistantDbModeTests = db_variant(CashflowAssistantTests)

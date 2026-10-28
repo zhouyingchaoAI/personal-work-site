@@ -16,8 +16,14 @@ class MemberOrganizationTests(unittest.TestCase):
             for key in ('alice','E1','张三'):
                 profile,label=resolve('uploader',key)
                 self.assertIsNotNone(profile)
-                self.assertEqual(profile['department'],'中心 / 部门')
-                self.assertEqual(profile['title'],'经理')
+                # 我方人员档案是组织字段的事实来源；账号资料只补空缺、不覆盖已登记的部门/岗位。
+                if key=='张三':
+                    self.assertEqual(profile['department'],'旧部门')
+                    self.assertEqual(profile['title'],'旧岗位')
+                else:
+                    self.assertEqual(profile['department'],'中心 / 部门')
+                    self.assertEqual(profile['title'],'经理')
+                self.assertEqual(profile['company'],'新公司')
                 self.assertEqual(profile['username'],'alice')
                 self.assertNotIn('password',profile)
             self.assertIsNone(resolve('uploader','同名')[0])

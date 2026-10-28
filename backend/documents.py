@@ -28,20 +28,22 @@ def safe_uploaded_name(name, kind):
 def unique_report_path(name, username=None):
     kind = report_kind_from_name(name)
     base = user_report_kind_dir(username, kind) if username else REPORT_DIR / safe_report_kind(kind)
-    base.mkdir(parents=True, exist_ok=True)
     return base / name
 
 
 def generated_report_path(name, username=None, kind=None):
     report_kind = kind or report_kind_from_name(name)
     base = user_generated_kind_dir(username, report_kind) if username else GENERATED_DIR / safe_report_kind(report_kind)
-    base.mkdir(parents=True, exist_ok=True)
     return base / name
+
+
+def report_file_exists(path):
+    return bool(path) and Path(path).name != "" and office_blob_exists("reports", path)
 
 
 def configured_template_path(kind, username=None):
     path = report_template_path(kind)
-    return path if path.exists() and path.is_file() else None
+    return path if report_file_exists(path) else None
 
 
 def template_for_report(kind, username=None, include_generated=False):
@@ -51,7 +53,7 @@ def template_for_report(kind, username=None, include_generated=False):
     finder = newest_any if include_generated else newest
     item = finder(kind, username, fallback_shared=True)
     path = Path((item or {}).get("path", ""))
-    return path if path.exists() and path.is_file() else None
+    return path if report_file_exists(path) else None
 
 
 def report_kind_from_name(name):
@@ -82,7 +84,7 @@ def report_template_info(username=None):
             "kind": kind,
             "configured": bool(path),
             "name": path.name if path else "",
-            "mtime": path.stat().st_mtime if path else None,
+            "mtime": (office_blob_stat("reports", path) or {}).get("mtime") if path else None,
             "download_url": f"/download-template?kind={kind}",
         }
     return {"ok": True, "templates": templates}
@@ -108,21 +110,21 @@ def save_report_template(payload, username=None):
     path = report_template_path(kind)
     if kind == "weekly" and suffix == ".xls":
         path = path.with_suffix(".xls")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    for old in path.parent.glob("template.*"):
-        if old != path:
-            old.unlink()
-    path.write_bytes(raw)
-    return {"ok": True, "template": {"kind": kind, "name": path.name, "path": str(path), "mtime": path.stat().st_mtime}}
+    for old_name, _, _ in office_blob_list("reports", path.parent, prefix="template."):
+        if old_name != path.name:
+            office_blob_delete("reports", path.parent / old_name)
+    office_blob_write("reports", path, raw, content_type=mimetypes.guess_type(path.name)[0])
+    return {"ok": True, "template": {"kind": kind, "name": path.name, "path": str(path),
+                                     "mtime": (office_blob_stat("reports", path) or {}).get("mtime")}}
 
 
 def delete_report_template(payload, username=None):
     kind = safe_report_kind(payload.get("kind"))
     removed = []
-    for path in report_template_path(kind).parent.glob("template.*"):
-        if path.is_file():
-            removed.append(path.name)
-            path.unlink()
+    directory = report_template_path(kind).parent
+    for name, _, _ in office_blob_list("reports", directory, prefix="template."):
+        if office_blob_delete("reports", directory / name):
+            removed.append(name)
     return {"ok": True, "deleted": removed, "templates": report_template_info(username)["templates"]}
 
 
@@ -141,7 +143,7 @@ def upload_history_reports(payload, username=None):
         if not raw:
             raise ValueError(f"{name} 文件内容为空")
         path = unique_report_path(name, username)
-        path.write_bytes(raw)
+        office_blob_write("reports", path, raw, content_type=mimetypes.guess_type(path.name)[0])
         uploaded.append({"name": path.name, "path": str(path), "size": len(raw)})
     return {"ok": True, "uploaded": uploaded}
 
@@ -151,7 +153,7 @@ def delete_history_report(payload, username=None):
     if path is None:
         raise ValueError("历史报告文件不存在")
     name = path.name
-    path.unlink()
+    office_blob_delete("reports", path)
     return {"ok": True, "deleted": name}
 
 
@@ -160,7 +162,7 @@ def delete_report_file(payload, username=None):
     if path is None:
         raise ValueError("报告文件不存在，或不是当前账号的可删除文件")
     name = path.name
-    path.unlink()
+    office_blob_delete("reports", path)
     return {"ok": True, "deleted": name}
 
 
@@ -170,17 +172,18 @@ def promote_sent_report(file_name, username=None):
         return None
     kind = report_kind_from_name(safe_name)
     source = user_generated_kind_dir(username, kind) / safe_name if username else GENERATED_DIR / safe_report_kind(kind) / safe_name
-    if not source.exists() or not source.is_file():
+    if not report_file_exists(source):
         legacy_source = user_generated_dir(username) / safe_name if username else GENERATED_DIR / safe_name
-        if legacy_source.exists() and legacy_source.is_file():
+        if report_file_exists(legacy_source):
             source = legacy_source
         else:
             return None
     target = user_report_kind_dir(username, kind) / safe_name if username else REPORT_DIR / safe_report_kind(kind) / safe_name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        target.unlink()
-    shutil.move(str(source), str(target))
+    raw = office_blob_read("reports", source)
+    if raw is None:
+        return None
+    office_blob_write("reports", target, raw, content_type=mimetypes.guess_type(target.name)[0])
+    office_blob_delete("reports", source)
     return {"kind": kind, "name": target.name, "path": str(target)}
 
 
@@ -375,9 +378,13 @@ def weekly_prefill(username=None):
     if not item:
         return empty_weekly_prefill()
     template = Path(item.get("path", ""))
-    if not template.exists():
-        return empty_weekly_prefill()
+    with office_blob_local("reports", template) as local:
+        if local is None:
+            return empty_weekly_prefill()
+        return _weekly_prefill_from_file(local, template.name)
 
+
+def _weekly_prefill_from_file(template, source_name):
     try:
         from openpyxl import load_workbook
     except ModuleNotFoundError as exc:
@@ -391,15 +398,15 @@ def weekly_prefill(username=None):
                 "summary_rows": [],
                 "follow_rows": [],
                 "next_rows": [],
-                "source": template.name,
+                "source": source_name,
                 "error": dependency_error_message("openpyxl", "历史周报预填"),
             }
         rows, max_row = load_xlsx_sheet_rows(template)
-        return build_weekly_prefill(max_row, lambda row, col: rows.get(row, {}).get(col, ""), template.name)
+        return build_weekly_prefill(max_row, lambda row, col: rows.get(row, {}).get(col, ""), source_name)
 
     wb = load_workbook(template, data_only=True)
     ws = wb[wb.sheetnames[0]]
-    return build_weekly_prefill(ws.max_row, lambda row, col: cell_value(ws, row, col), template.name)
+    return build_weekly_prefill(ws.max_row, lambda row, col: cell_value(ws, row, col), source_name)
 
 
 def table_cell_text(table, row, col):
@@ -438,10 +445,11 @@ def format_trip_date_text(start, end):
     return start_text or end_text
 
 
-def read_trip_docx_sections(template):
+def read_trip_docx_sections(template, source_name=None):
     template = Path(template or "")
     if not template.exists() or template.suffix.lower() != ".docx":
         return None
+    source_name = source_name or template.name
 
     try:
         from docx import Document
@@ -453,7 +461,7 @@ def read_trip_docx_sections(template):
             root = ET.fromstring(docx_file.read("word/document.xml"))
         table = root.find(".//w:tbl", ns)
         if table is None:
-            return {"source": template.name}
+            return {"source": source_name}
         rows = []
         for row in table.findall("w:tr", ns):
             rows.append([normalize_numbered_text(xml_text(cell).strip()) for cell in row.findall("w:tc", ns)])
@@ -469,7 +477,7 @@ def read_trip_docx_sections(template):
     else:
         doc = Document(template)
         if not doc.tables:
-            return {"source": template.name}
+            return {"source": source_name}
         table = doc.tables[0]
 
         row_count = len(table.rows)
@@ -488,7 +496,7 @@ def read_trip_docx_sections(template):
     date_text = get_cell(1, 1)
     start, end = split_trip_date(date_text)
     return {
-        "source": template.name,
+        "source": source_name,
         "reporter": get_cell(0, 1) or "周颖超",
         "department": get_cell(0, 3) or "场景研究院",
         "location": get_cell(0, 5),
@@ -506,7 +514,10 @@ def read_trip_docx_sections(template):
 
 def trip_prefill(username=None):
     template = Path((newest("trip", username) or {}).get("path", ""))
-    sections = read_trip_docx_sections(template)
+    sections = None
+    if template.name:
+        with office_blob_local("reports", template) as local:
+            sections = read_trip_docx_sections(local, template.name) if local else None
     return sections or {"source": ""}
 
 
@@ -524,20 +535,20 @@ def generate_weekly(payload, username=None):
     period = (payload.get("period") or datetime.now().strftime("%Y.%m.%d-%Y.%m.%d")).strip()
     safe_period = normalize_report_period_name(period)
     output = generated_report_path(f"{safe_display_name(username)}工作周报{safe_period}.xlsx", username, "weekly")
-    if template.exists() and template.is_file():
+    if report_file_exists(template):
         if template.resolve() == output.resolve():
             fallback = newest("weekly", username, fallback_shared=True)
             fallback_path = Path((fallback or {}).get("path", ""))
             # 同周期文件已存在时，它是待覆盖的输出而不是模板；没有其他历史模板
             # 就从空工作簿开始，不能对同一个文件执行 copy2。
-            template = fallback_path if fallback_path.exists() and fallback_path.resolve() != output.resolve() else None
-    if template and template.exists() and template.is_file():
-        shutil.copy2(template, output)
-    else:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        Workbook().save(output)
+            template = fallback_path if report_file_exists(fallback_path) and fallback_path.resolve() != output.resolve() else None
+    template_raw = office_blob_read("reports", template) if template and report_file_exists(template) else None
+    if template_raw is None:
+        buffer = io.BytesIO()
+        Workbook().save(buffer)
+        template_raw = buffer.getvalue()
 
-    wb = load_workbook(output)
+    wb = load_workbook(io.BytesIO(template_raw))
     ws = wb[wb.sheetnames[0]]
 
     for mc in list(ws.merged_cells.ranges):
@@ -664,7 +675,10 @@ def generate_weekly(payload, username=None):
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.print_area = f"A1:E{next_start + len(next_rows) - 1}"
 
-    wb.save(output)
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    office_blob_write("reports", output, buffer.getvalue(),
+                      content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     return output
 
 
@@ -735,7 +749,10 @@ def set_docx_xml_cell_text(cell, text):
 
 
 def generate_trip_from_docx_template(template, output, values):
-    with zipfile.ZipFile(template, "r") as source:
+    template_raw = office_blob_read("reports", template)
+    if template_raw is None:
+        raise ValueError("出差报告模板不存在")
+    with zipfile.ZipFile(io.BytesIO(template_raw), "r") as source:
         document_xml = source.read("word/document.xml")
         root = ET.fromstring(document_xml)
         table = root.find(".//" + w_tag("tbl"))
@@ -795,13 +812,13 @@ def generate_trip_from_docx_template(template, output, values):
             if row_idx is not None:
                 set_docx_xml_cell_text(cell(row_idx, 1), value)
 
-        output.parent.mkdir(parents=True, exist_ok=True)
-        temp_output = output.with_suffix(output.suffix + ".tmp")
-        with zipfile.ZipFile(temp_output, "w", zipfile.ZIP_DEFLATED) as target:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as target:
             for item in source.infolist():
                 data = ET.tostring(root, encoding="utf-8", xml_declaration=True) if item.filename == "word/document.xml" else source.read(item.filename)
                 target.writestr(item, data)
-        temp_output.replace(output)
+        office_blob_write("reports", output, buffer.getvalue(),
+                          content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 def generate_trip_default_docx(output, values):
@@ -873,9 +890,8 @@ def generate_trip_default_docx(output, values):
     pg_mar.set(w_tag("bottom"), "1440")
     pg_mar.set(w_tag("left"), "1440")
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    temp_output = output.with_suffix(output.suffix + ".tmp")
-    with zipfile.ZipFile(temp_output, "w", zipfile.ZIP_DEFLATED) as target:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as target:
         target.writestr(
             "[Content_Types].xml",
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -894,7 +910,8 @@ def generate_trip_default_docx(output, values):
         )
         target.writestr("word/_rels/document.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>')
         target.writestr("word/document.xml", ET.tostring(document, encoding="utf-8", xml_declaration=True))
-    temp_output.replace(output)
+    office_blob_write("reports", output, buffer.getvalue(),
+                      content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 def generate_trip(payload, username=None):
@@ -917,7 +934,7 @@ def generate_trip(payload, username=None):
         "issues": payload.get("issues", ""),
         "suggestions": payload.get("suggestions", ""),
     }
-    if template.exists() and template.suffix.lower() == ".docx":
+    if template.name and template.suffix.lower() == ".docx" and report_file_exists(template):
         generate_trip_from_docx_template(template, output, values)
     else:
         generate_trip_default_docx(output, values)
@@ -946,12 +963,11 @@ def generate_document(payload, username=None):
 
 def save_draft(payload, username=None):
     draft_dir = user_draft_dir(username) if username else DRAFT_DIR
-    draft_dir.mkdir(parents=True, exist_ok=True)
     msg = build_message(payload, username)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     safe_subject = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff_-]+", "_", payload.get("subject", "draft"))[:40]
     path = draft_dir / f"{stamp}-{safe_subject}.eml"
-    path.write_bytes(bytes(msg))
+    office_blob_write("reports", path, bytes(msg), content_type="message/rfc822")
     return path
 
 

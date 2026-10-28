@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import assert from 'node:assert/strict'
 
-const file = new URL('../src/views/CrmAssistantView/organizationRegionFilter.ts', import.meta.url)
+const file = new URL('../packages/joint-command/frontend/organizationRegionFilter.ts', import.meta.url)
 assert.ok(fs.existsSync(file), 'missing organization region filter')
 const exports = {}
 vm.runInNewContext(

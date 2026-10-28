@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import assert from 'node:assert/strict'
 const exports = {}
-vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/views/CrmAssistantView/organizationStats.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports })
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../packages/joint-command/frontend/organizationStats.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports })
 const { organizationStats } = exports
 const units = [{id:'root'}, {id:'child',parent_unit_id:'root'}, {id:'leaf',parent_unit_id:'child'}, {id:'empty'}]
 const people = [
@@ -20,3 +20,7 @@ assert.deepEqual(plain(organizationStats(units, people).get('empty')), {total:0,
 assert.equal(organizationStats(units.slice(0,2), people).get('root').total, 2, 'excluded descendants must not leak into scoped totals')
 assert.equal(organizationStats([{id:'a',parent_unit_id:'b'},{id:'b',parent_unit_id:'a'}], [{id:'p',unit_id:'a'}]).get('a').total, 1, 'cycle must terminate without double counting')
 console.log('PASS ancestor totals, support grouping, incomplete counted once, empty/scoped/cyclic organizations')
+const multiple = organizationStats(units, [{unit_id:'leaf',unit_ids:['child','root','empty','empty'],importance:'重要',support_level:'支持'}])
+for (const id of ['root','child','leaf','empty']) assert.equal(multiple.get(id).total, 1, 'multiple memberships must not duplicate ancestor counts')
+assert.equal(organizationStats([{id:'empty'}], [{unit_id:'hidden',unit_ids:['empty']}]).get('empty').total, 1)
+console.log('PASS multi-organization memberships counted once per visible organization')

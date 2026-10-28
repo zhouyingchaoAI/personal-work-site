@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, reactive, ref, type Ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Calendar, ChatDotRound, Lock, Reading, UserFilled } from '@element-plus/icons-vue'
@@ -35,7 +35,6 @@ const captchaId = ref('')
 const captchaLoading = ref(false)
 const resetForm = reactive({ identifier: '', captcha: '', code: '', password: '', confirm: '' })
 const route = useRoute()
-const router = useRouter()
 const loginTitle = '承希智能办公助手'
 const loginSubtitle = 'AI 赋能办公 · 协同更高效'
 const displayedTitle = ref('')
@@ -73,7 +72,8 @@ async function handleLogin() {
       localStorage.removeItem(rememberedUsernameKey)
       localStorage.removeItem(rememberedPasswordKey)
     }
-    await router.replace(String(route.query.redirect || `/workspace/${lastVisitedMenu()}`))
+    const destination = String(route.query.redirect || `/workspace/${lastVisitedMenu()}`)
+    window.location.replace(destination.startsWith('/workspace/') && !destination.includes('\\') ? destination : '/workspace/dashboard')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '登录失败')
   } finally {

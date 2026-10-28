@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 import backend.runtime as rt
+from tests.unit.officedb_testing import db_variant
 
 
 class ProjectAssistantTests(unittest.TestCase):
@@ -60,8 +61,7 @@ class ProjectAssistantTests(unittest.TestCase):
             "manager",
         )
         report_path = rt.user_generated_kind_dir("member", "weekly") / "归档项目周报.xlsx"
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_bytes(b"weekly")
+        rt.office_blob_write("reports", report_path, b"weekly")
         report = rt.project_record_report(
             project_id,
             "weekly",
@@ -101,13 +101,14 @@ class ProjectAssistantTests(unittest.TestCase):
             "manager",
         )
         project_directory = rt.project_root_dir() / project_id
-        self.assertTrue(project_directory.exists())
+        self.assertEqual(len(rt.office_blob_list("project", project_directory, recursive=True)), 1)
 
         result = rt.project_delete({"id": project_id}, "manager")
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["deleted_id"], project_id)
         self.assertFalse(project_directory.exists())
+        self.assertEqual(rt.office_blob_list("project", project_directory, recursive=True), [])
         self.assertFalse(rt.project_list("manager")["projects"])
         with self.assertRaises(ValueError):
             rt.project_get(project_id, "manager")
@@ -131,12 +132,13 @@ class ProjectAssistantTests(unittest.TestCase):
         report_path = rt.user_generated_kind_dir("member", "weekly") / "应保留周报.xlsx"
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_bytes(b"keep-report")
-        rt.project_record_report(project_id, "weekly", report_path, "member")
+        rt.office_blob_write("reports", report_path, b"keep-report")
+        report = rt.project_record_report(project_id, "weekly", report_path, "member")
+        self.assertEqual(rt.project_report_file(project_id, report["id"], "member")[1], b"keep-report")
 
         rt.project_delete({"id": project_id}, "manager")
 
-        self.assertTrue(report_path.exists())
-        self.assertEqual(report_path.read_bytes(), b"keep-report")
+        self.assertEqual(rt.office_blob_read("reports", report_path), b"keep-report")
 
     def test_only_superadmin_can_read_or_change_platform_project_admins(self):
         with self.assertRaises(PermissionError):
@@ -196,3 +198,6 @@ class ProjectAssistantTests(unittest.TestCase):
         second_daily = next(item for item in rt.project_timeline(second_id, "member")["timeline"] if item["type"] == "daily")
         self.assertEqual(first_daily["title"], "完成项目甲接口联调")
         self.assertEqual(second_daily["title"], "梳理项目乙需求清单")
+
+
+ProjectAssistantDbModeTests = db_variant(ProjectAssistantTests)

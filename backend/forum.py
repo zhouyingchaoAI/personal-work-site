@@ -6,15 +6,11 @@ through the runtime during this incremental modularization.
 """
 
 def forum_store_path(username):
-    forum_dir = USER_DATA_DIR / "_forum"
-    forum_dir.mkdir(parents=True, exist_ok=True)
-    return forum_dir / "topics.json"
+    return USER_DATA_DIR / "_forum" / "topics.json"
 
 
 def forum_attachment_dir():
-    attach_dir = USER_DATA_DIR / "_forum" / "attachments"
-    attach_dir.mkdir(parents=True, exist_ok=True)
-    return attach_dir
+    return USER_DATA_DIR / "_forum" / "attachments"
 
 
 def forum_attachment_url(attachment_id, name):
@@ -44,18 +40,12 @@ def forum_public_comment(comment):
 
 
 def load_forum_topics(username):
-    path = forum_store_path(username)
-    if not path.exists():
-        return []
-    try:
-        data = read_json_lenient(path)
-        return data if isinstance(data, list) else []
-    except Exception:
-        return []
+    data = office_doc_read("forum", forum_store_path(username), [])
+    return data if isinstance(data, list) else []
 
 
 def save_forum_topics(username, topics):
-    forum_store_path(username).write_text(json.dumps(topics, ensure_ascii=False, indent=2), encoding="utf-8")
+    office_doc_write("forum", forum_store_path(username), topics)
 
 
 def forum_public_topic(topic, with_comments=False):
@@ -96,9 +86,8 @@ def forum_save_raw_attachment(name, ctype, raw):
         raise ValueError(f"附件 {name} 超过 20MB")
     attachment_id = secrets.token_urlsafe(12)
     stored_name = f"{attachment_id}{suffix or '.bin'}"
-    path = forum_attachment_dir() / stored_name
-    path.write_bytes(raw)
     ctype = str(ctype or mimetypes.guess_type(name)[0] or "application/octet-stream")
+    office_blob_write("forum", forum_attachment_dir() / stored_name, raw, content_type=ctype)
     return {
         "id": attachment_id,
         "name": name,
@@ -134,15 +123,16 @@ def forum_save_attachments(items):
             attachment = forum_save_uploaded_attachment(item)
         else:
             attachment_id = str(item.get("id", "") or "").strip()
-            path = forum_attachment_path(attachment_id)
-            if path is None:
+            entry = forum_attachment_entry(attachment_id)
+            if entry is None:
                 continue
+            path, stored_size = entry
             name = Path(str(item.get("name", "") or path.name)).name or path.name
             attachment = {
                 "id": attachment_id,
                 "name": name,
                 "type": str(item.get("type", "") or mimetypes.guess_type(name)[0] or "application/octet-stream"),
-                "size": int(item.get("size", 0) or path.stat().st_size),
+                "size": int(item.get("size", 0) or stored_size),
                 "file": path.name,
                 "url": forum_attachment_url(attachment_id, name),
             }
@@ -153,14 +143,29 @@ def forum_save_attachments(items):
     return attachments
 
 
-def forum_attachment_path(attachment_id):
+def forum_attachment_entry(attachment_id):
+    """附件逻辑路径与大小：(Path, size)；不存在返回 None。"""
     safe_id = re.sub(r"[^A-Za-z0-9_-]", "", str(attachment_id or ""))
     if not safe_id:
         return None
-    for path in forum_attachment_dir().glob(f"{safe_id}.*"):
-        if path.is_file():
-            return path
+    for name, size, _ in office_blob_list("forum", forum_attachment_dir(), prefix=safe_id + "."):
+        if "/" not in name:
+            return forum_attachment_dir() / name, size
     return None
+
+
+def forum_attachment_path(attachment_id):
+    entry = forum_attachment_entry(attachment_id)
+    return entry[0] if entry else None
+
+
+def forum_attachment_content(attachment_id):
+    """(逻辑路径, 内容)；不存在返回 None。"""
+    path = forum_attachment_path(attachment_id)
+    if path is None:
+        return None
+    raw = office_blob_read("forum", path)
+    return None if raw is None else (path, raw)
 
 
 def forum_topic_is_pinned(topic):

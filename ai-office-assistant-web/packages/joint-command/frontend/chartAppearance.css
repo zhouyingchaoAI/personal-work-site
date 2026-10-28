@@ -1,0 +1,29 @@
+.business-analysis .chart-layout-selected { outline: 2px solid #4596ff !important; outline-offset: 3px; }
+.business-analysis [data-editor-background] { background: var(--editor-background) !important; }
+.business-analysis [data-editor-bordercolor] { border-color: var(--editor-borderColor) !important; }
+.business-analysis [data-editor-radius] { border-radius: var(--editor-radius) !important; }
+.business-analysis [data-editor-padding] { padding: var(--editor-padding) !important; }
+.business-analysis [data-editor-shadow="none"] { box-shadow: none !important; }
+.business-analysis [data-editor-shadow="soft"] { box-shadow: 0 3px 12px #12345612 !important; }
+.business-analysis [data-editor-shadow="raised"] { box-shadow: 0 8px 24px #12345629 !important; }
+.business-analysis [data-editor-align] { text-align: var(--editor-align) !important; }
+.business-analysis [data-editor-fontfamily],
+.business-analysis [data-editor-fontfamily] :is(h2,h3,h4,p,span,strong,small,em,td,th,text) { font-family: var(--editor-fontFamily) !important; }
+.business-analysis [data-editor-align="center"].br-kpi > span { justify-content: center; }
+.business-analysis [data-editor-align="right"].br-kpi > span { justify-content: flex-end; }
+.business-analysis [data-editor-align="left"].br-kpi > span { justify-content: flex-start; }
+.business-analysis [data-editor-fontsize] :is(p,small,em,.br-note,.br-plot-name,.br-chart-legend,.br-series-row b,td,th),
+.business-analysis [data-editor-fontsize].br-kpi > span { font-size: var(--editor-fontSize) !important; }
+.business-analysis [data-editor-fontsize] svg text { font-size: var(--editor-fontSize) !important; }
+.business-analysis [data-editor-textcolor] :is(p,small,em,.br-note,.br-plot-name,.br-chart-legend),
+.business-analysis [data-editor-textcolor].br-kpi > span { color: var(--editor-textColor) !important; }
+.business-analysis [data-editor-textcolor] svg text { fill: var(--editor-textColor) !important; }
+.business-analysis [data-editor-titlesize] :is(h2,h3,h4,.br-card-title) { font-size: var(--editor-titleSize) !important; }
+.business-analysis [data-editor-titlecolor] :is(h2,h3,h4,.br-card-title) { color: var(--editor-titleColor) !important; }
+.business-analysis [data-editor-weight] :is(h2,h3,h4,.br-card-title) { font-weight: var(--editor-weight) !important; }
+.business-analysis [data-editor-valuesize].br-kpi > strong,
+.business-analysis [data-editor-valuesize] .br-kpi > strong { font-size: var(--editor-valueSize) !important; }
+.business-analysis [data-editor-titlesize].br-kpi > span { font-size: var(--editor-titleSize) !important; }
+.business-analysis [data-editor-titlecolor].br-kpi > span { color: var(--editor-titleColor) !important; }
+.business-analysis [data-editor-weight].br-kpi > span { font-weight: var(--editor-weight) !important; }
+.business-analysis .chart-layout-drop-target { outline: 2px solid #409eff !important; outline-offset: 3px; }

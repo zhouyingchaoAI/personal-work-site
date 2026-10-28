@@ -13,10 +13,10 @@ import urllib.error
 
 FASTGPT_INTERNAL_URL = os.getenv("FASTGPT_INTERNAL_URL", "http://fastgpt-app:3000").rstrip("/")
 FASTGPT_SSO_URL = os.getenv("FASTGPT_SSO_URL", "http://fastgpt-sso:3100").rstrip("/")
-FASTGPT_SSO_SECRET = os.getenv("FASTGPT_SSO_SECRET", "")
+FASTGPT_SSO_SECRET = os.getenv("FASTGPT_SSO_SECRET", "office_fastgpt_sso_9Rm4Kv7Lx2Np8Qw")
 
 APIDATASET_BASE = os.getenv("APIDATASET_BASE", "http://personal-work-site:8765/api/fastgpt/apidataset")
-APIDATASET_TOKEN = os.getenv("APIDATASET_TOKEN", "")
+APIDATASET_TOKEN = os.getenv("APIDATASET_TOKEN", "fastgpt_ragflow_bridge_8Qw3Rm7Lx2Np")
 
 
 def sso_token(username="admin", system=True):

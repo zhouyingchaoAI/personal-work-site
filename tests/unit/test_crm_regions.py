@@ -22,7 +22,12 @@ class RegionTests(unittest.TestCase):
         u = r.crm_unit_save(legacy,'alice')['unit']
         self.assertEqual(u['business_region'],'东区')
         self.assertFalse(r.crm_unit_save({**u,'business_region':'华东'},'alice')['ok'])
-        self.assertEqual(r.crm_unit_save({**u,'business_region':''},'alice')['unit']['business_region'],'')
+        # 多区域模型：单字段留空但 business_regions 仍有值时保留；两者都清空才真正清除。
+        kept = r.crm_unit_save({**u,'business_region':''},'alice')['unit']
+        self.assertEqual(kept['business_region'],'东区')
+        cleared = r.crm_unit_save({**kept,'business_region':'','business_regions':[]},'alice')['unit']
+        self.assertEqual(cleared['business_region'],'')
+        self.assertEqual(cleared['business_regions'],[])
     def workbook(self,area,legacy=False):
         book=load_workbook(io.BytesIO(r.crm_excel_template()))
         sheet=book['客户收集表']
@@ -44,9 +49,12 @@ class RegionTests(unittest.TestCase):
         self.assertEqual(len(result['errors']),1)
         self.assertFalse(r.crm_load('alice','units'))
         r.crm_excel_import(self.workbook('东区'),'alice')
+        # 同一单位再次以另一区域导入：并入多区域而不是报错，首个区域保持为主区域。
         result=r.crm_excel_import(self.workbook('西区'),'alice')
-        self.assertEqual(len(result['errors']),1)
-        self.assertEqual(next(iter(r.crm_load('alice','units').values()))['business_region'],'东区')
+        self.assertEqual(result['errors'],[])
+        unit=next(iter(r.crm_load('alice','units').values()))
+        self.assertEqual(unit['business_region'],'东区')
+        self.assertEqual(unit['business_regions'],['东区','西区'])
     def test_quick_capture_region(self):
         result=r.crm_quick_create({'unit_name':'示例单位','unit_type':'业主单位','name':'张工','business_region':'广东区'},'alice')
         self.assertTrue(result['ok'],result)

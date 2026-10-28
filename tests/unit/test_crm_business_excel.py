@@ -24,6 +24,30 @@ class BusinessExcelTests(unittest.TestCase):
         out=io.BytesIO();b.save(out);b.close()
         return {'filename':'客户经营.xlsx','data':base64.b64encode(out.getvalue()).decode()}
 
+    def test_task_progress_summary_is_split_into_company_region_and_owner_datasets(self):
+        book = Workbook(); sheet = book.active; sheet.title = '10月任务进度总表'
+        sheet.append(['2026年10月冲刺任务令简报 | 数据截止：2026-10-18'])
+        sheet.append([]); sheet.append(['一、公司整体-经营指标达成进度（保底+冲刺）'])
+        sheet.append(['指标', '', '2026年度目标', '1-10月已完成', '年度目标完成进度', '年度目标缺口', '10月冲刺任务令', '10月任务令已完成', '10月任务令完成进度', '10月进度排名', '10月任务令缺口'])
+        sheet.append(['回款', '', 38000, 13433.46, .3535, -24566.54, 3960.11, 138.42, .03495, 2, -3821.69])
+        sheet.append([]); sheet.append(['二、区域 - 10月回款任务'])
+        sheet.append(['区域', '责任人', '回款 任务令', '第一周', '第二周', '第三周', '第四周', '10月合计完成', '完成率', '排名', '缺口'])
+        sheet.append(['广东', '黄宇', 414.53, 70, 4.92, 0, 0, 74.92, .1807, 1, -339.61])
+        sheet.append([]); sheet.append(['五、项目经理 - 10月回款任务'])
+        sheet.append(['区域', '责任人', '回款 任务令', '第一周', '第二周', '第三周', '第四周', '10月合计完成', '完成率', '排名', '缺口'])
+        sheet.append(['广东', '孙良珑', 414.53, 70, 4.92, 0, 0, 74.92, .1807, 1, -339.61])
+
+        sheet.append(['合计', '', 414.53, 70, 4.92, 0, 0, 74.92, .1807, '', -339.61])
+        parsed = r._crm_task_progress_sheets(book)
+
+        self.assertEqual([item['key'] for item in parsed], ['任务令总表说明', '任务令公司进度', '任务令区域进度', '任务令责任人进度', '任务令进度总表原表'])
+        self.assertEqual(parsed[0]['rows'][0][0], '2026年10月冲刺任务令简报 | 数据截止：2026-10-18')
+        self.assertEqual(parsed[1]['rows'][0][0:3], ['回款', 38000, 13433.46])
+        self.assertEqual(parsed[2]['rows'][0][0:4], ['区域', '回款', '广东', '黄宇'])
+        self.assertEqual(parsed[3]['rows'][0][0:4], ['项目经理', '回款', '广东', '孙良珑'])
+        self.assertTrue(any(row[2] == '合计' for row in parsed[3]['rows']))
+        self.assertTrue(any(row[1] == '二、区域 - 10月回款任务' for row in parsed[4]['rows']))
+
     def external_collection_payload(self):
         headers = ['区域', '公司全称', '单位*', '部门', '职务', '姓名*', '手机', '办公电话', '邮箱', '微信 / 其他联系', '重要程度', '支持程度', '跟进轨迹', '上次互动时间', '本周互动计划', '计划跟进日期', '单位类型', '省份', '城市', '维系周期（天）', '我方姓名']
         row = ['东区', '华为技术有限公司', '华为', '政企部', '经理', '张工', '', '', '', '', '重要', '支持', '已沟通方案', '/', '', '', '厂商', '浙江省', '杭州', '', '李经理']
@@ -54,6 +78,27 @@ class BusinessExcelTests(unittest.TestCase):
         self.assertFalse(stored['OPP-001']['cancelled'])
         self.assertTrue(stored['OPP-002']['cancelled'])
 
+    def test_sales_contract_import_marks_matched_opportunity_as_won(self):
+        r.crm_store('alice', 'opportunities', {'OPP-001': {'id': 'OPP-001', 'code': 'OPP-001', 'name': '测试商机', 'outcome': 'open', 'cancelled': True, 'version': 1}})
+        headers = ['销售项目编码', '销售项目名称', '销售子项目编码', '销售合同编码', '销售子项目名称', '客户', '合同签订日期', '合同金额', '业主单位', '项目经理', '客户经理', '归档']
+        book = Workbook(); sheet = book.active; sheet.append(headers)
+        sheet.append(['OPP-001', '测试商机', 'OPP-001-1', 'HT-001', '子项目一', '客户甲', '2026/10/01', 100000, '业主甲', '项目经理甲', '客户经理甲', '是'])
+        sheet.append(['OPP-001', '测试商机', 'OPP-001-2', 'HT-002', '子项目二', '客户乙', '2026/10/03', 200000, '业主甲', '项目经理乙', '客户经理甲', '是'])
+        sheet.append(['NO-MATCH', '未匹配项目', 'NO-MATCH-1', 'HT-003', '未匹配', '客户丙', '2026/10/05', 50000, '业主丙', '项目经理丙', '客户经理丙', '否'])
+        output = io.BytesIO(); book.save(output); book.close()
+
+        result = r.crm_sales_contract_import({'filename': '销售合同.xlsx', 'data': base64.b64encode(output.getvalue()).decode()}, 'alice')
+
+        self.assertEqual((result['contracts'], result['matched_opportunities'], result['unmatched_projects']), (3, 1, 1))
+        opportunity = r.crm_load('alice', 'opportunities')['OPP-001']
+        self.assertEqual(opportunity['outcome'], 'won')
+        self.assertEqual(opportunity['outcome_source'], 'sales_contract')
+        self.assertFalse(opportunity['cancelled'])
+        self.assertEqual(opportunity['contract_count'], 2)
+        self.assertEqual(opportunity['contract_amount_yuan'], 300000)
+        self.assertEqual(opportunity['contract_date'], '2026/10/01')
+        self.assertEqual(len(r.crm_load('alice', 'sales_contracts')), 3)
+
     def test_opportunity_export_keeps_business_fields_and_current_filters(self):
         r.crm_store('alice', 'opportunities', {
             'A': {'id':'A', 'code':'A', 'name':'有效机会', 'owner_unit':'地铁集团', 'stage':'招标',
@@ -68,7 +113,8 @@ class BusinessExcelTests(unittest.TestCase):
         self.assertEqual(sheet.max_row, 2)
         self.assertEqual([cell.value for cell in sheet[1]][:4], ['机会点编码', '机会点名称', '业主单位', '项目归属'])
         self.assertEqual(sheet['A2'].value, 'A')
-        self.assertEqual(sheet['K2'].value, 1200)
+        amount_col = [c.value for c in sheet[1]].index('可参与份额-总额(万元)') + 1
+        self.assertEqual(sheet.cell(2, amount_col).value, 1200)
         book.close()
 
     def test_opportunity_save_updates_business_fields_and_keeps_project_code_stable(self):
@@ -410,7 +456,8 @@ class BusinessExcelTests(unittest.TestCase):
         self.assertEqual(result['errors'], [], result)
         relation = next(iter(r.crm_load('alice', 'relations').values()))
         self.assertEqual(relation['our_member'], '')  # 不再自动填当前账号
-        self.assertEqual(r.crm_relations('alice')['relations'][0]['our_member_label'], '—')
+        with patch.object(r,'read_config',return_value={'users':[{'username':'alice','role':'superadmin'}]}):
+            self.assertEqual(r.crm_read_relations({'username':'alice','role':'superadmin'})['relations'][0]['our_member_label'], '—')
     def _person(self, user='alice'):
         r.crm_unit_save({'name':'集团','type':'业主单位'}, user)
         unit = next(iter(r.crm_load(user,'units').values()))

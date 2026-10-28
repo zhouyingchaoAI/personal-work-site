@@ -67,7 +67,8 @@ def _internal_org_snapshot(config):
         departments = [p.strip() for p in str(user.get('department') or '').split('/') if p.strip()]
         members.append({'username': user['username'], 'name': user.get('name') or user['username'],
                         'employee_id': user.get('employee_id') or '', 'position': user.get('position') or '',
-                        'node_id': ensure(company, departments)})
+                        'node_id': ensure(company, departments),
+                        'node_ids': config.get('internal_organization', {}).get('memberships', {}).get(user['username'], [])})
     return {'ok': True, 'revision': _internal_org_revision(config), 'nodes': nodes, 'members': members}
 
 
@@ -105,6 +106,14 @@ def internal_organization_save(payload, caller_username):
             raise ValueError('必须保留全部账号的人员匹配，不能删除或新增账号')
         if any(not isinstance(target, str) or target not in paths for target in assignments.values()):
             raise ValueError('人员匹配的目标组织不存在')
+        memberships = payload.get('memberships', config.get('internal_organization', {}).get('memberships', {}))
+        if not isinstance(memberships, dict) or set(memberships) - set(assignments):
+            raise ValueError('兼任人员必须为已有账号')
+        normalized = {}
+        for username, targets in memberships.items():
+            if not isinstance(targets, list) or len(targets) > 100 or any(not isinstance(target, str) or target not in paths or target == INTERNAL_ORG_UNASSIGNED for target in targets):
+                raise ValueError('兼任组织无效，最多支持100个正式组织')
+            normalized[username] = list(dict.fromkeys(target for target in targets if target != assignments[username]))
         affected = set(config.get('internal_organization', {}).get('managed_users', []))
         changed = 0
         for user in users:
@@ -113,7 +122,7 @@ def internal_organization_save(payload, caller_username):
             if company != str(user.get('company') or '').strip() or department != old_department:
                 user['company'], user['department'] = company, department
                 affected.add(user['username']); changed += 1
-        config['internal_organization'] = {'nodes': nodes, 'managed_users': sorted(affected)}
+        config['internal_organization'] = {'nodes': nodes, 'managed_users': sorted(affected), 'memberships': normalized}
         # All account fields not explicitly assigned above, including permission grants,
         # passwords, roles, employee IDs and positions, remain untouched.
         write_config(config)
@@ -130,12 +139,16 @@ def internal_organization_staff(records):
     """
     config = read_config()
     managed = set(config.get('internal_organization', {}).get('managed_users', []))
+    memberships = config.get('internal_organization', {}).get('memberships', {})
+    paths = _internal_org_paths(config.get('internal_organization', {}).get('nodes', []))
     aliases = {}
     for user in config.get('users', []):
-        if user.get('username') in managed:
+        if user.get('username') in managed or memberships.get(user.get('username')):
             for key in (user.get('username'), user.get('employee_id')):
                 if key:
                     aliases[str(key)] = user
     return {ident: dict(record, company=aliases[str(record.get('member_key'))].get('company', ''),
-                        department=aliases[str(record.get('member_key'))].get('department', ''))
+                        department=aliases[str(record.get('member_key'))].get('department', ''),
+                        organization_memberships=[{'company': paths[target][0], 'department': paths[target][1]}
+                            for target in memberships.get(aliases[str(record.get('member_key'))]['username'], []) if target in paths])
             if str(record.get('member_key')) in aliases else record for ident, record in records.items()}

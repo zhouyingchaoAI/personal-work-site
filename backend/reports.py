@@ -33,14 +33,15 @@ def parse_trip_date(name):
 
 
 def report_storage_dirs(root, include_legacy=True):
-    dirs = []
-    for kind in ("weekly", "trip"):
-        path = root / kind
-        if path.exists():
-            dirs.append((kind, path))
+    dirs = [(kind, root / kind) for kind in ("weekly", "trip")]
     if include_legacy:
         dirs.append((None, root))
     return dirs
+
+
+def report_entries(directory):
+    """目录下的报告文件（非递归）：[(文件名, 大小, 更新时间)]，按存储模式取自文件或数据库。"""
+    return [(name, size, mtime) for name, size, mtime in office_blob_list("reports", directory) if "/" not in name]
 
 
 def is_legacy_auto_numbered_report(name):
@@ -50,12 +51,11 @@ def is_legacy_auto_numbered_report(name):
 def report_files(username=None):
     files = []
     base = user_report_dir(username) if username else REPORT_DIR
-    if not base.exists():
-        return files
     seen = set()
     for expected_kind, directory in report_storage_dirs(base):
-        for path in directory.iterdir():
-            if not path.is_file() or path.name.startswith(".") or path in seen:
+        for name, _, mtime in report_entries(directory):
+            path = directory / name
+            if path.name.startswith(".") or path in seen:
                 continue
             seen.add(path)
             if is_legacy_auto_numbered_report(path.name):
@@ -76,7 +76,7 @@ def report_files(username=None):
                     "kind": kind,
                     "name": path.name,
                     "path": str(path),
-                    "mtime": path.stat().st_mtime,
+                    "mtime": mtime,
                     "sort_key": sort_key,
                     "deletable": bool(username),
                 }
@@ -87,12 +87,11 @@ def report_files(username=None):
 def generated_files(username=None):
     files = []
     base = user_generated_dir(username) if username else GENERATED_DIR
-    if not base.exists():
-        return files
     seen = set()
     for expected_kind, directory in report_storage_dirs(base):
-        for path in directory.iterdir():
-            if not path.is_file() or path.name.startswith(".") or path in seen:
+        for name, _, mtime in report_entries(directory):
+            path = directory / name
+            if path.name.startswith(".") or path in seen:
                 continue
             seen.add(path)
             lower = path.suffix.lower()
@@ -109,8 +108,8 @@ def generated_files(username=None):
                     "kind": kind,
                     "name": path.name,
                     "path": str(path),
-                    "mtime": path.stat().st_mtime,
-                    "sort_key": (9999, int(path.stat().st_mtime)),
+                    "mtime": mtime,
+                    "sort_key": (9999, int(mtime)),
                     "generated": True,
                     "deletable": bool(username),
                 }
@@ -661,12 +660,15 @@ def compose_draft(kind, file_name=None, username=None):
         return {"error": "没有找到对应报告"}
 
     path = Path(report["path"])
-    preview = preview_file(path)
-    preview_html = preview_file_html(path)
+    with office_blob_local("reports", path) as local:
+        if local is None:
+            return {"error": "没有找到对应报告"}
+        preview = preview_file(local)
+        preview_html = preview_file_html(local)
+        summary_text, summary_html = format_weekly_body(local) if kind == "weekly" else format_trip_body(local)
     today_text = datetime.now().strftime("%Y年%m月%d日")
     if kind == "weekly":
         subject = f"【周报】{path.stem}"
-        summary_text, summary_html = format_weekly_body(path)
         weekly_table_html = preview_html or summary_html
         body = (
             f"{config.get('weekly_greeting', '领导您好：')}\n\n"
@@ -685,7 +687,6 @@ def compose_draft(kind, file_name=None, username=None):
         cc_addr = mail.get("weekly_cc", "")
     else:
         subject = f"【出差报告】{path.stem}"
-        summary_text, summary_html = format_trip_body(path)
         trip_table_html = preview_html or summary_html
         body = (
             f"{config.get('trip_greeting', '领导您好：')}\n\n"

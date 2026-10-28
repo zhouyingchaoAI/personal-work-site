@@ -78,6 +78,14 @@ class KnowledgeKbSelectionTests(unittest.TestCase):
         self.assertEqual(captured["page_size"], 2)
         self.assertEqual([item["doc_id"] for item in result["results"]], ["doc-1"])
 
+    def test_chat_list_supports_paginated_response_without_duplicate_creation(self):
+        name = f'{rt.KB_RAGFLOW_CHAT_NAME}-tester-' + rt._ragflow_chat_cache_key('tester', ['personal']).rsplit('::', 1)[-1]
+        def request(settings, method, path, body=None):
+            self.assertEqual(method, 'GET')
+            return {'chats': [{'id': 'existing-chat', 'name': name}], 'total': 1}
+        rt._ragflow_request = request
+        self.assertEqual(rt._ragflow_user_chat_id({}, 'tester', ['personal']), 'existing-chat')
+
     def test_chat_cache_key_is_isolated_by_dataset_selection(self):
         settings = {"ragflow_api_key": "user-key"}
         created = []

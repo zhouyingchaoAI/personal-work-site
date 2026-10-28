@@ -4,6 +4,17 @@ import homeMailIcon from '../assets/home-feature-mail.png'
 import homeNewsIcon from '../assets/home-feature-news.png'
 import homeTripIcon from '../assets/home-feature-trip.png'
 import homeWeeklyIcon from '../assets/home-feature-weekly.png'
+import homeWritingIcon from '../assets/home-assistants/writing.svg'
+import homeMeetingIcon from '../assets/home-assistants/meeting.svg'
+import homeKnowledgeIcon from '../assets/home-assistants/knowledge.svg'
+import homeProjectIcon from '../assets/home-assistants/project.svg'
+import homeCrmIcon from '../assets/home-assistants/crm.svg'
+import homeLedgerIcon from '../assets/home-assistants/ledger.svg'
+import homeCashflowIcon from '../assets/home-assistants/cashflow.svg'
+import homeDatacenterIcon from '../assets/home-assistants/datacenter.svg'
+import homeWorkflowIcon from '../assets/home-assistants/workflow.svg'
+import homeReimbursementIcon from '../assets/home-assistants/reimbursement.svg'
+import homeLobsterbaseIcon from '../assets/home-assistants/lobsterbase.svg'
 import quickFocus from '../assets/quick-focus.png'
 import type { MenuId } from '../layout/menu'
 
@@ -34,6 +45,17 @@ export interface HomeCapabilityItem {
 }
 
 export const homeFeatures: HomeFeatureItem[] = [
+  { id: 'writing', menuId: 'writing', label: '智能写作', description: '提纲成文，智能润色改写', image: homeWritingIcon, tone: 'blue' },
+  { id: 'meeting', menuId: 'meeting', label: '会议助手', description: '录音转写，自动整理纪要', image: homeMeetingIcon, tone: 'blue' },
+  { id: 'knowledge', menuId: 'knowledge', label: '知识库', description: '知识沉淀，问答有据可循', image: homeKnowledgeIcon, tone: 'blue' },
+  { id: 'project', menuId: 'project', label: '项目助手', description: '汇集成员资料，协同项目推进', image: homeProjectIcon, tone: 'blue' },
+  { id: 'crm', menuId: 'crm', label: '联指经营助手', description: '经营客户关系，把握商机进展', image: homeCrmIcon, tone: 'blue' },
+  { id: 'ledger', menuId: 'ledger', label: '项目管理台账', description: '合同交付回款，一本台账掌握', image: homeLedgerIcon, tone: 'blue' },
+  { id: 'cashflow', menuId: 'cashflow', label: '资金测算助手', description: '测算回款节奏，识别资金缺口', image: homeCashflowIcon, tone: 'blue' },
+  { id: 'datacenter', menuId: 'datacenter', label: '数据中台', description: '统览数据资产，守护备份安全', image: homeDatacenterIcon, tone: 'blue' },
+  { id: 'workflow', menuId: 'workflow', label: '工作流中心', description: '串联任务步骤，编排自动流程', image: homeWorkflowIcon, tone: 'blue' },
+  { id: 'reimbursement', menuId: 'reimbursement', label: '报销助手', description: '识别归集发票，整理报销材料', image: homeReimbursementIcon, tone: 'blue' },
+  { id: 'lobsterbase', menuId: 'lobsterbase', label: '龙虾基地', description: '连接专属智能体，扩展办公能力', image: homeLobsterbaseIcon, tone: 'blue' },
   {
     id: 'weekly',
     label: '周报助手',

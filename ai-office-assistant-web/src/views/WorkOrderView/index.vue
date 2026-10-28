@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh, Search, Paperclip, Checked, CircleClose, Clock } from '@element-plus/icons-vue'
 import {
@@ -7,11 +8,14 @@ import {
   type Ticket, type ForumAttachment,
 } from '../../services/personalWorkApi'
 import { authState } from '../../services/authSession'
+import { ticketUserKey, ticketUserStats } from './ticketUserStats'
+import TicketAttachment from '../../components/TicketAttachment.vue'
+const props = defineProps<{ embedded?: boolean; ticketId?: string }>()
 
 // 平台助手 / 模块清单：提交工单先选助手，便于快速定位与分派。
 const MODULE_OPTIONS = [
   '智能写作', '周报助手', '出差报告助手', '工作日记', '金点子论坛', '每日资讯',
-  '邮件助手', '会议助手', '知识库', '项目助手', '客户经营助手', '经营管理台账',
+  '邮件助手', '会议助手', '知识库', '项目助手', '联指经营助手', '项目管理台账', '数据中台',
   '工作流中心', '报销助手', '龙虾基地', '登录 / 账号', '平台整体 / 其他',
 ]
 
@@ -23,7 +27,8 @@ const filter = ref<'all' | 'open' | 'closed'>('all')
 const moduleFilter = ref('')
 
 const createVisible = ref(false)
-const createForm = reactive<{ module: string; title: string; body: string; attachments: ForumAttachment[] }>({ module: '', title: '', body: '', attachments: [] })
+const DEFAULT_TICKET_MODULE = '联指经营助手'
+const createForm = reactive<{ module: string; title: string; body: string; attachments: ForumAttachment[] }>({ module: DEFAULT_TICKET_MODULE, title: '', body: '', attachments: [] })
 const submitting = ref(false)
 const createAttachmentUploading = ref(false)
 
@@ -35,6 +40,50 @@ const replying = ref(false)
 const replyAttachmentUploading = ref(false)
 
 const currentUser = computed(() => authState.user?.name || authState.user?.username || '成员')
+const isSuperAdmin = computed(() => authState.user?.role === 'superadmin')
+const userFilter = ref('')
+const userSearch = ref('')
+const showOthers = ref(false)
+const urging = reactive<Record<string, boolean>>({})
+const urged = reactive<Record<string, boolean>>({})
+function isMine(ticket: Ticket) {
+  return ticket.author_username ? ticket.author_username === authState.user?.username : ticket.author === currentUser.value || ticket.author === authState.user?.username
+}
+const mySummary = computed(() => {
+  const mine = tickets.value.filter(isMine)
+  return { total: mine.length, open: mine.filter(ticket => !ticket.closed).length, closed: mine.filter(ticket => ticket.closed).length }
+})
+async function urge(ticket: Ticket) {
+  if (!isMine(ticket) || ticket.closed || urging[ticket.id] || urged[ticket.id]) return
+  urging[ticket.id] = true
+  try {
+    const result = await addTicketComment(ticket.id, '【提交人催办】请关注此工单的处理进度，并回复预计处理时间。', '', '', [])
+    urged[ticket.id] = true
+    const index = tickets.value.findIndex(item => item.id === ticket.id)
+    if (index >= 0) tickets.value[index] = result.ticket
+    if (detail.value?.id === ticket.id) detail.value = result.ticket
+    ElMessage.success('催办已记录，可在工单处理记录中查看')
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '催办失败，请重试') } finally { urging[ticket.id] = false }
+}
+const userStats = computed(() => ticketUserStats(tickets.value))
+const visibleUserStats = computed(() => userStats.value.filter(user => `${user.name} ${user.username}`.toLowerCase().includes(userSearch.value.trim().toLowerCase())))
+const selectedUser = computed(() => userStats.value.find(user => user.key === userFilter.value))
+function selectUser(key: string, module = '') {
+  userFilter.value = key
+  moduleFilter.value = module
+  keyword.value = ''
+  filter.value = 'all'
+}
+const route = useRoute()
+const expandedTickets = reactive<Record<string, boolean>>({})
+function isExpanded(ticket: Ticket) {
+  return expandedTickets[ticket.id] ?? (ticket.author_username
+    ? ticket.author_username === authState.user?.username
+    : ticket.author === currentUser.value || ticket.author === authState.user?.username)
+}
+async function openLinkedTicket() {
+  if (route.params.menu === 'workorder' && typeof route.query.ticket === 'string') await openDetail(route.query.ticket)
+}
 
 const statusMeta: Record<string, { label: string; type: 'info' | 'warning' | 'success' | 'danger' }> = {
   open: { label: '待处理', type: 'warning' },
@@ -61,8 +110,13 @@ const filteredTickets = computed(() => tickets.value.filter((t) => {
   const byModule = !moduleFilter.value || (t.module || '未指定') === moduleFilter.value
   const kw = keyword.value.trim().toLowerCase()
   const byKw = !kw || `${t.title} ${t.body} ${t.author} ${t.module || ''}`.toLowerCase().includes(kw)
-  return byState && byModule && byKw
+  const byUser = !isSuperAdmin.value || !userFilter.value || ticketUserKey(t) === userFilter.value
+  return byState && byModule && byKw && byUser
 }))
+const ticketGroups = computed(() => isSuperAdmin.value && userFilter.value
+  ? [{ key: 'selected', label: `${selectedUser.value?.name || '所选用户'}的工单`, items: filteredTickets.value, expanded: true }]
+  : [{ key: 'mine', label: '我的工单处理情况', items: filteredTickets.value.filter(isMine), expanded: true },
+    { key: 'others', label: '其他人的工单', items: filteredTickets.value.filter(ticket => !isMine(ticket)), expanded: showOthers.value }])
 
 async function load() {
   loading.value = true
@@ -73,7 +127,7 @@ async function load() {
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : '工单加载失败') } finally { loading.value = false }
 }
 
-function openCreate() { createForm.module = ''; createForm.title = ''; createForm.body = ''; createForm.attachments = []; createVisible.value = true }
+function openCreate() { createForm.module = DEFAULT_TICKET_MODULE; createForm.title = ''; createForm.body = ''; createForm.attachments = []; createVisible.value = true }
 async function submitCreate() {
   if (createAttachmentUploading.value) return ElMessage.warning('剪贴板图片上传中，请稍候提交')
   if (!createForm.module) return ElMessage.warning('请先选择该问题所属的助手 / 模块')
@@ -168,7 +222,14 @@ function removeAttachment(target: { attachments: ForumAttachment[] }, id: string
   target.attachments = target.attachments.filter((a) => a.id !== id)
 }
 
-onMounted(load)
+onMounted(async () => {
+  if (!props.embedded) return
+  await load()
+  if (props.ticketId) await openDetail(props.ticketId)
+})
+watch(() => props.ticketId, id => { if (props.embedded && id) void openDetail(id) })
+onActivated(async () => { if (!props.embedded) { await load(); await openLinkedTicket() } })
+watch(() => route.query.ticket, () => { void openLinkedTicket() })
 </script>
 
 <template>
@@ -186,11 +247,27 @@ onMounted(load)
     </header>
 
     <section class="wo-stats">
-      <article :class="{ active: filter === 'all' }" @click="filter = 'all'"><span>全部工单</span><strong>{{ summary.total }}</strong></article>
-      <article class="open" :class="{ active: filter === 'open' }" @click="filter = 'open'"><span>待处理</span><strong>{{ summary.open }}</strong></article>
-      <article class="resolved" :class="{ active: filter === 'closed' }" @click="filter = 'closed'"><span>已办结</span><strong>{{ summary.closed }}</strong></article>
+      <article :class="{ active: filter === 'all' }" @click="filter = 'all'"><span>我的工单</span><strong>{{ mySummary.total }}</strong></article>
+      <article class="open" :class="{ active: filter === 'open' }" @click="filter = 'open'"><span>我的待处理</span><strong>{{ mySummary.open }}</strong></article>
+      <article class="resolved" :class="{ active: filter === 'closed' }" @click="filter = 'closed'"><span>我的已办结</span><strong>{{ mySummary.closed }}</strong></article>
     </section>
 
+    <section v-if="isSuperAdmin" class="wo-user-overview" aria-label="按用户统计工单">
+      <header><div><h2>谁在提工单</h2><p>全部工单口径 · {{ userStats.length }} 个提交人记录 · {{ tickets.length }} 单，不随下方列表筛选变化</p></div><el-input v-model="userSearch" clearable placeholder="查找提交人 / 账号" aria-label="查找提交人" /></header>
+      <p class="wo-user-note">历史工单未记录账号，按署名独立统计，不自动与同名账号合并。</p>
+      <div class="wo-user-table" tabindex="0" role="region" aria-label="提交人统计，可横向滚动">
+        <table><thead><tr><th>提交人</th><th>提交总量</th><th>待处理</th><th>已办结</th><th>涉及助手 · 点击查看</th></tr></thead><tbody>
+          <tr v-for="user in visibleUserStats" :key="user.key" :class="{ selected:userFilter === user.key }">
+            <th><button type="button" class="wo-user-name" :aria-pressed="userFilter === user.key" @click="selectUser(user.key)">{{ user.name }}</button><small>{{ user.username || '历史署名（未记录账号）' }}</small></th>
+            <td><button type="button" class="wo-user-count" @click="selectUser(user.key)">{{ user.total }} 单</button><div class="wo-user-bar"><i :style="{width:`${user.total / (userStats[0]?.total || 1) * 100}%`}" /></div></td>
+            <td><strong class="wo-user-open">{{ user.open }}</strong></td><td>{{ user.closed }}</td>
+            <td><div class="wo-user-modules"><el-button v-for="[module, count] in user.modules" :key="module" size="small" :type="userFilter === user.key && moduleFilter === module ? 'primary' : 'default'" @click="selectUser(user.key,module)">{{ module }} · {{ count }}</el-button></div></td>
+          </tr>
+        </tbody></table>
+        <p v-if="!visibleUserStats.length" class="wo-empty">暂无匹配的提交人</p>
+      </div>
+    </section>
+    <div v-if="isSuperAdmin && selectedUser" class="wo-user-selection"><strong>正在查看：{{ selectedUser.name }}{{ moduleFilter ? ' / ' + moduleFilter : '' }}</strong><span>{{ filteredTickets.length }} 单</span><el-button link type="primary" @click="selectUser('')">清除用户筛选</el-button></div>
     <div class="wo-toolbar">
       <el-input v-model="keyword" :prefix-icon="Search" clearable placeholder="搜索工单标题、内容或提交人" class="wo-search" />
       <el-select v-model="moduleFilter" clearable placeholder="全部助手" class="wo-module-filter">
@@ -204,9 +281,12 @@ onMounted(load)
       </el-radio-group>
     </div>
 
-    <section class="wo-list">
-      <p v-if="!filteredTickets.length" class="wo-empty">暂无工单，点击右上角“提交工单”开始。</p>
-      <article v-for="t in filteredTickets" :key="t.id" class="wo-card" @click="openDetail(t.id)">
+    <section v-for="group in ticketGroups" :key="group.key" class="wo-list" :data-ticket-group="group.key">
+      <h2 v-if="group.key !== 'others'">{{ group.label }} <small>（{{ group.items.length }}）</small></h2>
+      <el-button v-else class="wo-others-toggle" :aria-expanded="showOthers" @click="showOthers = !showOthers">{{ showOthers ? '收起' : '展开' }}其他人的工单列表（{{ group.items.length }}）</el-button>
+      <template v-if="group.expanded">
+      <p v-if="!group.items.length" class="wo-empty">暂无匹配工单。</p>
+      <article v-for="t in group.items" :key="t.id" class="wo-card" @click="openDetail(t.id)">
         <div class="wo-card-main">
           <div class="wo-card-title">
             <el-tag :type="metaOf(t.status).type" size="small" effect="light">{{ metaOf(t.status).label }}</el-tag>
@@ -214,7 +294,12 @@ onMounted(load)
             <h3>{{ t.title }}</h3>
             <span v-if="t.pinned" class="wo-pin">置顶</span>
           </div>
-          <p class="wo-card-body">{{ t.body }}</p>
+          <p v-if="isExpanded(t)" class="wo-card-body wo-card-body-expanded">{{ t.body }}</p>
+          <div class="wo-card-actions" @click.stop>
+            <el-button link type="primary" :aria-expanded="isExpanded(t)" @click="expandedTickets[t.id] = !isExpanded(t)">{{ isExpanded(t) ? '收起内容' : '展开内容' }}</el-button>
+            <el-button link type="primary" @click="openDetail(t.id)">查看详情与处理</el-button>
+            <el-button v-if="isMine(t) && !t.closed" link type="warning" :loading="urging[t.id]" :disabled="urged[t.id]" @click="urge(t)">{{ urged[t.id] ? '已催办' : '催办' }}</el-button>
+          </div>
           <div class="wo-card-meta">
             <span>{{ t.author }}</span>
             <span><el-icon><Clock /></el-icon>{{ t.updated_at }}</span>
@@ -223,10 +308,11 @@ onMounted(load)
           </div>
         </div>
       </article>
+      </template>
     </section>
 
     <!-- 提交工单 -->
-    <el-dialog v-model="createVisible" title="提交工单" class="wo-dialog" width="min(640px, 94vw)">
+    <el-dialog v-model="createVisible" title="提交工单" class="wo-dialog" width="min(640px, 94vw)" append-to-body>
       <el-form label-position="top">
         <el-form-item label="① 选择助手 / 模块" required>
           <el-select v-model="createForm.module" filterable placeholder="先选择问题所在的助手，便于快速定位处理" class="wo-module-select">
@@ -247,7 +333,7 @@ onMounted(load)
           </el-upload>
           <ul v-if="createForm.attachments.length" class="wo-attach-list">
             <li v-for="a in createForm.attachments" :key="a.id">
-              <a :href="a.url" target="_blank" :title="a.is_image ? '点击查看原图' : a.name"><img v-if="a.is_image" :src="a.url" :alt="a.name" class="wo-attach-thumb" /><span v-else>📎 {{ a.name }}</span></a>
+              <TicketAttachment :attachment="a" />
               <el-button link type="danger" @click="removeAttachment(createForm, a.id)">移除</el-button>
             </li>
           </ul>
@@ -260,7 +346,7 @@ onMounted(load)
     </el-dialog>
 
     <!-- 工单详情 -->
-    <el-dialog v-model="detailVisible" class="wo-dialog wo-detail-dialog" width="min(760px, 96vw)" :title="detail?.title || '工单详情'">
+    <el-dialog v-model="detailVisible" class="wo-dialog wo-detail-dialog" width="min(760px, 96vw)" :title="detail?.title || '工单详情'" append-to-body>
       <div v-loading="detailLoading" class="wo-detail">
         <template v-if="detail">
           <div class="wo-detail-head">
@@ -271,7 +357,7 @@ onMounted(load)
           <p class="wo-detail-body">{{ detail.body }}</p>
           <ul v-if="detail.attachments && detail.attachments.length" class="wo-attach-list">
             <li v-for="a in detail.attachments" :key="a.id">
-              <a :href="a.url" target="_blank"><img v-if="a.is_image" :src="a.url" alt="" class="wo-attach-thumb" /><span v-else>📎 {{ a.name }}</span></a>
+              <TicketAttachment :attachment="a" />
             </li>
           </ul>
 
@@ -286,7 +372,7 @@ onMounted(load)
               </div>
               <p>{{ c.content }}</p>
               <ul v-if="c.attachments && c.attachments.length" class="wo-attach-list">
-                <li v-for="a in c.attachments" :key="a.id"><a :href="a.url" target="_blank"><img v-if="a.is_image" :src="a.url" alt="" class="wo-attach-thumb" /><span v-else>📎 {{ a.name }}</span></a></li>
+                <li v-for="a in c.attachments" :key="a.id"><TicketAttachment :attachment="a" /></li>
               </ul>
             </li>
           </ul>
@@ -306,7 +392,7 @@ onMounted(load)
             </div>
             <ul v-if="reply.attachments.length" class="wo-attach-list">
               <li v-for="a in reply.attachments" :key="a.id">
-                <a :href="a.url" target="_blank" :title="a.is_image ? '点击查看原图' : a.name"><img v-if="a.is_image" :src="a.url" :alt="a.name" class="wo-attach-thumb" /><span v-else>📎 {{ a.name }}</span></a>
+                <TicketAttachment :attachment="a" />
                 <el-button link type="danger" @click="removeAttachment(reply, a.id)">移除</el-button>
               </li>
             </ul>

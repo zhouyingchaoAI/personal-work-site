@@ -2,7 +2,7 @@ import ts from 'typescript'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import assert from 'node:assert/strict'
-const source = fs.readFileSync(new URL('../src/views/CrmAssistantView/dashboard/amapDistrictCache.ts', import.meta.url), 'utf8')
+const source = fs.readFileSync(new URL('../packages/joint-command/frontend/dashboard/amapDistrictCache.ts', import.meta.url), 'utf8')
 const storage = new Map()
 const sessionStorage = { getItem: k => storage.get(k), setItem: (k,v) => storage.set(k,v) }
 function load() {

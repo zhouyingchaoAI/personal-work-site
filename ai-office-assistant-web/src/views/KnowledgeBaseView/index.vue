@@ -16,6 +16,7 @@ import {
   getRagflowSso,
   getRagflowStatus,
   knowledgeAskStreamUrl,
+  redirectToLoginOnUnauthorized,
   knowledgeDocFileUrl,
   saveDigitalHumanKbConfig,
   reparseKnowledgeDoc,
@@ -432,7 +433,16 @@ async function handleAsk() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question: text, top_k: 5, session_id: currentSessionId.value, kb_ids: activeKbIds.value }),
     })
-    if (!response.ok || !response.body) throw new Error(`请求失败（${response.status}）`)
+    if (response.status === 401) {
+      query.value = text
+      redirectToLoginOnUnauthorized('/knowledge/ask-stream')
+      throw new Error('登录已失效，请重新登录后再提问')
+    }
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}))
+      throw new Error(failure.error || `请求失败（${response.status}）`)
+    }
+    if (!response.body) throw new Error('回答连接未建立，请稍后重试')
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''

@@ -7,7 +7,7 @@ const load = rel => {
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL(rel, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports })
   return exports
 }
-const { assessmentOverview } = load('../src/views/CrmAssistantView/assessmentOverview.ts')
+const { assessmentOverview } = load('../packages/joint-command/frontend/assessmentOverview.ts')
 const rules = { good_threshold: 80, fair_threshold: 60, recent_days: 90, weights: [30, 25, 20, 15, 10] }
 const now = Date.parse('2026-09-20T12:00:00Z')
 const dims = (a, b, c) => [

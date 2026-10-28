@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="UTF-8"><title>区域经营实数预览</title><div id="app"></div>
+<script type="module">
+import { createApp } from 'vue/dist/vue.esm-bundler.js'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import BusinessAnalysis from '../../src/views/CrmAssistantView/BusinessAnalysis.vue'
+createApp({ components: { BusinessAnalysis }, data: () => ({ dataset: window.__REGION_DATA__ }), template: '<BusinessAnalysis :data="dataset" :can-import="false" />' }).use(ElementPlus).mount('#app')
+</script>
+<style>body{margin:0;padding:24px;background:#f2f6fb;font-family:"Microsoft YaHei",sans-serif}</style>
+</html>

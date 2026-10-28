@@ -3,9 +3,9 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import assert from 'node:assert/strict'
 const exports={}
-const source=fs.readFileSync(new URL('../src/views/CrmAssistantView/managerReview.ts',import.meta.url),'utf8')
+const source=fs.readFileSync(new URL('../packages/joint-command/frontend/managerReview.ts',import.meta.url),'utf8')
 const regions={}
-vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/views/CrmAssistantView/liaisonRegions.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:regions})
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../packages/joint-command/frontend/liaisonRegions.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:regions})
 const require = () => regions
 vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports,require})
 const accounts=[{username:'a',name:'同名',member_keys:['a','E1']},{username:'b',name:'同名',member_keys:['b']}]
@@ -15,12 +15,16 @@ const people=[{id:'p',unit_id:'u'},{id:'q',unit_id:'v'}]
 const units=[{id:'u',business_regions:['东区']},{id:'v',business_regions:['广东区','东区']}]
 const result=exports.managerReviewOptions(accounts,staff,relations,people,units)
 const a=result.find(m=>m.username==='a'),b=result.find(m=>m.username==='b')
-assert.equal(result.length,3)
+assert.equal(result.length,2,'exclude accounts with no personnel region even when clients are in the four regions')
 assert.equal(a.count,1)
 assert.equal(a.regions.join(','),'西区','explicit personnel region beats customer geography')
-assert.equal(b.regions.join(','),'广东区,东区','legacy personnel inferred from client business areas')
+assert.equal(b,undefined,'customer geography must not promote non-regional staff into manager directory')
 assert.equal(result.find(m=>m.username==='liaison:external').member_keys[0],'external')
-assert.equal(result.filter(m=>m.name==='同名').length,2,'never merge by display name')
+assert.equal(result.filter(m=>m.name==='同名').length,1)
+const regional=exports.managerReviewOptions([{username:'east',name:'区域人员',department:'联合作战指挥中心 / 东区作战平台',member_keys:['east']},{username:'gd',name:'区域人员',department:'广东作战平台',member_keys:['gd']},{username:'admin',name:'管理员',department:'总部',member_keys:['admin']}],[],[{our_member:'admin',person_id:'p'}],people,units)
+assert.equal(regional.map(m=>m.username).join(','),'east,gd','keep regional people even with zero clients; exclude headquarters')
+assert.equal(regional[0].count,0)
+assert.equal(regional[1].regions.join(','),'广东区','Guangdong is not East')
 assert.equal(accounts.length,2)
 console.log('PASS personnel regions, cross-region clients, alias deduplication, non-account liaisons, distinct names')
 const legacySource = source

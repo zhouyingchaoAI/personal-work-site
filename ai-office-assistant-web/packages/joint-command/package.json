@@ -1,0 +1,17 @@
+{
+  "name": "@chency/joint-command",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./frontend/index.vue",
+    "./organization": "./frontend/InternalOrganizationEntry.vue"
+  },
+  "scripts": {
+    "dev": "npm --prefix ../.. run dev -- --open /workspace/crm",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "build": "npm --prefix ../.. run build",
+    "test": "node scripts/test.mjs",
+    "test:backend": "python3 scripts/test_backend.py"
+  }
+}

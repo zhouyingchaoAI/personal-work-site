@@ -1,0 +1,50 @@
+.business-analysis.is-dark {
+  --el-bg-color: #0c2340;
+  --el-bg-color-overlay: #102b4d;
+  --el-fill-color-blank: #0c2340;
+  --el-fill-color-light: #173858;
+  --el-fill-color: #163450;
+  --el-fill-color-lighter: #122c48;
+  --el-fill-color-extra-light: #102840;
+  --el-text-color-primary: #e4efff;
+  --el-text-color-regular: #bed0e6;
+  --el-text-color-secondary: #99b2ce;
+  --el-text-color-placeholder: #8fa9c5;
+  --el-border-color: #355b85;
+  --el-border-color-light: #294b70;
+  --el-border-color-lighter: #234363;
+  --el-color-info-light-9: #132f4a;
+  --el-color-info-light-8: #284b6c;
+  --el-color-info: #afc6df;
+  --el-disabled-bg-color: #142b43;
+  --el-disabled-text-color: #6f89a5;
+  --el-disabled-border-color: #29435e;
+}
+.business-analysis.is-dark .el-button:not(.el-button--primary):not(.is-text):not(.is-link) {
+  --el-button-bg-color: #102b4d;
+  --el-button-text-color: #d5e6fa;
+  --el-button-border-color: #355b85;
+  --el-button-hover-bg-color: #193f65;
+  --el-button-hover-text-color: #9feaff;
+  --el-button-hover-border-color: #36b6de;
+  --el-button-active-bg-color: #19466e;
+  --el-button-disabled-bg-color: #142b43;
+  --el-button-disabled-text-color: #6f89a5;
+  --el-button-disabled-border-color: #29435e;
+}
+.business-analysis.is-dark .el-alert--info.is-light {
+  background: #132f4a;
+  color: #afc6df;
+  border: 1px solid #294b70;
+}
+.business-analysis.is-dark .el-select__wrapper,
+.business-analysis.is-dark .el-input__wrapper {
+  background: #102b4d;
+  box-shadow: 0 0 0 1px #355b85 inset;
+}
+.business-analysis.is-dark .el-select__selected-item,
+.business-analysis.is-dark .el-input__inner { color: #d5e6fa; }
+.business-analysis.is-dark .el-select__caret { color: #92b4d5; }
+.business-analysis.is-dark .chart-layout-tools,
+.business-analysis.is-dark.layout-editing [data-layout-id] > .chart-layout-tools { background: #102b4d; color: #bed0e6; }
+.business-analysis.is-dark .chart-layout-tools button { background: #163858; color: #d5e6fa; border-color: #355b85; }

@@ -19,6 +19,7 @@ import {
   FolderOpened,
   Management,
   Coin,
+  DataAnalysis,
 } from '@element-plus/icons-vue'
 import type { User } from '../services/personalWorkApi'
 
@@ -39,6 +40,7 @@ export type MenuId =
   | 'crm'
   | 'ledger'
   | 'cashflow'
+  | 'datacenter'
   | 'workflow'
   | 'reimbursement'
   | 'lobsterbase'
@@ -83,9 +85,10 @@ export const sidebarMenuItems: SidebarMenuItem[] = [
   { id: 'meeting', label: '会议助手', icon: Microphone, iconTone: 'purple', group: 'main', roles: ['member', 'admin', 'superadmin'], category: '知识与会议', description: '会议录音转写、翻译与纪要生成，一键归档' },
   { id: 'knowledge', label: '知识库', icon: Collection, iconTone: 'deep-blue', group: 'main', roles: ['member', 'admin', 'superadmin'], category: '知识与会议', description: '上传文档构建个人知识库，检索问答带引用溯源' },
   { id: 'project', label: '项目助手', icon: FolderOpened, iconTone: 'purple', group: 'main', roles: ['member', 'admin', 'superadmin'], category: '协作与效率', description: '管理项目成员、角色、资料与项目日报周报时间线' },
-  { id: 'crm', label: '客户经营助手', icon: Connection, iconTone: 'deep-blue', group: 'main', roles: ['member', 'admin', 'superadmin'], category: '协作与效率', description: '五层建模客户关系资产，关系强度评分、衰减预警与项目作战地图' },
-  { id: 'ledger', label: '经营管理台账', icon: Management, iconTone: 'orange', group: 'main', roles: ['member', 'admin', 'superadmin'], category: '协作与效率', description: '集中管理项目合同、采购交付、验收回款与经营风险' },
+  { id: 'crm', label: '联指经营助手', icon: Connection, iconTone: 'deep-blue', group: 'main', roles: ['member', 'admin', 'superadmin'], category: '协作与效率', description: '五层建模客户关系资产，关系强度评分、衰减预警与项目作战地图' },
+  { id: 'ledger', label: '项目管理台账', icon: Management, iconTone: 'orange', group: 'main', roles: ['member', 'admin', 'superadmin'], category: '协作与效率', description: '集中管理项目合同、采购交付、验收回款与经营风险' },
   { id: 'cashflow', label: '资金测算助手', icon: Coin, iconTone: 'green', group: 'main', roles: ['member', 'admin', 'superadmin'], category: '协作与效率', description: '按区域、客户与项目测算回款节奏、资金缺口和垫资成本' },
+  { id: 'datacenter', label: '数据中台', icon: DataAnalysis, iconTone: 'deep-blue', group: 'main', roles: ['superadmin'], category: '平台管理', description: '数据资产总览、备份与恢复、存储与服务状态（仅超级管理员）' },
   { id: 'workflow', label: '工作流中心', icon: Connection, iconTone: 'purple', group: 'main', roles: ['member', 'admin', 'superadmin'], category: '流程编排', description: '可视化编排智能体工作流，把多步任务自动串起来' },
   { id: 'reimbursement', label: '报销助手', icon: Tickets, iconTone: 'orange', group: 'main', roles: ['member', 'admin', 'superadmin'], category: '协作与效率', description: '发票收集识别、附件合并与报销材料一键整理' },
   { id: 'lobsterbase', label: '龙虾基地', icon: Ship, iconTone: 'green', group: 'main', roles: ['member', 'admin', 'superadmin'], category: '流程编排', description: '连接龙虾平台的自定义智能体，扩展更多自动化能力' },
@@ -101,7 +104,7 @@ export function isMenuId(value: string): value is MenuId {
 }
 
 export function hasAssistantPermission(menuId: string, user: User) {
-  return user.role === 'superadmin' || (user.assistant_permissions?.[menuId] ?? !['crm', 'ledger', 'cashflow'].includes(menuId))
+  return user.role === 'superadmin' || (user.assistant_permissions?.[menuId] ?? !['crm', 'ledger', 'cashflow', 'datacenter'].includes(menuId))
 }
 
 export function isMenuVisible(menuId: MenuId, user: User) {

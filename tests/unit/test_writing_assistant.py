@@ -1,23 +1,26 @@
 import base64
+import io
 import json
-import shutil
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 import backend.runtime as rt
+from tests.unit.officedb_testing import db_variant
 
 
 class WritingAssistantTest(unittest.TestCase):
     def setUp(self):
         self.username = "unit_writing_user"
+        self.tmp = tempfile.TemporaryDirectory()
+        self.original_dir = rt.USER_DATA_DIR
+        rt.USER_DATA_DIR = Path(self.tmp.name)
         self.root = rt.user_root(self.username)
-        if self.root.exists():
-            shutil.rmtree(self.root)
 
     def tearDown(self):
-        if self.root.exists():
-            shutil.rmtree(self.root)
+        rt.USER_DATA_DIR = self.original_dir
+        self.tmp.cleanup()
 
     def _file_payload(self, name, text):
         encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
@@ -40,8 +43,7 @@ class WritingAssistantTest(unittest.TestCase):
 
     def test_selected_personal_report_is_added_as_writing_reference(self):
         report = self.root / "reports" / "weekly" / "工作周报-2026.8.14.xlsx"
-        report.parent.mkdir(parents=True, exist_ok=True)
-        report.write_bytes(b"placeholder")
+        rt.office_blob_write("reports", report, b"placeholder")
         with patch.object(rt, "all_files", return_value=[{
             "kind": "weekly", "name": report.name, "path": str(report),
         }]), patch.object(rt, "_kb_extract_text", return_value="历史周报中的项目进展"):
@@ -126,8 +128,18 @@ class WritingAssistantTest(unittest.TestCase):
         export = rt.writing_export({"id": result["item"]["id"], "format": "txt"}, self.username)
         self.assertTrue(export["ok"])
         path = Path(export["path"])
-        self.assertTrue(path.exists())
-        self.assertIn("工作总结", path.read_text(encoding="utf-8"))
+        raw = rt.office_blob_read("writing", path)
+        self.assertIsNotNone(raw)
+        self.assertIn("工作总结", raw.decode("utf-8"))
+        uploads = rt.writing_upload({"files": [self._file_payload("待删.txt", "内容")]}, self.username)["files"]
+        self.assertEqual(len(rt.writing_uploads(self.username)["files"]), 1)
+        rt.writing_delete_upload({"id": uploads[0]["id"]}, self.username)
+        self.assertEqual(rt.writing_uploads(self.username)["files"], [])
+        self.assertEqual(rt.office_blob_list("writing", self.root / "writing" / "uploads"), [])
+        rt.writing_delete_history({"id": result["item"]["id"]}, self.username)
+        self.assertEqual(rt.writing_history(self.username)["items"], [])
+        with self.assertRaises(ValueError):
+            rt.writing_delete_history({"id": result["item"]["id"]}, self.username)
 
     def test_docx_export_converts_markdown_table_to_native_word_table(self):
         from docx import Document
@@ -176,7 +188,7 @@ class WritingAssistantTest(unittest.TestCase):
         }, self.username)
 
         self.assertEqual(export["format"], "xlsx")
-        workbook = load_workbook(export["path"])
+        workbook = load_workbook(io.BytesIO(rt.office_blob_read("writing", Path(export["path"]))))
         sheet = workbook["表格1"]
         self.assertEqual(sheet["A1"].value, "序号")
         self.assertEqual(sheet["B2"].value, "完成 ASC 项目归档")
@@ -184,6 +196,9 @@ class WritingAssistantTest(unittest.TestCase):
     def test_xlsx_export_requires_a_markdown_table(self):
         with self.assertRaisesRegex(ValueError, "未识别到可导出的表格"):
             rt.writing_export({"title": "工作总结", "format": "xlsx", "content": "这是一段普通正文。"}, self.username)
+
+
+WritingAssistantDbModeTest = db_variant(WritingAssistantTest)
 
 
 if __name__ == "__main__":

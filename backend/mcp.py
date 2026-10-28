@@ -104,6 +104,8 @@ def _mcp_tools_list() -> list:
 def _mcp_call_tool(name: str, arguments: dict, username: str) -> dict:
     try:
         result = execute_skill(name, arguments, username, source="mcp")
+        if name == "tickets.image":
+            return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}, ticket_mcp_image_content(result)]}
         return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}]}
     except Exception as exc:
         error_body = json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)

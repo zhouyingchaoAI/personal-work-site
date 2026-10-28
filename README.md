@@ -1,5 +1,9 @@
 # 个人智能办公助手
 
+## 联指经营助手子工程
+
+联指经营助手的前后端业务源码集中在 [`ai-office-assistant-web/packages/joint-command`](ai-office-assistant-web/packages/joint-command/README.md)。原入口、API及数据位置保持不变；开发、测试、构建与部署方式见子工程维护文档。
+
 这是一个本地优先的个人智能办公工作台。它把周报、出差报告、邮件、工作日记、每日资讯、金点子论坛和 3D 数字人助手集中到同一个 Web 应用里，适合个人或小团队在内网/本机环境中使用。
 
 ## 主要能力

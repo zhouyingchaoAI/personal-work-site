@@ -28,20 +28,12 @@ def _project_now():
 
 
 def _project_read_all():
-    path = project_index_path()
-    if not path.exists():
-        return []
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
+    data = office_doc_read("project", project_index_path(), [])
     return data if isinstance(data, list) else []
 
 
 def _project_write_all(projects):
-    path = project_index_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(projects, ensure_ascii=False, indent=2), encoding="utf-8")
+    office_doc_write("project", project_index_path(), projects)
 
 
 def _project_id():
@@ -223,26 +215,14 @@ def project_delete(payload, username):
         raise PermissionError("只有项目管理员可以删除该项目")
 
     # 项目目录只存放项目内上传的资料；日报、周报等个人文件位于各自用户目录，
-    # 删除项目时保留它们。先将目录原子移动到暂存名，索引写入失败时可恢复。
+    # 删除项目时保留它们。先移除索引，再清理该项目的资料。
     root = project_root_dir().resolve()
     target = (project_root_dir() / project["id"]).resolve()
     if target.parent != root:
         raise ValueError("项目目录无效")
-    staged = root / f".deleting-{project['id']}-{secrets.token_hex(4)}"
-    moved = False
-    if target.exists():
-        target.rename(staged)
-        moved = True
-
     remaining = projects[:index] + projects[index + 1:]
-    try:
-        _project_write_all(remaining)
-    except Exception:
-        if moved and staged.exists():
-            staged.rename(target)
-        raise
-    if moved and staged.exists():
-        shutil.rmtree(staged)
+    _project_write_all(remaining)
+    office_blob_delete_tree("project", project_root_dir() / project["id"])
     return {"ok": True, "deleted_id": project["id"]}
 
 
@@ -283,9 +263,8 @@ def project_upload_file(payload, username):
         raise ValueError("项目资料不能超过 30MB")
     file_id = "file-" + secrets.token_hex(6)
     directory = project_root_dir() / project["id"] / "files"
-    directory.mkdir(parents=True, exist_ok=True)
     stored_name = f"{file_id}-{name}"
-    (directory / stored_name).write_bytes(raw)
+    office_blob_write("project", directory / stored_name, raw, content_type=mimetypes.guess_type(name)[0])
     item = {"id": file_id, "name": name, "stored_name": stored_name, "size": len(raw), "uploaded_by": safe_username(username), "created_at": _project_now()}
     project.setdefault("files", []).append(item)
     project["updated_at"] = _project_now()
@@ -302,9 +281,10 @@ def project_file(project_id, file_id, username):
     if not item:
         raise ValueError("项目资料不存在")
     path = project_root_dir() / project["id"] / "files" / item.get("stored_name", "")
-    if not path.exists():
+    raw = office_blob_read("project", path)
+    if raw is None:
         raise ValueError("项目资料已丢失")
-    return item["name"], path.read_bytes()
+    return item["name"], raw
 
 
 def project_report_file(project_id, report_id, username):
@@ -319,9 +299,11 @@ def project_report_file(project_id, report_id, username):
         path.resolve().relative_to(USER_DATA_DIR.resolve())
     except ValueError as exc:
         raise ValueError("项目报告路径无效") from exc
-    if not path.exists() or not path.is_file():
+    # 报告文件属于周报/出差报告助手，按其存储模式读取（键即原路径）。
+    raw = office_blob_read("reports", path)
+    if raw is None:
         raise ValueError("项目报告文件不存在")
-    return item.get("name") or path.name, path.read_bytes()
+    return item.get("name") or path.name, raw
 
 
 def project_record_report(project_id, kind, path, username, payload=None):

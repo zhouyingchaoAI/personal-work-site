@@ -21,7 +21,7 @@ onMounted(load)
 <template>
   <section class="workspace-main ledger-main">
     <ContractWorkbench v-if="workbenchVisible" />
-    <header class="ledger-head"><div><p>经营协同 · 项目全周期</p><h1>经营管理台账助手</h1><span>覆盖销售合同、采购交付、验收、回款及风险跟进。</span></div><el-button type="primary" :icon="Plus" @click="open()">新建台账</el-button></header>
+    <header class="ledger-head"><div><p>经营协同 · 项目全周期</p><h1>项目管理台账助手</h1><span>覆盖销售合同、采购交付、验收、回款及风险跟进。</span></div><el-button type="primary" :icon="Plus" @click="open()">新建台账</el-button></header>
     <section class="ledger-stats"><article><span>在管项目</span><strong>{{ summary.total }}</strong></article><article><span>合同金额</span><strong>{{ money(summary.contract_amount) }}</strong></article><article><span>已回款</span><strong>{{ money(summary.received_amount) }}</strong></article><article class="risk"><span>关注 / 逾期</span><strong>{{ summary.attention }} / {{ summary.overdue }}</strong></article></section>
     <section class="ledger-tip"><el-icon><Warning /></el-icon><span>参考合同、采购、到货验收与项目损益测算资料设计。请持续登记关键节点和下一步动作，便于经营复盘。</span></section>
     <section class="ledger-flows"><article><h3>单据自动生成</h3><p>合同清单驱动送货、签收、验收、结算及支付申请单。</p><el-button type="primary" plain @click="startFlow('合同')">导入合同 / 新建单据任务</el-button></article><article><h3>回款与任务自动管理</h3><p>按项目编码登记发货、验收、回款节点和项目经理待办。</p><el-button type="primary" plain @click="startFlow('回款')">新建回款跟踪任务</el-button></article><article><h3>风险预警与台账管理</h3><p>逾期节点标红，集中处理待签单据、待回款与交付风险。</p><el-button type="warning" plain @click="startFlow('交付')">登记风险 / 交付事项</el-button></article></section>

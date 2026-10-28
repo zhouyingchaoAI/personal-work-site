@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 import backend.runtime as rt
+from tests.unit.officedb_testing import db_variant
 
 
 class ReportStorageTests(unittest.TestCase):
@@ -51,16 +52,14 @@ class ReportStorageTests(unittest.TestCase):
         name = "易鲁剑工作周报2026.5.18-2026.5.22.xlsx"
         source = rt.user_generated_kind_dir("yilujian", "weekly") / name
         target = rt.user_report_kind_dir("yilujian", "weekly") / name
-        source.parent.mkdir(parents=True, exist_ok=True)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        source.write_text("new", encoding="utf-8")
-        target.write_text("old", encoding="utf-8")
+        rt.office_blob_write("reports", source, b"new")
+        rt.office_blob_write("reports", target, b"old")
 
         promoted = rt.promote_sent_report(name, "yilujian")
 
         self.assertEqual(promoted["path"], str(target))
-        self.assertFalse(source.exists())
-        self.assertEqual(target.read_text(encoding="utf-8"), "new")
+        self.assertFalse(rt.office_blob_exists("reports", source))
+        self.assertEqual(rt.office_blob_read("reports", target), b"new")
 
     def test_weekly_period_filename_drops_leading_zeroes(self):
         self.assertEqual(
@@ -70,11 +69,10 @@ class ReportStorageTests(unittest.TestCase):
 
     def test_legacy_auto_numbered_history_files_are_hidden(self):
         base = rt.user_report_dir("yilujian")
-        base.mkdir(parents=True, exist_ok=True)
         visible = base / "易鲁剑工作周报2026.5.18-2026.5.22.xlsx"
         legacy = base / "易鲁剑工作周报2026.5.18-2026.5.22-生成1.xlsx"
-        visible.write_text("visible", encoding="utf-8")
-        legacy.write_text("legacy", encoding="utf-8")
+        rt.office_blob_write("reports", visible, b"visible")
+        rt.office_blob_write("reports", legacy, b"legacy")
 
         names = [item["name"] for item in rt.report_files("yilujian")]
 
@@ -121,7 +119,8 @@ class ReportStorageTests(unittest.TestCase):
 
             html = rt.append_email_signature_html("<p>附件：易鲁剑工作周报.xlsx</p>", "yilujian")
 
-            self.assertTrue(html.endswith("<p>易鲁剑</p>"))
+            self.assertTrue(html.endswith('<div class="email-signature">易鲁剑</div>'))
+            self.assertEqual(html.count("易鲁剑"), 2)
         finally:
             rt.read_config = old_read_config
 
@@ -145,7 +144,7 @@ class ReportStorageTests(unittest.TestCase):
                 "newuser",
             )
 
-            self.assertTrue(path.exists())
+            self.assertTrue(rt.office_blob_exists("reports", path))
             self.assertEqual(path.name, "新用户工作周报2026.5.18-2026.5.22.xlsx")
             self.assertEqual(path.parent, rt.user_generated_kind_dir("newuser", "weekly"))
         finally:
@@ -165,7 +164,9 @@ class ReportStorageTests(unittest.TestCase):
                 "user_mail_settings": {},
             }
             output = rt.generated_report_path("周颖超工作周报2026.8.17-2026.8.21.xlsx", "zhouyingchao", "weekly")
-            Workbook().save(output)
+            buffer = __import__("io").BytesIO()
+            Workbook().save(buffer)
+            rt.office_blob_write("reports", output, buffer.getvalue())
             # 报告列表只剩当前已经生成的同名文件，正是邮件发送页再次生成会遇到的情况。
             rt.newest_any = lambda *args, **kwargs: {"path": str(output)}
             rt.newest = lambda *args, **kwargs: {"path": str(output)}
@@ -176,7 +177,7 @@ class ReportStorageTests(unittest.TestCase):
             )
 
             self.assertEqual(result, output)
-            self.assertTrue(result.exists())
+            self.assertTrue(rt.office_blob_exists("reports", result))
         finally:
             rt.read_config = old_read_config
             rt.newest_any = old_newest_any
@@ -237,10 +238,14 @@ class ReportStorageTests(unittest.TestCase):
                 "newuser",
             )
 
-            self.assertTrue(path.exists())
+            self.assertTrue(rt.office_blob_exists("reports", path))
             self.assertEqual(path.name, "出差报告-20260518-0520-新用户.docx")
             self.assertEqual(path.parent, rt.user_generated_kind_dir("newuser", "trip"))
-            preview = rt.preview_docx(path)
+            with rt.office_blob_local("reports", path) as local:
+                preview = rt.preview_docx(local)
+            draft = rt.compose_draft("trip", path.name, "newuser")
+            self.assertIn("首次出差", draft["preview"])
+            self.assertEqual(draft["attachment"], path.name)
             self.assertIn("新用户", preview)
             self.assertIn("首次出差", preview)
             self.assertIn("工作思路", preview)
@@ -286,13 +291,18 @@ class ReportStorageTests(unittest.TestCase):
         path = Path(saved["template"]["path"])
 
         self.assertEqual(path, rt.report_template_path("weekly"))
-        self.assertEqual(path.read_bytes(), raw)
+        self.assertEqual(rt.office_blob_read("reports", path), raw)
         info = rt.report_template_info("newuser")
         self.assertTrue(info["templates"]["weekly"]["configured"])
+        self.assertEqual(rt.configured_template_path("weekly", "newuser"), path)
 
         deleted = rt.delete_report_template({"kind": "weekly"}, "newuser")
-        self.assertFalse(rt.report_template_path("weekly").exists())
+        self.assertFalse(rt.office_blob_exists("reports", rt.report_template_path("weekly")))
+        self.assertIsNone(rt.configured_template_path("weekly", "newuser"))
         self.assertFalse(deleted["templates"]["weekly"]["configured"])
+
+
+ReportStorageDbModeTests = db_variant(ReportStorageTests)
 
 
 if __name__ == "__main__":

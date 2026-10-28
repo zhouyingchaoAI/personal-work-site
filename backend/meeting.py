@@ -201,9 +201,7 @@ def _meeting_dir(username: str):
     safe = Path(str(username or "")).name
     if not safe:
         raise ValueError("用户无效")
-    path = USER_DATA_DIR / safe / "meetings"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    return USER_DATA_DIR / safe / "meetings"
 
 
 def _meeting_path(username: str, meeting_id: str):
@@ -217,12 +215,9 @@ def meeting_save(payload: dict, username: str = "") -> dict:
     payload = payload or {}
     meeting_id = str(payload.get("id", "") or "").strip() or datetime.now().strftime("m%Y%m%d%H%M%S")
     path = _meeting_path(username, meeting_id)
-    existing = {}
-    if path.exists():
-        try:
-            existing = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            existing = {}
+    existing = office_doc_read("meeting", path, {})
+    if not isinstance(existing, dict):
+        existing = {}
     segments = payload.get("segments")
     record = {
         "id": meeting_id,
@@ -248,20 +243,18 @@ def meeting_save(payload: dict, username: str = "") -> dict:
             }
         )
     record["segments"] = cleaned
-    path.write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
+    office_doc_write("meeting", path, record)
     return {"ok": True, "id": meeting_id, "meeting": record}
 
 
 def meeting_list(username: str = "") -> dict:
     items = []
-    for path in sorted(_meeting_dir(username).glob("*.json"), reverse=True):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
+    for name, data, _ in sorted(office_doc_list("meeting", _meeting_dir(username)), key=lambda entry: entry[0], reverse=True):
+        if not isinstance(data, dict):
             continue
         items.append(
             {
-                "id": data.get("id") or path.stem,
+                "id": data.get("id") or name[:-5],
                 "title": data.get("title") or "未命名会议",
                 "created_at": data.get("created_at", ""),
                 "updated_at": data.get("updated_at", ""),
@@ -274,15 +267,13 @@ def meeting_list(username: str = "") -> dict:
 
 
 def meeting_get(meeting_id: str, username: str = "") -> dict:
-    path = _meeting_path(username, meeting_id)
-    if not path.exists():
+    meeting = office_doc_read("meeting", _meeting_path(username, meeting_id), None)
+    if not isinstance(meeting, dict):
         raise ValueError("会议记录不存在")
-    return {"ok": True, "meeting": json.loads(path.read_text(encoding="utf-8"))}
+    return {"ok": True, "meeting": meeting}
 
 
 def meeting_delete(payload: dict, username: str = "") -> dict:
     payload = payload or {}
-    path = _meeting_path(username, str(payload.get("id", "") or ""))
-    if path.exists():
-        path.unlink()
+    office_doc_delete("meeting", _meeting_path(username, str(payload.get("id", "") or "")))
     return {"ok": True}

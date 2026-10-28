@@ -1,0 +1,15 @@
+<!doctype html><html lang="zh-CN"><meta charset="UTF-8"><div id="app"></div>
+<script type="module">
+import {createApp} from 'vue/dist/vue.esm-bundler.js'
+import {createRouter,createMemoryHistory} from 'vue-router'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import WorkOrderView from '../../src/views/WorkOrderView/index.vue'
+import {authState} from '../../src/services/authSession'
+authState.user={username:'me',name:'本人',role:'member'}
+const router=createRouter({history:createMemoryHistory(),routes:[{path:'/workspace/:menu',component:WorkOrderView}]})
+await router.push('/workspace/workorder')
+createApp({template:'<router-view v-slot="{Component}"><KeepAlive><component :is="Component" /></KeepAlive></router-view>'}).use(router).use(ElementPlus).mount('#app')
+window.testRouter=router
+window.testAuth=authState
+</script></html>

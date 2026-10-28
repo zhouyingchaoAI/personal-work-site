@@ -1,9 +1,9 @@
 """Assistant entitlements. Missing overrides inherit defaults, including future assistants."""
 ASSISTANT_IDS = ("writing", "weekly", "trip", "diary", "forum", "news", "mailassistant",
                  "meeting", "knowledge", "project", "crm", "ledger", "cashflow", "workflow",
-                 "reimbursement", "lobsterbase")
+                 "reimbursement", "lobsterbase", "datacenter")
 # 资金测算涉及项目回款与垫资数据，和客户经营、经营台账一样默认仅超级管理员可用。
-ASSISTANT_DEFAULT_DENIED = {"crm", "ledger", "cashflow"}
+ASSISTANT_DEFAULT_DENIED = {"crm", "ledger", "cashflow", "datacenter"}
 
 
 def assistant_permissions(user):
@@ -32,6 +32,7 @@ def validate_assistant_permissions(value):
 def assistant_for_path(path):
     for prefix, assistant in (
         ("/api/crm", "crm"), ("/api/ledger", "ledger"), ("/api/cashflow", "cashflow"), ("/api/contracts", "ledger"),
+        ("/api/datacenter", "datacenter"),
         ("/api/projects", "project"), ("/api/writing", "writing"),
         ("/api/diary", "diary"), ("/api/forum", "forum"), ("/api/news", "news"),
         ("/api/meeting", "meeting"), ("/api/knowledge", "knowledge"),

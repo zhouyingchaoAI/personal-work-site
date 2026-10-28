@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from backend import runtime as rt
+from tests.unit.officedb_testing import db_variant
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVER = ROOT / "backend" / "server.py"
@@ -28,7 +29,6 @@ class TicketSplitTests(unittest.TestCase):
             try:
                 rt.USER_DATA_DIR = Path(tmp)
                 forum_dir = Path(tmp) / "_forum"
-                forum_dir.mkdir(parents=True)
                 seed = [
                     {"id": "idea1", "title": "金点子", "body": "x", "preset": "", "comments": []},
                     {"id": "t1", "title": "工单甲", "body": "请处理", "preset": "platform_ticket",
@@ -36,7 +36,7 @@ class TicketSplitTests(unittest.TestCase):
                     {"id": "t2", "title": "工单乙", "body": "请处理", "preset": "platform_ticket",
                      "comments": [{"id": "c2", "content": "修复", "status": "resolved"}]},
                 ]
-                (forum_dir / "topics.json").write_text(json.dumps(seed, ensure_ascii=False), encoding="utf-8")
+                rt.office_doc_write("forum", forum_dir / "topics.json", seed)
 
                 # Forum keeps only the idea; tickets are removed.
                 forum_titles = [t["title"] for t in rt.forum_list_topics("admin")["topics"]]
@@ -50,7 +50,8 @@ class TicketSplitTests(unittest.TestCase):
                 self.assertFalse(tl["tickets"][1]["pinned"])
 
                 # A backup of the original forum store is written before rewriting.
-                self.assertTrue(list(forum_dir.glob("topics.json.bak-before-ticket-split-*")))
+                self.assertTrue([name for name, _, _ in rt.office_doc_list("forum", forum_dir, suffix="")
+                                 if name.startswith("topics.json.bak-before-ticket-split-")])
 
                 # No data is lost across the split.
                 self.assertEqual(len(rt.load_tickets()) + len(rt.forum_list_topics("admin")["topics"]), 3)
@@ -63,6 +64,7 @@ class TicketSplitTests(unittest.TestCase):
             try:
                 rt.USER_DATA_DIR = Path(tmp)
                 t = rt.ticket_create({"title": "新工单", "body": "内容", "module": "邮件助手"}, "admin")["ticket"]
+                self.assertEqual(t['author_username'], 'admin')
                 self.assertTrue(t["pinned"])
                 self.assertFalse(t["resolved"])
                 self.assertEqual(t["status"], "open")
@@ -112,10 +114,9 @@ class TicketSplitTests(unittest.TestCase):
             try:
                 rt.USER_DATA_DIR = Path(tmp)
                 forum_dir = Path(tmp) / "_forum"
-                forum_dir.mkdir(parents=True)
-                (forum_dir / "topics.json").write_text(json.dumps([
+                rt.office_doc_write("forum", forum_dir / "topics.json", [
                     {"id": "t1", "title": "工单", "body": "x", "preset": "platform_ticket", "comments": []},
-                ], ensure_ascii=False), encoding="utf-8")
+                ])
                 rt.ensure_tickets_migrated()
                 rt.ensure_tickets_migrated()
                 self.assertEqual(len(rt.load_tickets()), 1)
@@ -170,3 +171,6 @@ class TicketSplitTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+TicketSplitDbModeTests = db_variant(TicketSplitTests)

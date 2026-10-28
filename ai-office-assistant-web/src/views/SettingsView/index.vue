@@ -1337,7 +1337,7 @@ async function handleBatchPermissions() {
   const scope = batchDepartments.value.length ? batchDepartments.value.join('、') : `${batchCompany.value}全公司`
   const action = batchEnabled.value ? '开通' : '关闭'
   try {
-    await ElMessageBox.confirm(`将为 ${scope} 的 ${batchTargetCount.value} 位成员${action}所选助手权限。超级管理员与客户经营助手权限不受影响。`, `确认批量${action}`, {
+    await ElMessageBox.confirm(`将为 ${scope} 的 ${batchTargetCount.value} 位成员${action}所选助手权限。超级管理员与联指经营助手权限不受影响。`, `确认批量${action}`, {
       confirmButtonText: `确认${action}`,
       cancelButtonText: '取消',
       type: 'warning',
@@ -2376,7 +2376,7 @@ onMounted(() => {
         <div class="settings-section-head">
           <div>
             <h3>用户管理</h3>
-    <span>仅超级管理员可授予或撤销助手权限。客户经营助手会同步写入其专项数据范围权限，默认仅可见本人资料。</span>
+    <span>仅超级管理员可授予或撤销助手权限。联指经营助手会同步写入其专项数据范围权限，默认仅可见本人资料。</span>
           </div>
           <div class="settings-section-actions">
             <button class="settings-button settings-button--ghost" type="button" :disabled="loading.users" @click="loadUsers">
@@ -2407,7 +2407,7 @@ onMounted(() => {
         <section class="batch-permission-panel">
           <div>
             <strong>按组织批量授权</strong>
-            <span>全部助手均可在此批量开通或关闭；客户经营助手会按专项规则授予“仅本人数据”访问权限。</span>
+            <span>全部助手均可在此批量开通或关闭；联指经营助手会按专项规则授予“仅本人数据”访问权限。</span>
           </div>
           <div class="batch-permission-controls">
             <el-select v-model="batchCompany" filterable placeholder="选择公司" class="settings-select" @change="handleBatchCompanyChange">
@@ -2514,7 +2514,7 @@ onMounted(() => {
             </div>
             <div class="user-assistant-permissions">
               <strong>助手使用权限</strong>
-              <p>客户经营助手由「客户经营助手 → 安全权限」专门管理。</p>
+              <p>联指经营助手由「联指经营助手 → 安全权限」专门管理。</p>
               <p v-if="userDrafts[item.username].role === 'superadmin'">超级管理员拥有全部助手权限。</p>
               <div class="user-permission-options">
               <el-checkbox v-for="assistant in permissionAssistants" :key="assistant.id"

@@ -8,11 +8,7 @@ def _cashflow_workbook_state_path(username):
 
 
 def _cashflow_workbook_state(username):
-    path = _cashflow_workbook_state_path(username)
-    try:
-        value = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    except (OSError, json.JSONDecodeError):
-        value = {}
+    value = office_doc_read("cashflow", _cashflow_workbook_state_path(username), {})
     return value if isinstance(value, dict) else {}
 
 
@@ -102,9 +98,7 @@ def cashflow_workbook_save(payload, username):
              "customer": str((payload or {}).get("customer", "")).strip()[:120],
              "region": _cashflow_region((payload or {}).get("region", "未分区")), "cells": cells,
              "updated_at": datetime.now().isoformat(timespec="seconds")}
-    path = _cashflow_workbook_state_path(username)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    office_doc_write("cashflow", _cashflow_workbook_state_path(username), state)
     return {"ok": True, "updated_at": state["updated_at"], "filled_cells": sum(len(values) for values in cells.values())}
 
 
@@ -117,10 +111,12 @@ def cashflow_workbook_export(username):
         for coordinate, value in values.items():
             sheet[coordinate] = value
     project_name = str(state.get("project_name") or "项目资金测算").replace("/", "-")[:80]
-    output_dir = user_root(safe_username(username)) / "cashflow_exports"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output = output_dir / f"{project_name}-{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx"
+    output = user_root(safe_username(username)) / "cashflow_exports" / f"{project_name}-{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx"
     book.calculation.fullCalcOnLoad = True
     book.calculation.forceFullCalc = True
-    book.save(output)
-    return output
+    buffer = io.BytesIO()
+    book.save(buffer)
+    raw = buffer.getvalue()
+    office_blob_write("cashflow", output, raw,
+                      content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return output.name, raw

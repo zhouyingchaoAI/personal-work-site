@@ -1,6 +1,6 @@
 # 我方组织画布
 
-入口：设置 → 用户管理，以及客户经营助手 → 组织架构 → 我方组织。两处共用 `InternalOrganizationEntry` / `InternalOrganizationCanvas`，仅超级管理员可读取、保存正式账号组织结构。
+入口：设置 → 用户管理，以及联指经营助手 → 组织架构 → 我方组织。两处共用 `InternalOrganizationEntry` / `InternalOrganizationCanvas`，仅超级管理员可读取、保存正式账号组织结构。
 
 ## 数据与操作
 

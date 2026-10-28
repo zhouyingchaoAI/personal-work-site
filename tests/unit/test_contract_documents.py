@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from docx import Document
 import backend.runtime as runtime
+from tests.unit.officedb_testing import db_variant
 
 
 class ContractDocumentsTests(unittest.TestCase):
@@ -175,3 +176,6 @@ class ContractDocumentsTests(unittest.TestCase):
         for quantity in ["11", "-1", "NaN", "0"]:
             with self.assertRaises(ValueError):
                 runtime.contract_generate({"id": record["id"], "revision": record["revision"], "kind": "送货单", "confirmed": True, "selections": [{"id": record["lines"][0]["id"], "quantity": quantity}]}, "alice")
+
+
+ContractDocumentsDbModeTests = db_variant(ContractDocumentsTests)

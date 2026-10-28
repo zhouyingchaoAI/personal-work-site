@@ -14,10 +14,7 @@ WRITING_MAX_KB_CHARS = 8000
 
 
 def _writing_dir(username):
-    base = user_root(username) / "writing"
-    for child in ("uploads", "history", "templates", "exports"):
-        (base / child).mkdir(parents=True, exist_ok=True)
-    return base
+    return user_root(username) / "writing"
 
 
 def _writing_now():
@@ -35,17 +32,17 @@ def _writing_safe_name(name):
 
 
 def _writing_json_read(path, default):
-    if not path.exists():
-        return default
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return default
+    return office_doc_read("writing", path, default)
 
 
 def _writing_json_write(path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    office_doc_write("writing", path, data)
+
+
+def _writing_json_list(directory):
+    """目录下 JSON 记录按更新时间倒序。"""
+    entries = sorted(office_doc_list("writing", directory), key=lambda entry: entry[2], reverse=True)
+    return [payload for _, payload, _ in entries if isinstance(payload, dict)]
 
 
 def _writing_decode_file(file_item):
@@ -97,7 +94,7 @@ def writing_upload(payload, username):
         text = _writing_extract_text(name, raw)
         upload_id = _writing_id("mat")
         raw_path = _writing_dir(username) / "uploads" / f"{upload_id}_{name}"
-        raw_path.write_bytes(raw)
+        office_blob_write("writing", raw_path, raw, content_type=mimetypes.guess_type(name)[0])
         record = {
             "id": upload_id,
             "name": name,
@@ -116,11 +113,9 @@ def writing_upload(payload, username):
 
 def writing_uploads(username):
     """列出该用户已上传并持久化的写作素材，供页面刷新后继续使用。"""
-    base = _writing_dir(username) / "uploads"
     items = []
-    for path in sorted(base.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-        rec = _writing_json_read(path, None)
-        if rec and rec.get("id"):
+    for rec in _writing_json_list(_writing_dir(username) / "uploads"):
+        if rec.get("id"):
             items.append({
                 "id": rec["id"],
                 "name": rec.get("name", ""),
@@ -135,26 +130,21 @@ def writing_delete_upload(payload, username):
     upload_id = str((payload or {}).get("id") or "").strip()
     base = _writing_dir(username) / "uploads"
     rec_path = base / f"{Path(upload_id).name}.json"
-    if not rec_path.exists():
+    rec = _writing_json_read(rec_path, None)
+    if not isinstance(rec, dict):
         raise ValueError("素材不存在")
-    rec = _writing_json_read(rec_path, {}) or {}
-    rec_path.unlink()
+    office_doc_delete("writing", rec_path)
     raw = rec.get("path")
     try:
-        if raw and Path(raw).exists():
-            Path(raw).unlink()
+        if raw and Path(raw).name.startswith(Path(upload_id).name + "_"):
+            office_blob_delete("writing", base / Path(raw).name)
     except Exception:
         pass
     return {"ok": True, "deleted": upload_id}
 
 
 def writing_templates(username):
-    base = _writing_dir(username) / "templates"
-    templates = []
-    for path in sorted(base.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-        item = _writing_json_read(path, None)
-        if item:
-            templates.append(item)
+    templates = _writing_json_list(_writing_dir(username) / "templates")
     if not templates:
         templates = [
             {"id": "builtin_plan", "name": "方案文档", "writing_type": "方案文档", "prompt": "按背景、目标、架构、实施计划、风险控制、验收指标组织。", "builtin": True},
@@ -207,10 +197,11 @@ def _writing_collect_materials(payload, username):
         if not report:
             continue
         path = Path(str(report.get("path") or ""))
-        if not path.exists() or not path.is_file():
+        raw = office_blob_read("reports", path) if path.name else None
+        if raw is None:
             continue
         try:
-            text = _kb_extract_text(path.name, path.read_bytes()).strip()
+            text = _kb_extract_text(path.name, raw).strip()
         except Exception:
             continue
         if text:
@@ -476,8 +467,7 @@ def writing_rewrite(payload, username):
 
 def writing_history(username):
     items = []
-    for path in sorted((_writing_dir(username) / "history").glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-        item = _writing_json_read(path, None)
+    for item in _writing_json_list(_writing_dir(username) / "history"):
         if item:
             summary = dict(item)
             summary["content_preview"] = str(summary.get("content") or "")[:240]
@@ -495,10 +485,8 @@ def writing_get_history(item_id, username):
 
 def writing_delete_history(payload, username):
     item_id = str((payload or {}).get("id") or "").strip()
-    path = _writing_history_path(username, item_id)
-    if not path.exists():
+    if not office_doc_delete("writing", _writing_history_path(username, item_id)):
         raise ValueError("写作历史不存在")
-    path.unlink()
     return {"ok": True, "deleted": item_id}
 
 
@@ -709,8 +697,8 @@ def _writing_markdown_to_docx(doc, content):
         index += 1
 
 
-def _writing_export_xlsx(path, content):
-    """将正文中的 Markdown 表格导出为原生 Excel 工作表。"""
+def _writing_export_xlsx(content):
+    """将正文中的 Markdown 表格导出为原生 Excel 工作表，返回文件字节。"""
     tables = _writing_markdown_tables(content)
     if not tables:
         raise ValueError("正文中未识别到可导出的表格，请先使用 Markdown 表格格式编写内容")
@@ -748,7 +736,9 @@ def _writing_export_xlsx(path, content):
         for column in range(1, len(headers) + 1):
             values = [str(headers[column - 1])] + [str(row[column - 1]) if column <= len(row) else "" for row in rows]
             sheet.column_dimensions[get_column_letter(column)].width = min(42, max(10, max(len(value) for value in values) + 2))
-    workbook.save(path)
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
 
 
 def writing_export(payload, username):
@@ -762,18 +752,21 @@ def writing_export(payload, username):
     safe_title = re.sub(r"[^0-9A-Za-z.\-\u4e00-\u9fff]+", "_", title)[:80] or "智能写作文稿"
     path = _writing_dir(username) / "exports" / f"{safe_title}-{export_id}.{fmt}"
     if fmt in {"md", "txt"}:
-        path.write_text(content, encoding="utf-8")
+        raw = content.encode("utf-8")
     elif fmt == "xlsx":
-        _writing_export_xlsx(path, content)
+        raw = _writing_export_xlsx(content)
     else:
         try:
             from docx import Document
 
             doc = Document()
             _writing_markdown_to_docx(doc, content)
-            doc.save(path)
+            buffer = io.BytesIO()
+            doc.save(buffer)
+            raw = buffer.getvalue()
         except Exception:
             path = path.with_suffix(".md")
-            path.write_text(content, encoding="utf-8")
+            raw = content.encode("utf-8")
             fmt = "md"
+    office_blob_write("writing", path, raw, content_type=mimetypes.guess_type(path.name)[0])
     return {"ok": True, "format": fmt, "name": path.name, "path": str(path), "download_url": f"/api/writing/download?file={urllib.parse.quote(path.name)}"}

@@ -367,6 +367,31 @@ def skill_defs():
             "safe": False,
         },
         {
+            "name": "tickets.list",
+            "module": "工单系统", "title": "查询最新工单",
+            "description": "实时读取工单列表，支持助手、提交人账号、状态、关键词和更新时间筛选。分页读取；updated_since 包含边界时间，轮询时按工单ID和updated_at去重。共享范围与平台工单系统一致。",
+            "parameters": {"module": "助手名称，精确匹配，可选；可与status组合，例如联指经营助手", "author_username": "提交人账号，可选；历史工单可能没有账号", "author": "提交人署名，精确匹配，可选", "status": "all/unresolved/open/accepted/resolved/rejected，默认all；unresolved仅未结案（待处理和受理中），排除已解决和不采纳", "keyword": "关键词，可选", "updated_since": "原样使用上次返回的updated_at，ISO时间，可选", "offset": "非负整数，默认0", "limit": "整数1至100，默认30"},
+            "safe": True,
+        },
+        {
+            "name": "tickets.get",
+            "module": "工单系统", "title": "查看实时工单详情",
+            "description": "读取完整工单、截图附件元数据和全部回复。每次直接读取最新记录，不增加浏览量。附件URL仍需平台登录权限，不是公开下载链接。",
+            "parameters": {"id": "必填，工单ID"}, "safe": True,
+        },
+        {
+            "name": "tickets.image",
+            "module": "工单系统", "title": "读取工单附件图片",
+            "description": "根据工单ID和附件ID读取截图，MCP直接返回image内容，供视觉模型查看。支持工单正文和回复中的PNG/JPEG/GIF/WebP图片，最大10MB；先调用tickets.get取得附件ID。不接受任意URL或文件路径。",
+            "parameters": {"id": "必填，工单ID", "attachment_id": "必填，该工单或回复中的图片附件ID"}, "safe": True,
+        },
+        {
+            "name": "tickets.reply",
+            "module": "工单系统", "title": "回复工单",
+            "description": "向工单写入处理回复，以认证账号署名。必须提供confirm=true。status默认空表示仅回复；accepted/resolved/rejected改变状态，仅管理员可用。回复前先查看工单，不要将建议误报为已完成。",
+            "parameters": {"id": "必填，工单ID", "content": "必填，回复内容", "status": "空/accepted/resolved/rejected，默认空", "confirm": "布尔值，必须为true确认写入"}, "safe": False,
+        },
+        {
             "name": "forum.list",
             "module": "金点子论坛",
             "title": "查看金点子话题",
@@ -1009,8 +1034,9 @@ def create_weekly_preview_image(payload, output_path):
     section("二、重点工作跟进", rows["weekly_follow"], [("category", "分类"), ("content", "内容"), ("progress", "进展"), ("difficulty", "困难")])
     section("三、下周工作计划", rows["weekly_next"], [("category", "分类"), ("content", "内容"), ("difficulty", "困难")])
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    image.crop((0, 0, width, min(total_height, y + 36))).save(output_path)
+    buffer = io.BytesIO()
+    image.crop((0, 0, width, min(total_height, y + 36))).save(buffer, format="PNG")
+    office_blob_write("reports", output_path, buffer.getvalue(), content_type="image/png")
     return output_path
 
 
@@ -1334,8 +1360,7 @@ def mailbox_attachment_skill(args, username):
         raise ValueError("请提供 uid 和 part（来自 mailbox.detail 附件项的 part 字段，如 part2）")
     include_base64 = bool(args.get("include_base64") or args.get("return_base64"))
     max_bytes = int(args.get("max_bytes", 1024 * 1024) or 1024 * 1024)
-    path = get_mail_part(username, uid, part)  # 未缓存会自动从 IMAP 拉取
-    data = path.read_bytes()
+    path, data = get_mail_part_content(username, uid, part)  # 未缓存会自动从 IMAP 拉取
     name_only = path.name.split("__", 1)[-1] if "__" in path.name else path.name
     mime = mail_part_content_type_from_name(name_only, data)
     download_url = create_mcp_mail_attachment_link(username, uid, part)
@@ -1369,6 +1394,8 @@ def mailbox_attachment_skill(args, username):
 
 def execute_skill(name, arguments, username):
     args = arguments or {}
+    if name in ("tickets.list", "tickets.get", "tickets.reply", "tickets.image"):
+        return ticket_mcp_tool(name, args, username)
     if name == "utils.get_date":
         return get_date_skill(args)
     if name == "reports.list":

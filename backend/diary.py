@@ -19,7 +19,6 @@ def save_diary(payload, username):
     if not date_str:
         raise ValueError("请选择日记日期")
     diary_dir = user_diary_dir(username)
-    diary_dir.mkdir(parents=True, exist_ok=True)
     path = diary_dir / f"{date_str}.json"
     now = datetime.now().isoformat(timespec="seconds")
     # Skills (especially OpenClaw / WeChat) often save one part of a diary per
@@ -27,7 +26,9 @@ def save_diary(payload, username):
     # fields must not erase an earlier part of the same day's entry.  The web
     # form sends replace=true because it edits the complete record and needs to
     # retain the ability to intentionally clear a field.
-    old = read_json_lenient(path) if path.exists() else {}
+    old = office_doc_read("diary", path, None)
+    existed = isinstance(old, dict)
+    old = old if existed else {}
     replace = bool(payload.get("replace"))
     clear_fields = {
         str(field).strip()
@@ -62,21 +63,17 @@ def save_diary(payload, username):
         for project_id in project_ids
         if str(note_source.get(project_id, "") or "").strip()
     }
-    if path.exists():
-        data["created_at"] = old.get("created_at", now)
-    else:
-        data["created_at"] = now
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    data["created_at"] = old.get("created_at", now) if existed else now
+    office_doc_write("diary", path, data)
     return {"ok": True, "diary": data}
 
 
 def get_diary(date_str, username):
     if not date_str:
         return {"ok": True, "diary": None}
-    path = user_diary_dir(username) / f"{date_str}.json"
-    if not path.exists():
+    diary = office_doc_read("diary", user_diary_dir(username) / f"{date_str}.json", None)
+    if not isinstance(diary, dict):
         return {"ok": True, "diary": None}
-    diary = read_json_lenient(path)
     if "project_ids" not in diary:
         diary["project_ids"] = [diary["project_id"]] if diary.get("project_id") else []
     diary["project_notes"] = diary.get("project_notes") if isinstance(diary.get("project_notes"), dict) else {}
@@ -86,16 +83,16 @@ def get_diary(date_str, username):
 def list_diaries(payload, username):
     payload = payload or {}
     diary_dir = user_diary_dir(username)
-    if not diary_dir.exists():
-        return {"ok": True, "diaries": []}
     start = str(payload.get("start", "") or payload.get("start_date", "") or "").strip()
     end = str(payload.get("end", "") or payload.get("end_date", "") or "").strip()
     keyword = str(payload.get("keyword", "") or payload.get("q", "") or "").strip().lower()
     items = []
-    for p in sorted(diary_dir.glob("*.json"), reverse=True):
+    for name, d, _ in sorted(office_doc_list("diary", diary_dir), key=lambda entry: entry[0], reverse=True):
         try:
-            d = read_json_lenient(p)
-            date = str(d.get("date", p.stem) or p.stem)
+            stem = name[:-5]
+            if not isinstance(d, dict):
+                continue
+            date = str(d.get("date", stem) or stem)
             if start and date < start:
                 continue
             if end and date > end:
@@ -127,9 +124,7 @@ def list_diaries(payload, username):
 def delete_diary(date_str, username):
     if not date_str:
         raise ValueError("请选择要删除的日记日期")
-    path = user_diary_dir(username) / f"{date_str}.json"
-    if path.exists():
-        path.unlink()
+    office_doc_delete("diary", user_diary_dir(username) / f"{date_str}.json")
     return {"ok": True}
 
 
@@ -318,12 +313,8 @@ def summarize_diaries_for_weekly(payload, username):
     diary_dir = user_diary_dir(username)
     daily = []  # [(date_str, block_text)]，按日期升序
     for date_str in date_list:
-        path = diary_dir / f"{date_str}.json"
-        if path.exists():
-            try:
-                d = read_json_lenient(path)
-            except Exception:
-                d = None  # 单个坏文件跳过，不影响整体总结
+        d = office_doc_read("diary", diary_dir / f"{date_str}.json", None)
+        if d is not None:
             if isinstance(d, dict):
                 parts = [f"【{date_str}】"]
                 if d.get("today_work"):

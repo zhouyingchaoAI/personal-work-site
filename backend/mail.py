@@ -170,8 +170,14 @@ def imap_connect_for_account(username, account="company"):
 
 def user_mail_cache_dir(username):
     path = user_root(username) / "mail_cache"
-    path.mkdir(parents=True, exist_ok=True)
+    if not officedb_enabled("mailassistant"):
+        path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _mail_is_cache_name(name):
+    """sent.json 是本地发送历史（业务数据）；其余都是可重建的 IMAP 缓存。"""
+    return str(name or "") != "sent"
 
 
 def mail_cache_path(username, name):
@@ -189,24 +195,26 @@ def safe_mail_part_key(value):
 
 def mail_part_dir(username, uid):
     path = user_mail_cache_dir(username) / "parts" / safe_mail_uid(uid)
-    path.mkdir(parents=True, exist_ok=True)
+    if not officedb_enabled("mailassistant"):
+        path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def clear_mail_part_dir(username, uid):
-    path = mail_part_dir(username, uid)
-    for item in path.glob("*"):
+    directory = mail_part_dir(username, uid)
+    for name, _, _ in office_blob_list("mailassistant", directory, cache=True):
         try:
-            if item.is_file():
-                item.unlink()
+            office_blob_delete("mailassistant", directory / name, cache=True)
         except Exception:
             pass
 
 
 def mail_part_path(username, uid, part_key):
     key = safe_mail_part_key(part_key)
-    matches = sorted(mail_part_dir(username, uid).glob(key + "__*"))
-    return matches[0] if matches else None
+    directory = mail_part_dir(username, uid)
+    matches = sorted(name for name, _, _ in office_blob_list("mailassistant", directory, prefix=key + "__", cache=True)
+                     if "/" not in name)
+    return directory / matches[0] if matches else None
 
 
 def mailbox_part_url(uid, part_key, download=False):
@@ -217,9 +225,7 @@ def mailbox_part_url(uid, part_key, download=False):
 
 
 def mcp_mail_attachment_link_dir():
-    path = USER_DATA_DIR / "_mcp_mail_attachment_links"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    return USER_DATA_DIR / "_mcp_mail_attachment_links"
 
 
 def mcp_mail_attachment_token_path(token):
@@ -235,7 +241,7 @@ def create_mcp_mail_attachment_link(username, uid, part_key, expires_seconds=360
         "part": str(part_key or ""),
         "expires_at": time.time() + max(60, int(expires_seconds or 3600)),
     }
-    mcp_mail_attachment_token_path(token).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    office_doc_write("mailassistant", mcp_mail_attachment_token_path(token), payload)
     return APP_RELATIVE_PATH + "/mcp-mail-attachment?token=" + urllib.parse.quote(token)
 
 
@@ -253,15 +259,12 @@ def resolve_mcp_mail_attachment_link(token):
     if not token:
         raise ValueError("缺少下载 token")
     path = mcp_mail_attachment_token_path(token)
-    if not path.exists() or not path.is_file():
+    data = office_doc_read("mailassistant", path, None)
+    if not isinstance(data, dict):
         raise ValueError("下载链接不存在或已过期")
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        raise ValueError("下载链接无效")
     if time.time() > float(data.get("expires_at", 0) or 0):
         try:
-            path.unlink()
+            office_doc_delete("mailassistant", path)
         except Exception:
             pass
         raise ValueError("下载链接已过期，请重新调用 mailbox.attachment")
@@ -322,18 +325,27 @@ def save_mail_part(username, uid, part_key, filename, payload):
     safe_name = Path(decode_mime_value(filename or "attachment")).name or "attachment"
     safe_name = re.sub(r"[\\/]+", "_", safe_name)
     path = mail_part_dir(username, uid) / (safe_mail_part_key(part_key) + "__" + safe_name)
-    path.write_bytes(payload or b"")
+    office_blob_write("mailassistant", path, payload or b"", content_type=mimetypes.guess_type(safe_name)[0], cache=True)
     return path
 
 
 def get_mail_part(username, uid, part_key):
     path = mail_part_path(username, uid, part_key)
-    if path is None or not path.exists():
+    if path is None:
         get_inbox_message(username, uid, refresh=True)
         path = mail_part_path(username, uid, part_key)
-    if path is None or not path.exists() or not path.is_file():
+    if path is None:
         raise ValueError("邮件附件不存在或已过期，请刷新邮件后重试")
     return path
+
+
+def get_mail_part_content(username, uid, part_key):
+    """附件逻辑路径与内容：(Path, bytes)。"""
+    path = get_mail_part(username, uid, part_key)
+    raw = office_blob_read("mailassistant", path, cache=True)
+    if raw is None:
+        raise ValueError("邮件附件不存在或已过期，请刷新邮件后重试")
+    return path, raw
 
 
 def mail_detail_cache_is_stale(data):
@@ -348,11 +360,10 @@ def mail_detail_cache_is_stale(data):
 
 
 def read_mail_cache(username, name, max_age_seconds=600):
-    path = mail_cache_path(username, name)
-    if not path.exists():
+    data = office_doc_read("mailassistant", mail_cache_path(username, name), None, cache=_mail_is_cache_name(name))
+    if not isinstance(data, dict):
         return None
     try:
-        data = read_json_lenient(path)
         fetched_at = float(data.get("fetched_at", 0) or 0)
         if max_age_seconds and time.time() - fetched_at > max_age_seconds:
             return None
@@ -364,7 +375,7 @@ def read_mail_cache(username, name, max_age_seconds=600):
 def write_mail_cache(username, name, data):
     payload = dict(data or {})
     payload["fetched_at"] = time.time()
-    mail_cache_path(username, name).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    office_doc_write("mailassistant", mail_cache_path(username, name), payload, cache=_mail_is_cache_name(name))
     return payload
 
 
@@ -373,11 +384,10 @@ def sent_mail_store_path(username):
 
 
 def load_sent_mail_store(username):
-    path = sent_mail_store_path(username)
-    if not path.exists():
+    data = office_doc_read("mailassistant", sent_mail_store_path(username), None)
+    if data is None:
         return []
     try:
-        data = read_json_lenient(path)
         if isinstance(data, dict):
             messages = data.get("messages", [])
             return messages if isinstance(messages, list) else []
@@ -389,7 +399,7 @@ def load_sent_mail_store(username):
 def save_sent_mail_store(username, messages):
     path = sent_mail_store_path(username)
     payload = {"messages": list(messages or [])[:200], "updated_at": datetime.now().isoformat(timespec="seconds")}
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    office_doc_write("mailassistant", path, payload)
 
 
 def sent_mail_preview(body, body_html):
@@ -558,14 +568,14 @@ def get_sent_message(username, uid):
 
 
 def clear_mail_cache(username):
-    path = user_mail_cache_dir(username)
-    for item in path.glob("*.json"):
+    directory = user_mail_cache_dir(username)
+    for name, _, _ in office_doc_list("mailassistant", directory, cache=True):
         # 已发邮件是本地发送成功后的持久历史，不属于可失效的 IMAP 缓存。
         # 保存邮箱配置时会刷新收件箱缓存，但不能抹掉用户的已发记录。
-        if item.name == "sent.json":
+        if name == "sent.json":
             continue
         try:
-            item.unlink()
+            office_doc_delete("mailassistant", directory / name, cache=True)
         except Exception:
             pass
 
@@ -1320,9 +1330,11 @@ def _update_cached_mail_read_state(username, uid):
     uid = str(uid or "").strip()
     if not uid:
         return
-    for path in user_mail_cache_dir(username).glob("*.json"):
+    directory = user_mail_cache_dir(username)
+    for name, cached, _ in office_doc_list("mailassistant", directory, cache=True):
         try:
-            cached = read_json_lenient(path)
+            if not isinstance(cached, dict):
+                continue
             changed = False
             was_unread = False
             for item in cached.get("messages") or []:
@@ -1348,7 +1360,7 @@ def _update_cached_mail_read_state(username, uid):
                 counts["unread"] = unread
                 counts["read"] = max(0, all_count - unread)
             cached["fetched_at"] = time.time()
-            path.write_text(json.dumps(cached, ensure_ascii=False, indent=2), encoding="utf-8")
+            office_doc_write("mailassistant", directory / name, cached, cache=True)
         except Exception:
             # 缓存文件损坏或单文件更新失败时，不影响 IMAP 已读状态。
             continue
@@ -1384,14 +1396,12 @@ def email_signature_for_user(username=None):
 
 
 def normalize_email_signature_html(signature):
-    """Replace expiring 263 inline-image URLs with a mail-client-safe banner.
-
-    263's ``mailInnerFileDownloadImg`` links require the sender's authenticated
-    webmail session. They therefore render as a broken image in report previews
-    and for recipients. A presentation table uses only inline styles, which is
-    supported by common mail clients and remains available without a login.
-    """
+    """Replace authenticated 263 image links with the bundled company logo."""
     text = str(signature or "")
+    logo_path = BASE_DIR / 'backend' / 'assets' / 'company-logo.png'
+    logo = ''
+    if logo_path.is_file():
+        logo = '<img alt="CHENCY" width="180" style="display:block;width:180px;height:auto;border:0;" src="data:image/png;base64,' + base64.b64encode(logo_path.read_bytes()).decode('ascii') + '">'
     banner = (
         '<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
         'style="width:654px;max-width:100%;border-collapse:collapse;background:#1753a6;margin:8px 0;">'
@@ -1399,6 +1409,11 @@ def normalize_email_signature_html(signature):
         '<td style="padding:9px 22px;border:0;color:#dceaff;font-family:Arial,Microsoft YaHei,sans-serif;font-size:14px;font-weight:600;text-align:right;white-space:nowrap;">承客户之心 · 拓希望之路</td>'
         '</tr></table>'
     )
+    if logo:
+        banner = banner.replace('◈ CHENCY', logo).replace('background:#1753a6', 'background:#ffffff').replace('color:#dceaff', 'color:#1753a6')
+    original_path = BASE_DIR / 'backend' / 'assets' / 'company-signature-original.png'
+    if original_path.is_file():
+        banner = '<img alt="CHENCY · 承客户之心 · 拓希望之路" width="654" style="display:block;width:654px;max-width:100%;height:auto;border:0;margin:8px 0;" src="data:image/png;base64,' + base64.b64encode(original_path.read_bytes()).decode('ascii') + '">'
     return re.sub(
         r'<img\b[^>]*\bsrc=["\'][^"\']*mail\.263\.net/[^"\']*mailInnerFileDownloadImg[^"\']*["\'][^>]*>',
         banner,
@@ -1464,6 +1479,19 @@ def build_message(payload, username=None, account="company"):
 
     body = append_email_signature(payload.get("body", "") or "", username)
     body_html = email_body_html_with_signature(payload, username)
+    inline_images = []
+    def embed_image(match):
+        subtype, encoded = match.group(2).lower(), match.group(3)
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+        except (ValueError, TypeError):
+            return match.group(0)
+        if not raw or len(raw) > 10 * 1024 * 1024:
+            return match.group(0)
+        cid = 'signature-' + secrets.token_hex(12) + '@office.local'
+        inline_images.append((cid, subtype, raw))
+        return 'src=' + match.group(1) + 'cid:' + cid + match.group(1)
+    body_html = re.sub(r'''src\s*=\s*(["'])data:image/(png|jpeg|gif|webp);base64,([^"']+)\1''', embed_image, body_html, flags=re.I)
 
     msg = EmailMessage()
     msg["From"] = from_addr
@@ -1476,17 +1504,20 @@ def build_message(payload, username=None, account="company"):
         # multipart/alternative: text/plain + text/html
         msg.set_content(body, subtype="plain", charset="utf-8")
         msg.add_alternative(body_html, subtype="html")
+        for cid, subtype, raw in inline_images:
+            msg.get_payload()[-1].add_related(raw, maintype='image', subtype=subtype, cid=f'<{cid}>', disposition='inline')
     else:
         msg.set_content(body, subtype="plain", charset="utf-8")
 
     attachment_name = payload.get("attachment", "")
     path = attachment_path_by_name(attachment_name, username) if attachment_name else None
-    if attachment_name and path and path.exists():
+    raw = office_blob_read("reports", path) if attachment_name and path else None
+    if raw is not None:
         ctype, encoding = mimetypes.guess_type(str(path))
         if ctype is None or encoding is not None:
             ctype = "application/octet-stream"
         maintype, subtype = ctype.split("/", 1)
-        msg.add_attachment(path.read_bytes(), maintype=maintype, subtype=subtype, filename=path.name)
+        msg.add_attachment(raw, maintype=maintype, subtype=subtype, filename=path.name)
     for item in payload.get("attachments", []) or []:
         filename = Path(str(item.get("name", "attachment"))).name or "attachment"
         raw = base64.b64decode(item.get("content", "") or "")
@@ -1515,7 +1546,7 @@ def attachment_path_by_name(file_name, username=None):
         )
     for base in bases:
         path = base / safe_name
-        if path.exists() and path.is_file():
+        if safe_name and office_blob_exists("reports", path):
             return path
     return None
 
@@ -1526,6 +1557,6 @@ def history_path_by_name(file_name, username=None):
     bases = (user_report_kind_dir(username, kind), user_report_dir(username)) if username else (REPORT_DIR / safe_report_kind(kind), REPORT_DIR)
     for base in bases:
         path = base / safe_name
-        if path.exists() and path.is_file():
+        if safe_name and office_blob_exists("reports", path):
             return path
     return None

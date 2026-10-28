@@ -5,14 +5,49 @@ Keep feature code here grouped by responsibility; cross-feature functions remain
 through the runtime during this incremental modularization.
 """
 
+import gzip as _gzip
+
+
 def app_html():
     return (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+
+
+# ---- Response compression -------------------------------------------------
+# The app is reached through reverse proxies that do not compress, so JSON and
+# hashed static assets are gzipped here. CRM snapshots alone are ~3 MB per load.
+GZIP_MIN_BYTES = 1024
+GZIP_TYPES = ("text/", "application/json", "application/javascript", "text/javascript",
+              "application/wasm", "image/svg+xml", "application/xml")
+_ASSET_GZIP_CACHE = {}
+_ASSET_GZIP_CACHE_LOCK = threading.Lock()
+_ASSET_GZIP_CACHE_LIMIT = 48 * 1024 * 1024  # compressed bytes kept in memory
+
+
+def _client_accepts_gzip(handler):
+    return "gzip" in (handler.headers.get("Accept-Encoding") or "").lower()
+
+
+def _gzip_asset(path, raw):
+    """Compress a static asset once; later hits reuse the cached bytes."""
+    stat = path.stat()
+    key = (str(path), stat.st_mtime_ns, stat.st_size)
+    with _ASSET_GZIP_CACHE_LOCK:
+        hit = _ASSET_GZIP_CACHE.get(key)
+    if hit is not None:
+        return hit
+    packed = _gzip.compress(raw, compresslevel=6)
+    with _ASSET_GZIP_CACHE_LOCK:
+        total = sum(len(v) for v in _ASSET_GZIP_CACHE.values()) + len(packed)
+        if total > _ASSET_GZIP_CACHE_LIMIT:
+            _ASSET_GZIP_CACHE.clear()
+        _ASSET_GZIP_CACHE[key] = packed
+    return packed
 
 
 def _openclaw_sso_token(user_info: dict) -> str:
     """Obtain an openclaw token for the given user via the office-SSO exchange."""
     target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
-    secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "")
+    secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "openclaw-office-sso-dev")
     sso_payload = {
         "username": user_info.get("username", ""),
         "display_name": user_info.get("name") or user_info.get("username", ""),
@@ -73,6 +108,10 @@ class Handler(BaseHTTPRequestHandler):
         raw = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        if len(raw) >= GZIP_MIN_BYTES and _client_accepts_gzip(self):
+            raw = _gzip.compress(raw, compresslevel=5)
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
         self.send_header("Content-Length", str(len(raw)))
         for key, value in (headers or {}).items():
             self.send_header(key, value)
@@ -91,8 +130,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def current_user(self):
         token = self.cookie_value("pws_session")
-        username = SESSIONS.get(token)
-        user = find_user(username) if username else None
+        user = login_session_user(token)
         set_request_username(user.get("username", "") if user else "")
         return user
 
@@ -106,6 +144,10 @@ class Handler(BaseHTTPRequestHandler):
     def check_assistant_permission(self, payload=None):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        # 数据中台取数接口：业务系统携带 API Key（无平台会话）调用，
+        # 密钥有效性由 /api/datacenter/data 路由自行校验。
+        if path.startswith("/api/datacenter/data") and self.headers.get("X-Data-Api-Key"):
+            return True
         if path.startswith(APP_RELATIVE_PATH + "/"):
             path = path[len(APP_RELATIVE_PATH):]
         assistant = assistant_for_path(path)
@@ -734,11 +776,10 @@ class Handler(BaseHTTPRequestHandler):
             token = qs.get("token", [""])[0]
             try:
                 info = resolve_mcp_mail_attachment_link(token)
-                path = info["path"]
+                path, raw = get_mail_part_content(info["username"], info["uid"], info["part"])
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, status=404)
                 return
-            raw = path.read_bytes()
             display_name = path.name.split("__", 1)[1] if "__" in path.name else path.name
             encoded_name = urllib.parse.quote(display_name)
             self.send_response(200)
@@ -810,10 +851,17 @@ class Handler(BaseHTTPRequestHandler):
                 return
             raw = path.read_bytes()
             ctype, _ = mimetypes.guess_type(str(path))
+            ctype = ctype or "application/octet-stream"
             self.send_response(200)
-            self.send_header("Content-Type", ctype or "application/octet-stream")
+            self.send_header("Content-Type", ctype)
+            if len(raw) >= GZIP_MIN_BYTES and ctype.startswith(GZIP_TYPES) and _client_accepts_gzip(self):
+                raw = _gzip_asset(path, raw)
+                self.send_header("Content-Encoding", "gzip")
+                self.send_header("Vary", "Accept-Encoding")
             self.send_header("Content-Length", str(len(raw)))
-            self.send_header("Cache-Control", "public, max-age=86400")
+            # Everything under /assets/ is emitted by Vite with a content hash in the
+            # file name, so a changed file always gets a new URL and can be cached forever.
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
             self.end_headers()
             self.wfile.write(raw)
             return
@@ -826,11 +874,10 @@ class Handler(BaseHTTPRequestHandler):
             if not target:
                 self.send_json({"error": "Not found"}, status=404)
                 return
-            path = user_profile_dir(name) / "avatar.png"
-            if not path.exists():
+            raw = office_blob_read("platform", user_profile_dir(name) / "avatar.png")
+            if raw is None:
                 self.send_json({"error": "Not found"}, status=404)
                 return
-            raw = path.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "image/png")
             self.send_header("Content-Length", str(len(raw)))
@@ -854,7 +901,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             target = os.getenv("OPENCLAW_PLATFORM_INTERNAL_URL", "http://127.0.0.1:18080/openclaw").rstrip("/")
             public_url = os.getenv("OPENCLAW_PLATFORM_PUBLIC_URL", "/openclaw").rstrip("/")
-            secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "")
+            secret = os.getenv("OPENCLAW_OFFICE_SSO_SECRET", "openclaw-office-sso-dev")
             current_user_info = public_user(user)
             payload = {
                 "username": current_user_info.get("username", ""),
@@ -985,10 +1032,10 @@ class Handler(BaseHTTPRequestHandler):
             qs = urllib.parse.parse_qs(parsed.query)
             file_name = Path(urllib.parse.unquote(qs.get("file", [""])[0])).name
             path = user_root(user.get("username", "")) / "writing" / "exports" / file_name
-            if not file_name or not path.exists() or not path.is_file():
+            raw = office_blob_read("writing", path) if file_name else None
+            if raw is None:
                 self.send_json({"ok": False, "error": "导出文件不存在"}, status=404)
                 return
-            raw = path.read_bytes()
             ctype, _ = mimetypes.guess_type(str(path))
             encoded_name = urllib.parse.quote(path.name)
             self.send_response(200)
@@ -1063,7 +1110,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/mcp":
             self.send_json(mcp_info())
             return
-        if parsed.path.startswith("/api/") and not self.require_user():
+        if parsed.path == "/api/datacenter/data" and self.headers.get("X-Data-Api-Key"):
+            pass  # 业务系统 API Key 取数：无平台会话，密钥在 /api/datacenter/data 路由内校验
+        elif parsed.path.startswith("/api/") and not self.require_user():
             return
         if parsed.path == "/api/skills":
             if not self.require_superadmin():
@@ -1147,11 +1196,10 @@ class Handler(BaseHTTPRequestHandler):
             part_key = qs.get("part", [""])[0]
             download = qs.get("download", ["0"])[0] == "1"
             try:
-                path = get_mail_part(self.current_user().get("username", ""), uid, part_key)
+                path, raw = get_mail_part_content(self.current_user().get("username", ""), uid, part_key)
             except Exception as exc:
                 self.send_json({"ok": False, "error": str(exc)}, status=404)
                 return
-            raw = path.read_bytes()
             display_name = path.name.split("__", 1)[1] if "__" in path.name else path.name
             self.send_response(200)
             self.send_header("Content-Type", mail_part_content_type_from_name(display_name, raw))
@@ -1250,11 +1298,11 @@ class Handler(BaseHTTPRequestHandler):
             username = self.current_user().get("username", "")
             filename = qs.get("name", [""])[0]
             try:
-                path = reimbursement_output_dir(username) / Path(filename).name
-                if not path.exists():
+                found = get_reimbursement_output(username, filename)
+                if found is None:
                     self.send_json({"ok": False, "error": "文件不存在"}, status=404)
                     return
-                raw = path.read_bytes()
+                path, raw = found
                 encoded_name = urllib.parse.quote(path.name)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/pdf")
@@ -1301,7 +1349,10 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/knowledge/list":
             qs = urllib.parse.parse_qs(parsed.query)
             scope = qs.get("scope", ["mine"])[0]
-            self.send_json(kb_list(scope, self.current_user().get("username", "")))
+            try:
+                self.send_json(kb_list(scope, self.current_user().get("username", "")))
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
         if parsed.path == "/api/knowledge/kbs":
             user = self.require_user()
@@ -1481,6 +1532,153 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.send_json(ledger_list(user.get("username", "")))
             return
+        if parsed.path.startswith("/api/datacenter/"):
+            query = urllib.parse.parse_qs(parsed.query)
+        if parsed.path == "/api/datacenter/datasets":
+            if not self.require_superadmin():
+                return
+            self.send_json(dapi_catalog())
+            return
+        if parsed.path == "/api/datacenter/apikeys":
+            if not self.require_superadmin():
+                return
+            self.send_json(dapi_list_keys())
+            return
+        if parsed.path == "/api/datacenter/data":
+            token = self.headers.get("X-Data-Api-Key", "")
+            caller = ""
+            if token:
+                key_name = dapi_auth_key(token)
+                if not key_name:
+                    self.send_json({"ok": False, "error": "API Key 无效或已吊销"}, status=401)
+                    return
+                caller = f"apikey:{key_name}"
+            else:
+                user = self.require_superadmin()
+                if not user:
+                    return
+                caller = user.get("username", "")
+            params = {k: v[0] for k, v in query.items()}
+            try:
+                self.send_json(dapi_query(params.pop("dataset", ""), params, caller))
+            except (ValueError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            except RuntimeError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            except Exception:
+                self.send_json({"ok": False, "error": "取数失败，请稍后重试"}, status=500)
+            return
+        if parsed.path == "/api/datacenter/databases":
+            if not self.require_superadmin():
+                return
+            self.send_json(dcdb_instances())
+            return
+        if parsed.path == "/api/datacenter/storage-map":
+            if not self.require_superadmin():
+                return
+            self.send_json(dcstorage_overview())
+            return
+        if parsed.path == "/api/datacenter/databases/flow":
+            if not self.require_superadmin():
+                return
+            try:
+                self.send_json(dcflow_snapshot())
+            except Exception as exc:
+                self.send_json({"ok": False, "error": f"采样失败：{type(exc).__name__}: {exc}"[:300]}, status=502)
+            return
+        if parsed.path == "/api/datacenter/databases/flow/tables":
+            user = self.require_superadmin()
+            if not user:
+                return
+            try:
+                self.send_json(dcflow_tables(query.get("assistant", [""])[0], query.get("instance", [""])[0],
+                                             user.get("username", "")))
+            except (ValueError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": f"读取失败：{type(exc).__name__}: {exc}"[:300]}, status=502)
+            return
+        if parsed.path == "/api/datacenter/databases/objects":
+            user = self.require_superadmin()
+            if not user:
+                return
+            try:
+                self.send_json(dcdb_objects(query.get("instance", [""])[0], query.get("db", [""])[0],
+                                            user.get("username", ""), query.get("pattern", ["*"])[0]))
+            except (ValueError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": f"访问失败：{type(exc).__name__}: {exc}"[:400]}, status=502)
+            return
+        if parsed.path == "/api/datacenter/databases/rows":
+            user = self.require_superadmin()
+            if not user:
+                return
+            try:
+                self.send_json(dcdb_rows(query.get("instance", [""])[0], query.get("db", [""])[0],
+                                         query.get("object", [""])[0], query.get("page", ["0"])[0],
+                                         query.get("size", ["50"])[0], user.get("username", ""),
+                                         query.get("filter", [""])[0]))
+            except (ValueError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            except Exception as exc:
+                self.send_json({"ok": False, "error": f"访问失败：{type(exc).__name__}: {exc}"[:400]}, status=502)
+            return
+        if parsed.path == "/api/datacenter/browse":
+            if not self.require_superadmin():
+                return
+            try:
+                self.send_json(datacenter_browse(query.get("path", [""])[0], query.get("subject", [""])[0]))
+            except (ValueError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if parsed.path == "/api/datacenter/file":
+            user = self.require_superadmin()
+            if not user:
+                return
+            try:
+                self.send_json(datacenter_preview(query.get("path", [""])[0], user.get("username", ""),
+                                                  query.get("table", [""])[0], query.get("offset", [0])[0]))
+            except (ValueError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if parsed.path == "/api/datacenter/download":
+            user = self.require_superadmin()
+            if not user:
+                return
+            try:
+                target = datacenter_download(query.get("path", [""])[0], user.get("username", ""))
+            except (ValueError, PermissionError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=403)
+                return
+            raw = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + urllib.parse.quote(target.name))
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        if parsed.path == "/api/datacenter/dashboard":
+            if not self.require_superadmin():
+                return
+            self.send_json(datacenter_dashboard())
+            return
+        if parsed.path == "/api/datacenter/access-log":
+            if not self.require_superadmin():
+                return
+            self.send_json(datacenter_access_log())
+            return
+        if parsed.path == "/api/datacenter/overview":
+            if not self.require_superadmin():
+                return
+            self.send_json(datacenter_overview())
+            return
+        if parsed.path == "/api/datacenter/backups":
+            if not self.require_superadmin():
+                return
+            self.send_json(datacenter_backups())
+            return
         if parsed.path == "/api/cashflow":
             user = self.require_user()
             if not user:
@@ -1498,11 +1696,10 @@ class Handler(BaseHTTPRequestHandler):
             if not user:
                 return
             try:
-                output = cashflow_workbook_export(user.get("username", ""))
-                raw = output.read_bytes()
+                output_name, raw = cashflow_workbook_export(user.get("username", ""))
                 self.send_response(200)
                 self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + urllib.parse.quote(output.name))
+                self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + urllib.parse.quote(output_name))
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
                 self.wfile.write(raw)
@@ -1525,7 +1722,7 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path.startswith('/api/crm/amap-proxy/_AMapService/'):
             if not self.require_user(): return
             try:
-                raw, content_type = crm_amap.fetch_proxy(USER_DATA_DIR, parsed.path.removeprefix('/api/crm/amap-proxy/_AMapService'), parsed.query)
+                raw, content_type = crm_amap.fetch_proxy(USER_DATA_DIR, parsed.path.removeprefix('/api/crm/amap-proxy/_AMapService'), parsed.query, crm_configuration_amap_storage())
                 self.send_response(200)
                 self.send_header('Content-Type', content_type)
                 self.send_header('Content-Length', str(len(raw)))
@@ -1541,6 +1738,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 if parsed.path == "/api/crm/security/me": result = {"ok":True,"capabilities":crm_capabilities(user)}
                 elif parsed.path == "/api/crm/security/users": result = crm_security_users(user)
+                elif parsed.path == "/api/crm/security/battle-roster": result = crm_battle_roster()
                 elif parsed.path == "/api/crm/security/audit": result = crm_security_audit(user)
                 elif parsed.path == "/api/crm/security/region-settings": result = crm_region_settings()
                 elif parsed.path == "/api/crm/security/quality-settings": result = crm_quality_settings(user)
@@ -1559,6 +1757,72 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             self.send_header("Content-Disposition", "attachment; filename=crm-collection-template.xlsx")
+            self.send_header("Cache-Control", "no-store, max-age=0")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        if parsed.path == "/api/crm/business-analysis/dashboard":
+            user = self.require_user()
+            if not user:
+                return
+            query = urllib.parse.parse_qs(parsed.query)
+            html = crm_business_dashboard_html(user, query.get("version", [""])[0] or None)
+            if html is None:
+                self.send_json({"ok": False, "error": "看板不可用或无数据"}, status=404)
+                return
+            raw = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store, max-age=0")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        if parsed.path == "/api/crm/opportunities/template":
+            if not self.require_user():
+                return
+            raw = crm_opportunity_template()
+            filename = "机会点导入模板.xlsx"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + urllib.parse.quote(filename))
+            self.send_header("Cache-Control", "no-store, max-age=0")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        if parsed.path == "/api/crm/business-analysis/template":
+            user = self.require_user()
+            if not user:
+                return
+            caps = crm_capabilities(user)
+            if not caps.get('read') or caps.get('data_scope') != 'all':
+                self.send_json({"ok": False, "error": "含公司真实样例的模板仅限管理级下载"}, status=403)
+                return
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                blocks = [item for item in query.get('blocks', [''])[0].split(',') if item]
+                raw, filename, content_type = crm_analysis_template_export(user, query.get('version', [None])[0], blocks)
+            except ValueError as error:
+                self.send_json({"ok": False, "error": str(error)}, status=400)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + urllib.parse.quote(filename))
+            self.send_header("Cache-Control", "no-store, max-age=0")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        if parsed.path == "/api/crm/business-analysis/task-order-template":
+            if not self.require_user():
+                return
+            raw = crm_task_order_template()
+            filename = "联指经营助手_任务令数据导入模板.xlsx"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + urllib.parse.quote(filename))
             self.send_header("Cache-Control", "no-store, max-age=0")
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
@@ -1606,6 +1870,15 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(raw)
             return
+        if parsed.path == "/api/crm/assignment-directory":
+            user = self.require_user()
+            if not user:
+                return
+            try:
+                self.send_json(crm_assignment_directory(user))
+            except PermissionError as exc:
+                self.send_json({'ok': False, 'error': str(exc)}, status=403)
+            return
         if parsed.path == "/api/crm/opportunities/export":
             user = self.require_user()
             if not user:
@@ -1615,7 +1888,7 @@ class Handler(BaseHTTPRequestHandler):
             stage = query.get('stage', [''])[0]
             keyword = query.get('keyword', [''])[0]
             try:
-                raw, filename = crm_opportunity_export(user, state, stage, keyword)
+                raw, filename = crm_opportunity_export(user, state, stage, keyword, query.get('region', [''])[0], query.get('sales_stage', [''])[0])
             except (ValueError, PermissionError) as exc:
                 self.send_json({'ok': False, 'error': str(exc)}, status=403)
                 return
@@ -1667,14 +1940,20 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(raw)
             return
-        if parsed.path in {"/api/crm/manager-directory", "/api/crm/staff", "/api/crm/playbook", "/api/crm/overview", "/api/crm/units", "/api/crm/people", "/api/crm/relations", "/api/crm/opportunities", "/api/crm/history", "/api/crm/project-map", "/api/crm/graph/centrality", "/api/crm/graph/path", "/api/crm/infra", "/api/crm/import-completion/tasks"}:
+        if parsed.path in {"/api/crm/monthly-battle", "/api/crm/manager-directory", "/api/crm/staff", "/api/crm/playbook", "/api/crm/overview", "/api/crm/units", "/api/crm/people", "/api/crm/relations", "/api/crm/opportunities", "/api/crm/sales-contracts", "/api/crm/history", "/api/crm/project-map", "/api/crm/graph/centrality", "/api/crm/graph/path", "/api/crm/infra", "/api/crm/import-completion/tasks", "/api/crm/business-analysis"}:
             user = self.require_user()
             if not user:
                 return
             username = user["username"]
             query = urllib.parse.parse_qs(parsed.query)
             try:
-                if parsed.path == "/api/crm/playbook":
+                if parsed.path == "/api/crm/monthly-battle":
+                    result = monthly_battle_template(user) if query.get('template') == ['1'] else monthly_battle_read(user, query.get('view', [''])[0], query.get('region', [''])[0], query.get('manager', [''])[0])
+                elif parsed.path == "/api/crm/business-analysis":
+                    result = crm_business_analysis(user, query.get("version", [""])[0] or None,
+                                                   query.get("view", [""])[0], query.get("region", [""])[0],
+                                                   query.get("manager", [""])[0])
+                elif parsed.path == "/api/crm/playbook":
                     result = crm_read_playbook(user)
                 elif parsed.path == "/api/crm/manager-directory":
                     result = crm_manager_directory(user)
@@ -1690,6 +1969,8 @@ class Handler(BaseHTTPRequestHandler):
                     result = crm_read_relations(user)
                 elif parsed.path == "/api/crm/opportunities":
                     result = crm_read_opportunities(user)
+                elif parsed.path == "/api/crm/sales-contracts":
+                    result = crm_read_sales_contracts(user)
                 elif parsed.path == "/api/crm/history":
                     result = {"ok": True, "versions": crm_record_versions(username, query.get('collection', [''])[0], query.get('record_id', [''])[0])}
                 elif parsed.path == "/api/crm/graph/centrality":
@@ -1817,10 +2098,10 @@ class Handler(BaseHTTPRequestHandler):
             qs = urllib.parse.parse_qs(parsed.query)
             file_name = qs.get("file", [""])[0]
             path = attachment_path_by_name(file_name, self.current_user().get("username", ""))
-            if path is None:
+            raw = office_blob_read("reports", path) if path is not None else None
+            if raw is None:
                 self.send_json({"error": "文件不存在"}, status=404)
                 return
-            raw = path.read_bytes()
             ctype, encoding = mimetypes.guess_type(str(path))
             self.send_response(200)
             self.send_header("Content-Type", ctype or "application/octet-stream")
@@ -1834,10 +2115,10 @@ class Handler(BaseHTTPRequestHandler):
             qs = urllib.parse.parse_qs(parsed.query)
             kind = safe_report_kind(qs.get("kind", ["weekly"])[0])
             path = configured_template_path(kind, self.current_user().get("username", ""))
-            if path is None:
+            raw = office_blob_read("reports", path) if path is not None else None
+            if raw is None:
                 self.send_json({"error": "平台还没有保存自定义模板，请先上传模板。"}, status=404)
                 return
-            raw = path.read_bytes()
             ctype, _ = mimetypes.guess_type(str(path))
             self.send_response(200)
             self.send_header("Content-Type", ctype or "application/octet-stream")
@@ -1852,11 +2133,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             parts = [urllib.parse.unquote(part) for part in parsed.path.split("/") if part]
             attachment_id = parts[1] if len(parts) >= 2 else ""
-            path = forum_attachment_path(attachment_id)
-            if path is None:
+            found = forum_attachment_content(attachment_id)
+            if found is None:
                 self.send_json({"error": "附件不存在"}, status=404)
                 return
-            raw = path.read_bytes()
+            path, raw = found
             ctype, _ = mimetypes.guess_type(str(path))
             ctype = ctype or "application/octet-stream"
             display_name = parts[2] if len(parts) >= 3 else path.name
@@ -1875,10 +2156,10 @@ class Handler(BaseHTTPRequestHandler):
             qs = urllib.parse.parse_qs(parsed.query)
             file_name = Path(qs.get("file", [""])[0]).name
             path = user_generated_dir(self.current_user().get("username", "")) / file_name
-            if path.suffix.lower() != ".png" or not path.exists() or not path.is_file():
+            raw = office_blob_read("reports", path) if file_name and path.suffix.lower() == ".png" else None
+            if raw is None:
                 self.send_json({"error": "预览图片不存在"}, status=404)
                 return
-            raw = path.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "image/png")
             self.send_header("Content-Length", str(len(raw)))
@@ -1983,7 +2264,7 @@ class Handler(BaseHTTPRequestHandler):
                 payload = {}
             kb_ask_stream(self, payload, user.get("username", ""))
             return
-        if parsed.path in {"/api/crm/excel/import", "/api/crm/opportunities/import"} and int(self.headers.get("Content-Length", "0") or 0) > 8 * 1024 * 1024:
+        if parsed.path in {"/api/crm/excel/import", "/api/crm/opportunities/import", "/api/crm/sales-contracts/import", "/api/crm/business-analysis/import", "/api/crm/business-analysis/task-order-import"} and int(self.headers.get("Content-Length", "0") or 0) > 8 * 1024 * 1024:
             self.send_json({"ok": False, "error": "文件不能超过5MB"}, status=413)
             return
         try:
@@ -2020,8 +2301,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": False, "error": "用户名或密码错误"}, status=401)
                     return
                 ensure_user_space(user.get("username", ""))
-                token = secrets.token_urlsafe(24)
-                SESSIONS[token] = user.get("username", "")
+                token = create_login_session(user)
                 self.send_json(
                     {
                         "ok": True,
@@ -2033,8 +2313,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/logout":
                 token = self.cookie_value("pws_session")
-                if token in SESSIONS:
-                    del SESSIONS[token]
+                delete_login_session(token)
                 self.send_json({"ok": True}, headers={"Set-Cookie": "pws_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"})
                 return
             if parsed.path == "/api/password-reset/captcha":
@@ -2278,6 +2557,31 @@ class Handler(BaseHTTPRequestHandler):
                 result = project_create(payload, username)
             elif parsed.path == "/api/ledger/save":
                 result = ledger_save(payload, username)
+            elif parsed.path == "/api/datacenter/apikeys/create":
+                if not self.require_superadmin():
+                    return
+                result = dapi_create_key(payload, username)
+            elif parsed.path == "/api/datacenter/apikeys/revoke":
+                if not self.require_superadmin():
+                    return
+                result = dapi_revoke_key(payload, username)
+            elif parsed.path == "/api/datacenter/sync/run":
+                if not self.require_superadmin():
+                    return
+                result = datacenter_trigger_db_sync(username)
+            elif parsed.path == "/api/datacenter/backup/run":
+                if not self.require_superadmin():
+                    return
+                result = datacenter_trigger_backup(username)
+            elif parsed.path == "/api/datacenter/refresh":
+                if not self.require_superadmin():
+                    return
+                result = datacenter_refresh(username)
+            elif parsed.path == "/api/datacenter/databases/query":
+                if not self.require_superadmin():
+                    return
+                result = dcdb_query(payload.get("instance", ""), payload.get("db", ""),
+                                    payload.get("sql", ""), username)
             elif parsed.path == "/api/cashflow/save":
                 result = cashflow_save(payload, username)
             elif parsed.path == "/api/cashflow/workbook/save":
@@ -2318,6 +2622,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = crm_security_grant(payload, self.current_user(), mode="appoint")
             elif parsed.path == "/api/crm/security/region-settings":
                 result = crm_region_settings_save(payload, self.current_user())
+            elif parsed.path == "/api/crm/security/battle-roster":
+                result = crm_battle_roster_save(payload, self.current_user())
             elif parsed.path == "/api/crm/security/quality-settings":
                 result = crm_quality_settings_save(payload, self.current_user())
             elif parsed.path == "/api/crm/security/amap-settings":
@@ -2334,8 +2640,22 @@ class Handler(BaseHTTPRequestHandler):
                 result = crm_excel_import(payload, username)
             elif parsed.path == "/api/crm/opportunities/import":
                 result = crm_opportunity_import(payload, username)
+            elif parsed.path == "/api/crm/sales-contracts/import":
+                result = crm_sales_contract_import(payload, username)
+            elif parsed.path == "/api/crm/business-analysis/import":
+                result = crm_business_import(payload, username)
+            elif parsed.path == "/api/crm/business-analysis/task-order-import":
+                result = crm_task_order_import(payload, username)
+            elif parsed.path == "/api/crm/monthly-battle/import":
+                result = monthly_battle_import(payload, self.current_user())
+            elif parsed.path == "/api/crm/monthly-battle/progress":
+                result = monthly_battle_progress(payload, self.current_user())
+            elif parsed.path == "/api/crm/monthly-battle/comment":
+                result = monthly_battle_comment(payload, self.current_user())
             elif parsed.path == "/api/crm/opportunity/save":
                 result = crm_opportunity_save(payload, username)
+            elif parsed.path == "/api/crm/opportunity/stage-save":
+                result = crm_opportunity_stage_update(payload, username)
             elif parsed.path == "/api/crm/excel/retry-rows":
                 result = crm_excel_retry_rows(payload, username)
             elif parsed.path == "/api/crm/import-completion/complete":

@@ -2,7 +2,7 @@ import ts from 'typescript'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import assert from 'node:assert/strict'
-const source=fs.readFileSync(new URL('../src/views/CrmAssistantView/dashboard/AmapBaseMap.vue',import.meta.url),'utf8').split('<script setup lang="ts">')[1].split('</script>')[0]
+const source=fs.readFileSync(new URL('../packages/joint-command/frontend/dashboard/AmapBaseMap.vue',import.meta.url),'utf8').split('<script setup lang="ts">')[1].split('</script>')[0]
 const watchers=[], requests=[], overlays=[], frames=new Map()
 let creates=0, frameId=0
 const props={regions:['东区','西区'],selected:'',units:[],showCities:false,showCompanies:false}

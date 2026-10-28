@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import assert from 'node:assert/strict'
 const exports={}
-vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/views/CrmAssistantView/personalOrganizationQuality.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports})
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../packages/joint-command/frontend/personalOrganizationQuality.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports})
 const evaluate=exports.personalOrganizationQuality
 const units=[{id:'root',name:'客户',type:'业主单位'},{id:'child',parent_unit_id:'root'}]
 const rules={templates:{'业主单位':['定技术','定标']}}

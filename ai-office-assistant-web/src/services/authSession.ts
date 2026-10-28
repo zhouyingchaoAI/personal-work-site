@@ -55,5 +55,6 @@ export async function loginSession(username: string, password: string) {
 export async function logoutSession() {
   await logout()
   authState.user = null
+  authState.assistantPrompt = ''
   authState.checked = true
 }

@@ -9,20 +9,12 @@ def _cashflow_path(username):
 
 
 def _cashflow_items(username):
-    path = _cashflow_path(username)
-    if not path.exists():
-        return []
-    try:
-        items = json.loads(path.read_text(encoding="utf-8"))
-        return items if isinstance(items, list) else []
-    except (OSError, json.JSONDecodeError):
-        return []
+    items = office_doc_read("cashflow", _cashflow_path(username), [])
+    return items if isinstance(items, list) else []
 
 
 def _save_cashflow_items(username, items):
-    path = _cashflow_path(username)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    office_doc_write("cashflow", _cashflow_path(username), items)
 
 
 def _cashflow_history_path(username):
@@ -31,10 +23,7 @@ def _cashflow_history_path(username):
 
 def _cashflow_history_data(username, ensure_ids=False):
     path = _cashflow_history_path(username)
-    try:
-        stored = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    except (OSError, json.JSONDecodeError):
-        stored = {}
+    stored = office_doc_read("cashflow", path, {})
     if not isinstance(stored, dict):
         stored = {}
     records = stored.get("records") if isinstance(stored.get("records"), list) else []
@@ -45,8 +34,7 @@ def _cashflow_history_data(username, ensure_ids=False):
                 record["id"] = "history-" + secrets.token_hex(8)
                 changed = True
         if changed:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(stored, ensure_ascii=False, indent=2), encoding="utf-8")
+            office_doc_write("cashflow", path, stored)
     stored["records"] = records
     return stored
 
@@ -121,9 +109,7 @@ def cashflow_history_import(payload, username):
         raise ValueError("未识别到可导入的历史回款记录")
     data = {"source_name": str(payload.get("source_name", "历史回款数据")).strip()[:160],
             "imported_at": datetime.now().isoformat(timespec="seconds"), "records": records}
-    path = _cashflow_history_path(username)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    office_doc_write("cashflow", _cashflow_history_path(username), data)
     return {"ok": True, "imported": len(records), "source_name": data["source_name"]}
 
 
@@ -234,6 +220,7 @@ def cashflow_history_list(username):
                                   "stage_mix": [{"name": name, "share": round(amount / customer["planned"] * 100, 1) if customer["planned"] else 0} for name, amount in sorted(stage_amounts.items(), key=lambda item: item[1], reverse=True)]})
     customer_profiles.sort(key=lambda item: (item["planned"], item["records"]), reverse=True)
     return {"ok": True, "source_name": stored.get("source_name", ""), "imported_at": stored.get("imported_at", ""), "summary": summary,
+            "insights": cashflow_history_insights(records),
             "by_region": order(grouped["by_region"]), "by_customer": order(grouped["by_customer"]),
             "by_project_type": order(grouped["by_project_type"]), "by_scale": order(grouped["by_scale"]),
             "by_status": sorted(grouped["by_status"].values(), key=lambda x: x["received"], reverse=True),
@@ -273,9 +260,7 @@ def cashflow_history_save(payload, username):
         record["id"] = existing["id"]
         existing.clear()
         existing.update(record)
-    path = _cashflow_history_path(username)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(stored, ensure_ascii=False, indent=2), encoding="utf-8")
+    office_doc_write("cashflow", _cashflow_history_path(username), stored)
     return {"ok": True, "item": record}
 
 
@@ -285,7 +270,7 @@ def cashflow_history_delete(record_id, username):
     if len(remained) == len(stored["records"]):
         raise ValueError("历史回款记录不存在")
     stored["records"] = remained
-    _cashflow_history_path(username).write_text(json.dumps(stored, ensure_ascii=False, indent=2), encoding="utf-8")
+    office_doc_write("cashflow", _cashflow_history_path(username), stored)
     return {"ok": True}
 
 

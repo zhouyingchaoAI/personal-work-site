@@ -153,7 +153,19 @@ def optimize_text(payload):
             )
             with urllib.request.urlopen(request, timeout=30) as response:
                 data = json.loads(response.read().decode("utf-8"))
-            content = data["choices"][0]["message"]["content"].strip()
+            if not isinstance(data, dict):
+                raise ValueError("模型接口返回格式异常")
+            status = data.get("base_resp") or {}
+            if isinstance(status, dict) and status.get("status_code") not in (None, 0, "0"):
+                raise ValueError(str(status.get("status_msg") or "模型接口返回错误"))
+            choices = data.get("choices")
+            if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+                raise ValueError("模型接口未返回有效回答")
+            message = choices[0].get("message") or {}
+            content = message.get("content") if isinstance(message, dict) else None
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError("模型接口返回正文为空，请重试")
+            content = content.strip()
             return {"ok": True, "mode": "api", "model": settings["model"], "text": normalize_assistant_output(content)}
         except Exception as exc:
             return {

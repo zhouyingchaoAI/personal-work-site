@@ -1,0 +1,8 @@
+<!doctype html><html><meta charset="UTF-8"><div id="app"></div>
+<script type="module">
+import { createApp, ref } from 'vue/dist/vue.esm-bundler.js'
+import { useChartLayout } from '../../src/views/CrmAssistantView/useChartLayout.ts'
+localStorage.setItem('overlap-regression', JSON.stringify(Object.fromEntries([0,1,2,3].map(index => [`Panel ${index}:${index}`, {pixelWidth:800,pixelHeight:80,scale:1.5}]))))
+createApp({setup(){const root=ref(null);useChartLayout(root,ref(true),ref('overlap-regression'));return {root}},template:`<main ref="root"><section><header>Foundation</header><article v-for="index in [0,1,2,3]" class="br-chart-card" :data-chart-title="'Panel '+index"><h3>Panel {{index}}</h3><div class="content">Content</div></article><footer>Sources</footer></section></main>`}).mount('#app')
+</script>
+<style>body{margin:16px}section{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}header,footer{grid-column:1/-1}.br-chart-card{padding:16px;border:1px solid #bbb;background:#f4f8fc}.content{height:300px}h3{margin:0 0 12px}@media(max-width:700px){section{grid-template-columns:1fr}}</style></html>

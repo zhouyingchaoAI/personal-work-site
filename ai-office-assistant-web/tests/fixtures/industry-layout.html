@@ -1,0 +1,7 @@
+<!doctype html><html><meta charset="UTF-8"><div id="app"></div>
+<script type="module">
+import { createApp, ref } from 'vue/dist/vue.esm-bundler.js'
+import { useChartLayout } from '../../src/views/CrmAssistantView/useChartLayout.ts'
+createApp({setup(){const root=ref(null);const editor=useChartLayout(root,ref(true),ref('industry-layout-test'));editor.editing.value=true;return {root,reset:editor.resetIndustryComparison}},template:`<button @click="reset">统一产业图表尺寸</button><section ref="root"><main class="be-industry-comparison"><article v-for="name in ['目标','毛利','贡献']" class="br-chart-card" :data-layout-key="name"><h3>{{name}}</h3><p>图表内容</p></article></main></section>`}).mount('#app')
+</script>
+<style>main{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.br-chart-card{border:1px solid;padding:16px;min-height:180px}.chart-layout-flow{display:flex;flex-wrap:wrap}.chart-layout-tools{height:30px}</style></html>

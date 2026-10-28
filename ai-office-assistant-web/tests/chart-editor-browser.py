@@ -1,0 +1,60 @@
+import os
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as playwright:
+    browser = playwright.chromium.launch(headless=True)
+    page = browser.new_page(viewport={"width": 1440, "height": 1000})
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(os.environ.get("EDITOR_TEST_URL", "http://127.0.0.1:5179/personal-office-assistant/tests/fixtures/chart-editor.html"))
+    page.get_by_role("button", name="选择本页外层板块", exact=True).click()
+    page.get_by_text("会议展示", exact=True).click()
+    page.wait_for_function("document.querySelector('.br-kpi').style.getPropertyValue('--editor-titleSize')==='22px'")
+    assert page.locator(".chart-layout-selected").count() == 3
+    assert page.locator(".br-kpi").first.evaluate("e=>getComputedStyle(e).backgroundColor") == "rgb(248, 251, 255)"
+    page.get_by_role("button", name="撤销", exact=True).click()
+    page.wait_for_function("!document.querySelector('.br-kpi').hasAttribute('data-editor-titlesize')")
+    page.get_by_role("button", name="重做", exact=True).click()
+    page.wait_for_function("document.querySelector('.br-kpi').style.getPropertyValue('--editor-titleSize')==='22px'")
+    page.get_by_label("图表形式", exact=True).select_option("line")
+    page.wait_for_function("document.querySelectorAll('[data-chart-model] circle').length===2")
+    page.get_by_label("图表形式", exact=True).select_option("table")
+    page.wait_for_function("document.querySelector('[data-chart-model] table') !== null")
+    assert "-20" in page.locator('[data-chart-model]').inner_text()
+    assert "未提供" in page.locator('[data-chart-model]').inner_text()
+    page.get_by_label("图表形式", exact=True).select_option("pie")
+    page.get_by_text("此图不是已确认的构成数据", exact=False).wait_for()
+    page.get_by_label("图表形式", exact=True).select_option("bar")
+    page.wait_for_function("document.querySelectorAll('[data-chart-model] rect').length===2")
+    page.get_by_label("标题字号", exact=True).fill("26")
+    page.get_by_label("标题字号", exact=True).press("Tab")
+    page.wait_for_function("document.querySelector('.br-kpi').style.getPropertyValue('--editor-titleSize')==='26px'")
+    page.get_by_label("字体", exact=True).select_option("mono")
+    assert "monospace" in page.locator(".br-kpi > span").first.evaluate("e=>getComputedStyle(e).fontFamily")
+    page.evaluate("window.editorTest.applyStyle({textColor:'#ffffff',background:'#ffffff'})")
+    page.get_by_role("status").filter(has_text="对比偏低").wait_for()
+    page.get_by_role("button", name="撤销", exact=True).click()
+    page.wait_for_function("document.querySelector('.br-kpi').getAttribute('data-editor-textcolor')==='#334155'")
+    page.get_by_role("button", name="预览切换").click()
+    page.wait_for_function("!document.querySelector('.chart-layout-tools')")
+    assert page.locator(".br-kpi > span").first.evaluate("e=>getComputedStyle(e).fontSize") == "26px"
+    page.reload()
+    page.wait_for_function("document.querySelector('.br-kpi')?.style.getPropertyValue('--editor-titleSize')==='26px'")
+    page.get_by_role("button", name="选择本页外层板块", exact=True).click()
+    if os.environ.get("EDITOR_SCREENSHOT"):
+        page.screenshot(path=os.environ["EDITOR_SCREENSHOT"], full_page=True)
+    page.get_by_role("button", name="恢复所选默认样式", exact=True).click()
+    page.wait_for_function("!document.querySelector('.br-kpi').hasAttribute('data-editor-titlesize')")
+    page.get_by_role("button", name="撤销", exact=True).click()
+    page.wait_for_function("document.querySelector('.br-kpi').style.getPropertyValue('--editor-titleSize')==='26px'")
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.locator(".chart-style-editor").evaluate("e=>e.scrollWidth<=e.clientWidth+1")
+    page.evaluate("window.editorTest.allowed.value=false")
+    page.wait_for_function("!document.querySelector('.chart-layout-tools')")
+    page.evaluate("window.editorTest.applyStyle({titleSize:12})")
+    assert page.locator(".br-kpi").first.evaluate("e=>e.style.getPropertyValue('--editor-titleSize')") == "26px"
+    page.evaluate("window.editorTest.scope.value='another-fixture-account'")
+    page.wait_for_function("!document.querySelector('.br-kpi').hasAttribute('data-editor-titlesize')")
+    assert not errors, errors
+    print("PASS batch styles, computed styles, undo/redo, preview, persistence, permission guard, scope isolation, no JS errors")
+    browser.close()

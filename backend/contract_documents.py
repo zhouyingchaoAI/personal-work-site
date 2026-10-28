@@ -24,17 +24,14 @@ def contract_path(username, contract_id):
 
 
 def contract_read(username, contract_id):
-    path = contract_path(username, contract_id) / "record.json"
-    if not path.is_file():
+    record = office_doc_read("ledger", contract_path(username, contract_id) / "record.json", None)
+    if not isinstance(record, dict):
         raise ValueError("合同不存在或无访问权限")
-    return json.loads(path.read_text(encoding="utf-8"))
+    return record
 
 
 def contract_write(username, record):
-    path = contract_path(username, record["id"]) / "record.json"
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
+    office_doc_write("ledger", contract_path(username, record["id"]) / "record.json", record)
 
 
 def contract_number(value, positive=False):
@@ -194,8 +191,9 @@ def contract_upload(payload, username):
     record.update(contract_structure(text, route))
     record["extraction"] = route
     directory = contract_path(username, record["id"])
-    directory.mkdir(parents=True, exist_ok=False)
-    (directory / ("original" + suffix)).write_bytes(raw)
+    if office_doc_exists("ledger", directory / "record.json"):
+        raise ValueError("合同编号冲突，请重试")
+    office_blob_write("ledger", directory / ("original" + suffix), raw)
     contract_write(username, record)
     return {"ok": True, "contract": record}
 
@@ -203,10 +201,10 @@ def contract_upload(payload, username):
 def contract_list(username):
     directory = contract_directory(username)
     records = []
-    if directory.exists():
-        for path in directory.glob("*/record.json"):
-            record = contract_read(username, path.parent.name)
-            records.append({**{key: record[key] for key in ("id", "filename", "created_at", "revision")}, "contract_no": record.get("contract_no", ""), "customer": record.get("customer", ""), "archived": record.get("archived", False), "document_count": len(record["documents"])})
+    for name, record, _ in office_doc_list("ledger", directory, recursive=True):
+        if not name.endswith("/record.json") or not re.fullmatch(r"[a-f0-9]{32}", name.split("/")[0]) or not isinstance(record, dict):
+            continue
+        records.append({**{key: record[key] for key in ("id", "filename", "created_at", "revision")}, "contract_no": record.get("contract_no", ""), "customer": record.get("customer", ""), "archived": record.get("archived", False), "document_count": len(record["documents"])})
     return {"ok": True, "contracts": sorted(records, key=lambda record: record["created_at"], reverse=True)}
 
 
@@ -289,7 +287,7 @@ def contract_generate(payload, username):
         document.add_paragraph("经办人：____________    接收/验收人：____________    日期：____________")
         output = io.BytesIO()
         document.save(output)
-        (contract_path(username, record["id"]) / (document_id + ".docx")).write_bytes(output.getvalue())
+        office_blob_write("ledger", contract_path(username, record["id"]) / (document_id + ".docx"), output.getvalue())
         record["documents"].append({"id": document_id, "kind": kind, "created_at": datetime.now().isoformat(timespec="seconds"), "revision": record["revision"], "lines": selected, "status": "draft"})
         contract_write(username, record)
         return {"ok": True, "contract": record}
@@ -300,7 +298,10 @@ def contract_download(username, contract_id, document_id):
     entry = next((entry for entry in record["documents"] if entry["id"] == document_id), None)
     if not entry:
         raise ValueError("单据不存在或无访问权限")
-    return entry["kind"] + "-" + document_id + ".docx", (contract_path(username, contract_id) / (document_id + ".docx")).read_bytes()
+    raw = office_blob_read("ledger", contract_path(username, contract_id) / (document_id + ".docx"))
+    if raw is None:
+        raise ValueError("单据文件不存在")
+    return entry["kind"] + "-" + document_id + ".docx", raw
 
 
 def contract_original(username, contract_id):
@@ -309,9 +310,12 @@ def contract_original(username, contract_id):
     if suffix not in {".docx", ".pdf"}:
         raise ValueError("原件格式无效")
     path = contract_path(username, contract_id) / ("original" + suffix)
-    if path.is_symlink() or not path.is_file():
+    if path.is_symlink():
         raise ValueError("合同原件不可用")
-    return record["filename"], path.read_bytes()
+    raw = office_blob_read("ledger", path)
+    if raw is None:
+        raise ValueError("合同原件不可用")
+    return record["filename"], raw
 
 
 def contract_archive(payload, username):

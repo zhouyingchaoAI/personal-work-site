@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from backend import runtime as rt
+from tests.unit.officedb_testing import db_variant
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVER = ROOT / "backend" / "server.py"
@@ -58,3 +59,6 @@ class ForumPinningTests(unittest.TestCase):
             finally:
                 rt.USER_DATA_DIR = original_dir
                 rt.find_user = original_find_user
+
+
+ForumPinningTestsDbMode = db_variant(ForumPinningTests)

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
+  <defs>
+    <linearGradient id="blue" x1="24" y1="18" x2="70" y2="80" gradientUnits="userSpaceOnUse"><stop stop-color="#7acbff"/><stop offset=".42" stop-color="#348cf3"/><stop offset="1" stop-color="#1652b4"/></linearGradient>
+    <linearGradient id="paper" x1="26" y1="20" x2="70" y2="77" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset=".55" stop-color="#ecf7ff"/><stop offset="1" stop-color="#bcdfff"/></linearGradient>
+    <linearGradient id="accent" x1="65" y1="16" x2="80" y2="31" gradientUnits="userSpaceOnUse"><stop stop-color="#89e5f3"/><stop offset="1" stop-color="#268ecf"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#e4f3ff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <filter id="shadow" x="-30%" y="-20%" width="160%" height="160%"><feDropShadow dx="0" dy="3" stdDeviation="2" flood-color="#215ca8" flood-opacity=".16"/></filter>
+  </defs>
+  <circle cx="48" cy="46" r="44" fill="url(#halo)"/>
+  <ellipse cx="48" cy="84" rx="27" ry="4" fill="#3977c5" opacity=".08"/>
+  <g filter="url(#shadow)"><path d="M15 29a6 6 0 0 1 6-6h20l7 7h27a6 6 0 0 1 6 6v36a6 6 0 0 1-6 6H21a6 6 0 0 1-6-6Z" fill="#1b58b1"/><rect x="25" y="17" width="44" height="43" rx="5" fill="url(#paper)" stroke="#b9dcfa"/><path d="M33 28h26m-26 8h18" stroke="#9fc8ed" stroke-width="3" stroke-linecap="round"/><path d="M15 43h68l-7 30a7 7 0 0 1-7 5H23a7 7 0 0 1-7-6Z" fill="url(#blue)" stroke="#66a7f4"/><path d="M21 48h55" stroke="#b6e8ff" stroke-width="2" opacity=".8"/><circle cx="68" cy="66" r="13" fill="url(#paper)" stroke="#d9efff" stroke-width="2"/><path d="m62 66 4 4 8-9" fill="none" stroke="#287bda" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g>
+</svg>

@@ -1,6 +1,7 @@
 import io
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from openpyxl import load_workbook
 import backend.runtime as r
@@ -95,7 +96,8 @@ class StaffTests(unittest.TestCase):
         self.assertTrue(result['ok'],result)
         staff=next(iter(r.crm_load('alice','staff').values()))
         self.assertEqual(staff['department'],'东区营销部')
-        rel=r.crm_relations('alice')['relations'][0]
+        with patch.object(r,'read_config',return_value={'users':[{'username':'alice','role':'superadmin'}]}):
+            rel=r.crm_read_relations({'username':'alice','role':'superadmin'})['relations'][0]
         self.assertEqual(rel['our_staff']['id'],staff['id'])
         self.assertIn('客户经理',rel['our_member_label'])
         self.assertIn('东区营销部',r.crm_followups('alice')[0]['owner_label'])
@@ -104,7 +106,8 @@ class StaffTests(unittest.TestCase):
         excluded=r.crm_battle_map_generate({'project_id':'P','target_person_id':rel['person_id'],'our_members':[]},'alice')
         self.assertEqual(excluded['battle_map']['who_goes'],'待指派')
         r.crm_staff_save(dict(staff,title='区域负责人'),'alice')
-        self.assertIn('区域负责人',r.crm_relations('alice')['relations'][0]['our_member_label'])
+        with patch.object(r,'read_config',return_value={'users':[{'username':'alice','role':'superadmin'}]}):
+            self.assertIn('区域负责人',r.crm_read_relations({'username':'alice','role':'superadmin'})['relations'][0]['our_member_label'])
         conflict=r.crm_quick_create(dict(payload,name='不应新增',our_department='错误部门'),'alice')
         self.assertFalse(conflict['ok'])
         self.assertEqual(len(r.crm_load('alice','people')),1)

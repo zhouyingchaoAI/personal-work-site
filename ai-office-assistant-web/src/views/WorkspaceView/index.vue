@@ -18,6 +18,7 @@ const KnowledgeBaseView = defineAsyncComponent(() => import('../KnowledgeBaseVie
 const ProjectAssistantView = defineAsyncComponent(() => import('../ProjectAssistantView/index.vue'))
 const LedgerAssistantView = defineAsyncComponent(() => import('../LedgerAssistantView/index.vue'))
 const CashflowAssistantView = defineAsyncComponent(() => import('../CashflowAssistantView/index.vue'))
+const DataCenterView = defineAsyncComponent(() => import('../DataCenterView/index.vue'))
 const CrmAssistantView = defineAsyncComponent(() => import('../CrmAssistantView/index.vue'))
 const ReimbursementView = defineAsyncComponent(() => import('../ReimbursementView/index.vue'))
 const NewsView = defineAsyncComponent(() => import('../NewsView/index.vue'))
@@ -58,7 +59,7 @@ const activeMenu = computed<MenuId>(() => {
 const menuItems = computed(() => (user.value ? applyNavPrefs(visibleMenuItems(user.value)) : []))
 const hasActiveAssistantView = computed(() => [
   'assistants', 'weekly', 'trip', 'diary', 'writing', 'forum', 'workorder', 'news', 'mailassistant',
-  'meeting', 'knowledge', 'project', 'crm', 'ledger', 'cashflow', 'workflow', 'reimbursement', 'lobsterbase',
+  'meeting', 'knowledge', 'project', 'crm', 'ledger', 'cashflow', 'datacenter', 'workflow', 'reimbursement', 'lobsterbase',
   'config', 'mailconfig', 'skills', 'usermanage', 'mcp',
 ].includes(activeMenu.value))
 const homeGreeting = computed(() => {
@@ -193,7 +194,7 @@ function sendAssistantMessage(text: string) {
 
 async function handleLogout() {
   await logoutSession()
-  await router.replace('/login')
+  window.location.replace('/login')
 }
 </script>
 
@@ -223,6 +224,7 @@ async function handleLogout() {
     <KeepAlive><CrmAssistantView v-if="activeMenu === 'crm'" /></KeepAlive>
     <KeepAlive><LedgerAssistantView v-if="activeMenu === 'ledger'" /></KeepAlive>
     <KeepAlive><CashflowAssistantView v-if="activeMenu === 'cashflow'" /></KeepAlive>
+    <KeepAlive><DataCenterView v-if="activeMenu === 'datacenter'" /></KeepAlive>
     <KeepAlive><WorkflowCenterView v-if="activeMenu === 'workflow'" /></KeepAlive>
     <KeepAlive><ReimbursementView v-if="activeMenu === 'reimbursement'" /></KeepAlive>
     <KeepAlive><LobsterBaseView v-if="activeMenu === 'lobsterbase'" /></KeepAlive>

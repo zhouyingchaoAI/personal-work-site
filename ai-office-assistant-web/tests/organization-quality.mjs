@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import assert from 'node:assert/strict'
 const exports={}
-vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/views/CrmAssistantView/organizationQuality.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports})
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../packages/joint-command/frontend/organizationQuality.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports})
 const {organizationQuality:evaluate}=exports
 const now=Date.parse('2026-09-20T12:00:00Z')
 const regionalUnits=[{id:'root',name:'跨区公司',type:'业主单位'}, {id:'east',parent_unit_id:'root',business_regions:['东区']}, {id:'west',parent_unit_id:'root',business_regions:['西区']}]

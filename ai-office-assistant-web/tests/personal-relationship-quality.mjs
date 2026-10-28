@@ -2,7 +2,7 @@ import ts from 'typescript'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import assert from 'node:assert/strict'
-function module(name){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL(`../src/views/CrmAssistantView/${name}.ts`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports});return exports}
+function module(name){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL(`../packages/joint-command/frontend/${name}.ts`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports});return exports}
 const {personalRelationshipQuality:evaluate}=module('personalRelationshipQuality')
 const {defaultQualityRules:rules}=module('organizationQuality')
 const now=Date.parse('2026-09-20T00:00:00Z')

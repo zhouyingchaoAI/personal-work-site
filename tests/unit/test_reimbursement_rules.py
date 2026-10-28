@@ -1,9 +1,21 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 import backend.runtime as rt
+from tests.unit.officedb_testing import db_variant
 
 
 class ReimbursementRuleExtractionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.original_dir = rt.USER_DATA_DIR
+        rt.USER_DATA_DIR = Path(self.tmp.name)
+
+    def tearDown(self):
+        rt.USER_DATA_DIR = self.original_dir
+        self.tmp.cleanup()
+
     def test_single_train_ticket_uses_quarter_page_layout_when_grouping(self):
         import re
         import uuid
@@ -14,8 +26,9 @@ class ReimbursementRuleExtractionTests(unittest.TestCase):
         username = "unit_train_merge"
         key = "train_" + uuid.uuid4().hex
         image = Image.new("RGB", (200, 100), "white")
-        path = rt._save_cache(username, key, "train-ticket.pdf", b"")
-        image.save(path, format="PDF")
+        pdf_buffer = __import__("io").BytesIO()
+        image.save(pdf_buffer, format="PDF")
+        rt._save_cache(username, key, "train-ticket.pdf", pdf_buffer.getvalue())
 
         result = rt.merge_reimbursement_pdf(
             username,
@@ -24,8 +37,10 @@ class ReimbursementRuleExtractionTests(unittest.TestCase):
             merge_train_tickets=True,
         )
 
-        out_path = rt.reimbursement_output_dir(username) / result["filename"]
-        reader = pypdf.PdfReader(str(out_path))
+        out_path, out_raw = rt.get_reimbursement_output(username, result["filename"])
+        self.assertEqual(out_path.name, result["filename"])
+        self.assertEqual([f["filename"] for f in rt.list_reimbursement_outputs(username)], [result["filename"]])
+        reader = pypdf.PdfReader(__import__("io").BytesIO(out_raw))
         content = reader.pages[0].get_contents().get_data().decode("latin1", errors="ignore")
         scales = [float(value) for value in re.findall(r"q\s+([0-9.]+)\s+0\.0\s+0\.0\s+[0-9.]+\s+", content)]
 
@@ -533,8 +548,8 @@ class ReimbursementRuleExtractionTests(unittest.TestCase):
             {"key": same_key, "invoice_type": "住宿", "invoice_date": "2026-06-25", "invoice_amount": "¥285.00", "invoice_location": "杭州欧诺酒店"},
         ], "批量发票")
 
-        zip_path = rt.reimbursement_output_dir(username) / result["filename"]
-        with zipfile.ZipFile(zip_path) as zf:
+        _, zip_raw = rt.get_reimbursement_output(username, result["filename"])
+        with zipfile.ZipFile(__import__("io").BytesIO(zip_raw)) as zf:
             names = sorted(zf.namelist())
             self.assertEqual(names, [
                 "住宿_2026-06-25_¥285.00_杭州欧诺酒店.pdf",
@@ -542,6 +557,9 @@ class ReimbursementRuleExtractionTests(unittest.TestCase):
                 "火车_2026-06-24_¥21.00_无锡-苏州.pdf",
             ])
             self.assertEqual(zf.read("火车_2026-06-24_¥21.00_无锡-苏州.pdf"), b"train")
+
+ReimbursementRuleExtractionDbModeTests = db_variant(ReimbursementRuleExtractionTests)
+
 
 if __name__ == "__main__":
     unittest.main()

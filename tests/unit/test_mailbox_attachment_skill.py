@@ -7,15 +7,20 @@ import unittest
 from pathlib import Path
 
 from backend import runtime
+from tests.unit.officedb_testing import db_variant
 
 
 class MailboxAttachmentSkillTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self._orig_get_part = runtime.get_mail_part
+        self._orig_user_data_dir = runtime.USER_DATA_DIR
+        runtime.USER_DATA_DIR = Path(self._tmp.name) / "user_data"
+        runtime.USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     def tearDown(self):
         runtime.get_mail_part = self._orig_get_part
+        runtime.USER_DATA_DIR = self._orig_user_data_dir
         self._tmp.cleanup()
 
     def _fake_part(self, content: bytes, saved_name="part2__invoice.pdf"):
@@ -90,12 +95,13 @@ class MailboxAttachmentSkillTests(unittest.TestCase):
         try:
             runtime.user_root = lambda username: Path(self._tmp.name) / username
             cache_dir = runtime.user_mail_cache_dir("u1")
-            (cache_dir / "sent.json").write_text(json.dumps({"messages": [{"uid": "sent-1"}]}), encoding="utf-8")
-            (cache_dir / "inbox_inbox_20.json").write_text(json.dumps({"messages": []}), encoding="utf-8")
+            runtime.save_sent_mail_store("u1", [{"uid": "sent-1"}])
+            runtime.write_mail_cache("u1", "inbox_inbox_20", {"messages": []})
 
             runtime.clear_mail_cache("u1")
 
-            self.assertTrue((cache_dir / "sent.json").exists())
+            self.assertEqual([m["uid"] for m in runtime.load_sent_mail_store("u1")], ["sent-1"])
+            self.assertIsNone(runtime.read_mail_cache("u1", "inbox_inbox_20", 0))
             self.assertFalse((cache_dir / "inbox_inbox_20.json").exists())
         finally:
             runtime.user_root = original_user_root
@@ -129,6 +135,9 @@ class MailboxAttachmentSkillTests(unittest.TestCase):
         finally:
             runtime.report_files = original_report_files
             runtime.compose_draft = original_compose_draft
+
+
+MailboxAttachmentSkillDbModeTests = db_variant(MailboxAttachmentSkillTests)
 
 
 if __name__ == "__main__":

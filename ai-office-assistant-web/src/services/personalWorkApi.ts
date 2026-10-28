@@ -1,10 +1,23 @@
 import { apiTaskLabel, beginBackgroundTask, finishBackgroundTask } from '../utils/backgroundTasks'
+export interface MonthlyBattleEvent { comments?: { id: string; at: string; author: string; content: string }[] }
+export interface MonthlyBattleItem { can_comment?: boolean }
+export function commentMonthlyBattle(id: string, event_id: string, content: string) { return post('/crm/monthly-battle/comment', { id, event_id, content }) }
+
+export interface MonthlyBattleEvent { stage_reason?: string; id: string; at: string; author: string; from_stage: number; stage: number; completed: boolean; content: string; next_action: string; attachments: ForumAttachment[] }
+export interface MonthlyBattleItem { conflicts: string[]; missing_code: boolean; sources: { sheet: string; row: number; values: Record<string, string> }[] }
+export interface MonthlyBattleItem { id: string; month: string; code: string; name: string; owner: string; manager: string; region: string; target: string; target_stage: number; amount: number | string; tag: string; stage: number; completed: boolean; cadence: number; revision: number; events: MonthlyBattleEvent[]; stage_days: Record<string, number>; action_cycles: { status: 'green' | 'red' | 'gray'; label: string }[]; overdue: boolean; last_at: string; can_update: boolean; assignees: string[] }
+export function getMonthlyBattle(selection: { view?: string; region?: string; manager?: string } = {}) { return request<{ ok: boolean; items: MonthlyBattleItem[]; stages: string[]; can_import: boolean; scope?: { level: string; label: string }; view_options?: { regions: string[]; users: { username: string; name: string }[] } | null }>('/crm/monthly-battle?' + new URLSearchParams(selection).toString()) }
+export function importMonthlyBattle(data: string, month: string) { return post<{ ok: boolean; count: number; unassigned: number }>('/crm/monthly-battle/import', { data, month }) }
+export function getMonthlyBattleTemplate() { return request<{ name: string; data: string }>('/crm/monthly-battle?template=1') }
+export function saveMonthlyBattle(payload: { event_type?: string; stage_reason?: string; id: string; revision: number; stage: number; cadence: number; completed: boolean; content: string; next_action: string; attachments: ForumAttachment[] }) { return post<{ ok: boolean }>('/crm/monthly-battle/progress', payload) }
 
 export interface InternalOrganizationNode { id: string; name: string; parent_id: string }
-export interface InternalOrganizationMember { username: string; name: string; employee_id: string; position: string; node_id: string }
+export interface InternalOrganizationMember { username: string; name: string; employee_id: string; position: string; node_id: string; node_ids?: string[] }
 export interface InternalOrganizationData { ok: boolean; revision: string; nodes: InternalOrganizationNode[]; members: InternalOrganizationMember[]; updated_members?: number }
 export function getInternalOrganization() { return request<InternalOrganizationData>('/admin-organization/canvas') }
-export function saveInternalOrganization(payload: { revision: string; nodes: InternalOrganizationNode[]; assignments: Record<string,string> }) { return post<InternalOrganizationData>('/admin-organization/canvas', payload) }
+export function saveInternalOrganization(payload: { revision: string; nodes: InternalOrganizationNode[]; assignments: Record<string,string>; memberships?: Record<string,string[]> }) { return post<InternalOrganizationData>('/admin-organization/canvas', payload) }
+export interface CrmPerson { unit_ids?: string[] }
+export interface CrmStaff { organization_memberships?: {company: string; department: string}[] }
 
 export interface User {
   username: string
@@ -314,6 +327,7 @@ export interface ForumAttachmentResponse {
 }
 
 export interface Ticket {
+  author_username?: string
   id: string
   title: string
   body: string
@@ -934,8 +948,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     }
   }
   if (!response.ok || looksLikeHtml) {
-    const message = typeof data === "object" && data && "error" in data ? String(data.error) : looksLikeHtml ? "接口返回了页面内容，请重新登录后再重试" : "请求失败（" + response.status + "）"
-    if (response.status === 401 || looksLikeHtml) redirectToLoginOnUnauthorized(path)
+    const message = typeof data === "object" && data && "error" in data ? String(data.error) : looksLikeHtml ? "服务暂时不可用，请稍后重试" : "请求失败（" + response.status + "）"
+    if (response.status === 401) redirectToLoginOnUnauthorized(path)
     throw new Error(message)
   }
   return data as T
@@ -1147,6 +1161,65 @@ export interface CashflowEntry { id: string; date: string; milestone: string; re
 export interface CashflowScenario { id: string; project_name: string; project_code: string; region: string; customer: string; owner: string; annual_rate: number; note: string; entries: CashflowEntry[]; summary: { total_receivable: number; total_received: number; outstanding: number; total_payment: number; funding_gap: number; funding_cost: number; ending_cashflow: number }; updated_at: string }
 export interface CashflowGroup { name: string; projects: number; receivable: number; received: number; outstanding: number; funding_gap: number }
 export interface CashflowSummary { total: number; total_receivable: number; total_received: number; outstanding: number; funding_gap: number; funding_cost: number }
+
+export interface DatacenterModule { module: string; level: string; files: number; bytes: number }
+export interface DatacenterLevel { name: string; files: number; bytes: number; modules: number }
+export interface DatacenterScan { generated_at: string; duration_seconds: number; total_files: number; total_bytes: number; user_count: number; levels: Record<string, DatacenterLevel>; modules: DatacenterModule[]; users_top: { user: string; files: number; bytes: number }[]; history?: { date: string; total_bytes: number; A: number; B: number; C: number; D: number }[] }
+export interface DatacenterDisk { total: number; used?: number; free: number; mount: string; archives?: number; archives_bytes?: number }
+export interface DatacenterService { key: string; label: string; level: string; status: 'up' | 'down' }
+export interface DatacenterMigrationStep { step: string; status: 'done' | 'todo'; note: string }
+export interface DatacenterSyncTable { table: string; rows: number; source: number; match: boolean }
+export interface DatacenterSyncStatus { last?: { started_at: string; finished_at: string; ok: boolean; reason: string; rows_total: number; duration_seconds: number; error?: string; document_parse_errors?: number; file_archive?: { id: string; ok: boolean; files: number; entries: number; bytes: number; sqlite_snapshots: number }; tables: DatacenterSyncTable[]; mismatches?: string[] }; history?: { finished_at: string; ok: boolean; rows_total: number; reason: string }[] }
+export function runDatacenterDbSync() { return post<{ ok: boolean; message: string }>('/datacenter/sync/run', {}) }
+export interface DatacenterOverview { ok: boolean; scan: DatacenterScan; db_sync?: DatacenterSyncStatus; level_names: Record<string, string>; disk: DatacenterDisk; backup_disk: DatacenterDisk | null; services: DatacenterService[]; migration: DatacenterMigrationStep[] }
+export interface DatacenterRun { id: string; reason: string; ok: boolean; started_at: string; finished_at?: string; duration_seconds?: number; bytes?: number; entries?: number; sha256?: string; archive?: string; error?: string; verified?: boolean }
+export interface DatacenterBackups { ok: boolean; runs: DatacenterRun[]; pending_trigger: boolean; status: { last_ok_at?: string; next_scheduled?: string; daily_at?: string; keep?: number; heartbeat_at?: string; backup_disk?: DatacenterDisk; last_run?: DatacenterRun }; copies: { name: string; target: string; state: string; note: string }[] }
+export interface DatacenterDashboard { ok: boolean; generated_at: string; records: Record<string, number>; records_note: string; history: { date: string; total_bytes: number }[]; top_modules: DatacenterModule[]; extensions: { ext: string; count: number }[]; extensions_other: number; backup: { total: number; ok: number; recent: { id: string; ok: boolean; bytes: number; finished_at: string }[] } }
+export interface DatacenterBrowseEntry { name: string; path: string; dir: boolean; size: number | null; mtime: string; module: string; level: string }
+export interface DatacenterBrowse { ok: boolean; path: string; entries: DatacenterBrowseEntry[]; truncated: boolean }
+export interface DatacenterFilePreview { ok: boolean; kind: 'json' | 'jsonl' | 'text' | 'sqlite' | 'binary'; path: string; size: number; mtime: string; data?: unknown; summary?: { type: string; items?: number; keys?: number }; rows?: unknown[][] | unknown[]; columns?: string[]; tables?: { name: string; rows: number }[]; table?: string; offset?: number; total_lines?: number; text?: string; truncated?: boolean; note?: string; downloadable?: boolean }
+export function getDatacenterDashboard() { return request<DatacenterDashboard>('/datacenter/dashboard') }
+export function getDatacenterBrowse(path: string, subject = '') { return request<DatacenterBrowse>(`/datacenter/browse?path=${encodeURIComponent(path)}&subject=${encodeURIComponent(subject)}`) }
+export function getDatacenterFile(path: string, table = '', offset = 0) { return request<DatacenterFilePreview>(`/datacenter/file?path=${encodeURIComponent(path)}&table=${encodeURIComponent(table)}&offset=${offset}`) }
+export function getDatacenterAccessLog() { return request<{ ok: boolean; rows: { at: string; user: string; action: string; path: string; detail: string }[] }>('/datacenter/access-log') }
+export function datacenterDownloadUrl(path: string) { return `/api/datacenter/download?path=${encodeURIComponent(path)}` }
+export interface DatacenterDatasetParam { name: string; required: boolean; desc: string }
+export interface DatacenterDataset { database_table?: string; typed_fields?: { name: string; type: string; source_field: string }[]; key: string; group: string; name: string; desc: string; params: DatacenterDatasetParam[]; fields: [string, string][]; source: string; note: string }
+export interface DatacenterCatalog { ok: boolean; datasets: DatacenterDataset[]; base_url: string; auth: { header: string; note: string }; readonly: boolean; max_limit: number }
+export interface DatacenterApiKeyInfo { id: string; name: string; prefix: string; created_by: string; created_at: string; last_used_at: string; calls: number; revoked_at: string }
+export function getDatacenterCatalog() { return request<DatacenterCatalog>('/datacenter/datasets') }
+export function getDatacenterApiKeys() { return request<{ ok: boolean; keys: DatacenterApiKeyInfo[] }>('/datacenter/apikeys') }
+export function createDatacenterApiKey(name: string) { return post<{ ok: boolean; token: string }>('/datacenter/apikeys/create', { name }) }
+export function revokeDatacenterApiKey(id: string) { return post<{ ok: boolean }>('/datacenter/apikeys/revoke', { id }) }
+export function runDatacenterDataQuery(dataset: string, params: Record<string, string>) {
+  const qs = new URLSearchParams({ dataset, ...Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '')) })
+  return request<Record<string, unknown>>(`/datacenter/data?${qs}`)
+}
+export interface DatacenterDbInstance { id: string; kind: string; label: string; system: string; level: string; category?: string; note?: string; location: string; status: 'up' | 'down' | 'auth-error'; version?: string; detail?: string; queryable: boolean }
+export interface DatacenterDbObject { name: string; rows: number | null; size: number | null; kind_label: string }
+export interface DatacenterDbObjects { ok: boolean; databases: string[]; objects: DatacenterDbObject[]; rows_label: string; current_db?: string; summary?: Record<string, string | number>; truncated?: boolean }
+export interface DatacenterDbRows { ok: boolean; columns: string[]; rows: Record<string, unknown>[]; total?: number | null; truncated?: boolean; duration_ms?: number; note?: string }
+export function getDatacenterDatabases() { return request<{ ok: boolean; instances: DatacenterDbInstance[] }>('/datacenter/databases') }
+export function getDatacenterDbObjects(instance: string, db = '', pattern = '*') { return request<DatacenterDbObjects>(`/datacenter/databases/objects?instance=${encodeURIComponent(instance)}&db=${encodeURIComponent(db)}&pattern=${encodeURIComponent(pattern)}`) }
+export function getDatacenterDbRows(instance: string, db: string, object: string, page = 0, size = 50, filter = '') { return request<DatacenterDbRows>(`/datacenter/databases/rows?instance=${encodeURIComponent(instance)}&db=${encodeURIComponent(db)}&object=${encodeURIComponent(object)}&page=${page}&size=${size}&filter=${encodeURIComponent(filter)}`) }
+export function runDatacenterDbQuery(instance: string, db: string, sql: string) { return post<DatacenterDbRows>('/datacenter/databases/query', { instance, db, sql }) }
+export interface DcFlowClient { label: string; count: number }
+export interface DcFlowInstance { id: string; label: string; kind: string; system: string; category?: string; status: 'up' | 'down' | 'auth-error'; gauges: Record<string, string | number>; rates: Record<string, number>; deltas: Record<string, number>; clients: DcFlowClient[]; active: boolean }
+export interface DcFlowAssistant { id: string; label: string; instances: string[]; client_hints: string[]; node_type: 'assistant' | 'system'; storage_note: string; mirror_instances: string[]; unregistered_instances: string[] }
+export interface DcFlowAlert { at: string; instance: string; level: 'critical' | 'warning'; code: string; message: string }
+export interface DcFlowSnapshot { ok: boolean; sampled_at: string; assistants: DcFlowAssistant[]; instances: DcFlowInstance[]; alerts_active: DcFlowAlert[]; alerts_recent: DcFlowAlert[] }
+export function getDatacenterDbFlow() { return request<DcFlowSnapshot>('/datacenter/databases/flow') }
+export interface DcStorageItem { data: string; mode: 'database' | 'file' | 'object' | 'external' | 'unknown'; primary: string; note: string; mirror_tables: string[]; mirror_evidence: { table: string; verified: boolean; rows?: number | null }[] }
+export interface DcSubject { id: string; label: string; group_ids: string[]; instances: string[]; mirror_instances: string[]; modules: string[]; datasets: string[]; metrics: string[]; items: (DcStorageItem & { owner_label: string })[] }
+export interface DcStorageMap { ok: boolean; subjects: DcSubject[]; crm_live: boolean; scope_note: string; sync: { ok?: boolean; finished_at?: string; archive_ok?: boolean }; assistants: { id: string; label: string; node_type: 'assistant' | 'system'; items: DcStorageItem[] }[] }
+export function getDatacenterStorageMap() { return request<DcStorageMap>('/datacenter/storage-map') }
+export interface DcFlowTables { ok: boolean; assistant: string; instance: string; kind: string; objects: DatacenterDbObject[]; rows_label: string; note: string }
+export function getDatacenterDbFlowTables(assistant: string, instance: string) { return request<DcFlowTables>(`/datacenter/databases/flow/tables?assistant=${encodeURIComponent(assistant)}&instance=${encodeURIComponent(instance)}`) }
+export function getDatacenterOverview() { return request<DatacenterOverview>('/datacenter/overview') }
+export function getDatacenterBackups() { return request<DatacenterBackups>('/datacenter/backups') }
+export function runDatacenterBackup() { return post<{ ok: boolean; message: string }>('/datacenter/backup/run', {}) }
+export function refreshDatacenterScan() { return post<{ ok: boolean; generated_at: string }>('/datacenter/refresh', {}) }
+
 export function listCashflow() { return request<{ ok: boolean; items: CashflowScenario[]; summary: CashflowSummary; by_region: CashflowGroup[]; by_customer: CashflowGroup[] }>('/cashflow') }
 export function saveCashflow(payload: Partial<CashflowScenario>) { return post<{ ok: boolean; item: CashflowScenario }>('/cashflow/save', payload) }
 export function deleteCashflow(id: string) { return post<{ ok: boolean }>('/cashflow/delete', { id }) }
@@ -1159,14 +1232,18 @@ export async function exportCashflowWorkbook() { const response = await fetch(ba
 export interface CashflowHistoryGroup { name: string; records: number; planned: number; received: number; unpaid: number; received_rate: number; difficult: number; long_term: number }
 export interface CashflowProjectRisk extends CashflowHistoryGroup { project_code: string; customer: string; region: string }
 export interface CashflowCustomerProfile extends CashflowHistoryGroup { average_collection_days: number | null; median_collection_days: number | null; p75_collection_days: number | null; p90_collection_days: number | null; collection_sample_count: number; on_time_collection_rate: number | null; median_schedule_variance_days: number | null; schedule_sample_count: number; cashflow_risk_score: number; cashflow_risk_level: string; recommended_collection_factor: number; traits: string[]; recommendation: string; payment_patterns: { name: string; amount: number; share: number }[]; stage_mix: { name: string; share: number }[] }
-export interface CashflowHistory { ok: boolean; source_name: string; imported_at: string; summary: { records: number; projects: number; planned_amount: number; received_amount: number; unpaid_amount: number; received_rate: number; average_collection_days: number | null }; by_region: CashflowHistoryGroup[]; by_customer: CashflowHistoryGroup[]; by_project_type: CashflowHistoryGroup[]; by_scale: CashflowHistoryGroup[]; by_status: CashflowHistoryGroup[]; by_year: CashflowHistoryGroup[]; customer_profiles: CashflowCustomerProfile[]; project_risks: CashflowProjectRisk[] }
+export interface CashflowInsightTier { name: string; projects: number; closed_projects: number; median_cycle_days: number | null; p75_cycle_days: number | null; median_first_days: number | null; avg_nodes: number | null; received_rate: number; open_projects: number }
+export interface CashflowInsightCustomer { name: string; projects: number; nodes: number; planned: number; received: number; unpaid: number; received_rate: number; overdue_share: number; median_node_days: number | null; p75_node_days: number | null; cycle_index: number | null; occupancy_years: number; median_cycle_days: number | null; prepay_share: number; occupied_year: number; funding_cost: number; cycle_vs_company: number | null; occupancy_vs_company: number; credit_score: number | null; credit_grade: 'A' | 'B' | 'C' | 'D' | '样本不足'; terms: string }
+export interface CashflowInsightPattern { signature: string; projects: number; probability: number; nodes: { stage: string; share: number; median_days: number | null; samples: number }[]; median_cycle_days: number | null; closed_projects: number; median_contract_amount: number | null }
+export interface CashflowInsights { bucket_medians: Record<string, number>; funding_rate: number; company_cycle_index: number; company_occupancy_years: number; project_count: number; closed_projects: number; tiers: CashflowInsightTier[]; customers: CashflowInsightCustomer[]; patterns: CashflowInsightPattern[]; pattern_sample: number; conclusions: { key: string; title: string; text: string }[] }
+export interface CashflowHistory { ok: boolean; source_name: string; imported_at: string; summary: { records: number; projects: number; planned_amount: number; received_amount: number; unpaid_amount: number; received_rate: number; average_collection_days: number | null }; by_region: CashflowHistoryGroup[]; by_customer: CashflowHistoryGroup[]; by_project_type: CashflowHistoryGroup[]; by_scale: CashflowHistoryGroup[]; by_status: CashflowHistoryGroup[]; by_year: CashflowHistoryGroup[]; customer_profiles: CashflowCustomerProfile[]; project_risks: CashflowProjectRisk[]; insights?: CashflowInsights }
 export function listCashflowHistory() { return request<CashflowHistory>('/cashflow/history') }
 export interface CashflowHistoryRecord { id: string; region: string; office: string; province: string; customer: string; project_code: string; project_name: string; project_type: string; contract_amount: number; planned_amount: number; received_amount: number; status: string; contract_date: string; planned_date: string; received_date: string; is_difficult: boolean; is_long_term: boolean }
 export function listCashflowHistoryRecords(params: { keyword?: string; region?: string; page?: number; page_size?: number } = {}) { return request<{ ok: boolean; items: CashflowHistoryRecord[]; total: number; page: number; page_size: number }>(`/cashflow/history/records?${new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined && value !== '').map(([key, value]) => [key, String(value)]))}`) }
 export function saveCashflowHistoryRecord(payload: Partial<CashflowHistoryRecord>) { return post<{ ok: boolean; item: CashflowHistoryRecord }>('/cashflow/history/save', payload) }
 export function deleteCashflowHistoryRecord(id: string) { return post<{ ok: boolean }>('/cashflow/history/delete', { id }) }
 
-// ---- 客户经营助手（CRM） ----
+// ---- 联指经营助手（CRM） ----
 export interface CrmUnit { business_region?: string; business_regions?: string[]; parent_unit_id?: string; organization_level?: 'company' | 'subsidiary' | 'unit' | ''; company_full_name?: string; subsidiary_full_name?: string; unit_name?: string; id: string; name: string; type: string; region: string; line_scale: string; bid_preference: string; history: string; win_rate: string; source: string; version: number }
 export interface CrmPerson { mobile?: string; office_phone?: string; email?: string; wechat?: string; importance?: string; support_level?: string; maintenance_days?: number | string; imported_history?: string; company_full_name?: string; subsidiary_full_name?: string; organization_unit_name?: string; organization_path?: string; department?: string; manager_id?: string; responsibilities?: string; id: string; name: string; unit_id: string; unit_name?: string; title: string; decision_role: string; power_radius: string; influence: number; stance: string; career_track: string[]; rotation_window: string; version: number }
 export interface CrmAction { next_step?: string; due_date?: string; owner?: string; supervisor?: string; created_by?: string; project_id?: string; completed_at?: string; id: string; relation_id: string; type: string; level: string; intel: string; cost: string; effective: boolean; bidirectional: boolean; decision_node: string; happened_at: string }
@@ -1179,13 +1256,18 @@ export interface CrmOverview { ok: boolean; stats: { units: number; people: numb
 export interface CrmCoverageCell { applicable?: boolean; covered: boolean; strength: number }
 export interface CrmCoverage { matrix: Record<string, Record<string, CrmCoverageCell>>; nodes: string[]; unit_types: string[]; should_cover: number; covered: number; l3_plus: number }
 export interface CrmBattleMap { ok: boolean; battle_map: { target: string; who_goes: string; route: string; first_step: string; current_level: number; target_level: number }; candidates: { our_member: string; strength: number; score: number; path: string }[]; pipeline: { step: string; detail: string }[]; coverage: CrmCoverage | null; opportunity_context?: { code: string; name: string; owner_unit: string; stage: string; cancelled: boolean; matched_units: number; matched_people: number; relations: number; assigned_relations: number; strong_relations: number; single_point_risks: number }; graph_source?: 'neo4j' | 'memory'; graph_path?: { names: string[]; hops: number } | null }
-export interface CrmOpportunity { id: string; code: string; name: string; owner_unit: string; stage: string; win_rate: string; status: string; region: string; manager: string; bid_date: string; contract_date: string; amount: number; cancelled: boolean; cancel_reason: string; version?: number; _owner?: string }
+export interface CrmStageContact { person_id?: string; name: string; role?: string; department?: string }
+export interface CrmStageProgressEntry { attachments: ForumAttachment[]; contacts: CrmStageContact[]; status?: string; planned_start?: string; planned_end?: string; work_done?: string[]; updated_at?: string; updated_by?: string }
+export interface CrmOpportunity { created_at?: string; updated_at?: string; owner_unit_id?: string; sales_stage?: string; outcome?: 'open' | 'won' | 'lost' | 'cancelled'; outcome_changed_at?: string; id: string; code: string; name: string; owner_unit: string; stage: string; win_rate: string; status: string; region: string; manager: string; bid_date: string; contract_date: string; amount: number; cancelled: boolean; cancel_reason: string; stage_progress?: Record<string, CrmStageProgressEntry>; version?: number; _owner?: string; investment?: number; share_integration?: number; share_service?: number; sales_projects?: number; contract_count?: number; contract_amount_yuan?: number; contract_codes?: string[]; business_date?: string; contractor?: string; products?: string; brand?: string; remark?: string; outcome_source?: string }
+export interface CrmSalesContract { id: string; project_code: string; project_name: string; subproject_code: string; subproject_name: string; contract_code: string; customer: string; owner_unit: string; signed_at: string; amount_yuan: number; project_manager: string; account_manager: string; archived: boolean; industry: string; payment_terms: string; expected_margin_yuan?: number | null; imported_at?: string; imported_by?: string; _owner?: string }
+export function crmOpportunityStageSave(payload: { id?: string; code?: string; stage: string; attachments: { id?: string; name?: string; type?: string; size?: number; data?: string }[]; contacts: CrmStageContact[]; status?: string; planned_start?: string; planned_end?: string; work_done?: string[] }) { return post<{ ok: boolean; opportunity?: CrmOpportunity; error?: string }>('/crm/opportunity/stage-save', payload) }
 
 export function crmOverview() { return request<CrmOverview>('/crm/overview') }
 export function crmUnits() { return request<{ ok: boolean; units: CrmUnit[]; types: string[] }>('/crm/units') }
 export function crmPeople() { return request<{ ok: boolean; people: CrmPerson[]; roles: string[] }>('/crm/people') }
 export function crmRelations() { return request<{ ok: boolean; relations: CrmRelation[]; levels: Record<string, string> }>('/crm/relations') }
 export function crmOpportunities() { return request<{ ok: boolean; opportunities: CrmOpportunity[] }>('/crm/opportunities') }
+export function crmSalesContracts() { return request<{ ok: boolean; contracts: CrmSalesContract[] }>('/crm/sales-contracts') }
 export function crmSaveUnit(payload: Partial<CrmUnit>) { return post<{ ok: boolean; unit?: CrmUnit; error?: string }>('/crm/unit/save', payload) }
 export function crmDeleteUnit(id: string) { return post<{ ok: boolean; deleted_id?: string; error?: string }>('/crm/unit/delete', { id }) }
 export function crmDepartmentNode(payload: { unit_id: string; department: string; action: 'add' | 'delete'; name?: string }) { return post<{ ok: boolean; unit?: CrmUnit; error?: string }>('/crm/department/node', payload) }
@@ -1193,12 +1275,40 @@ export function crmSavePerson(payload: Partial<CrmPerson>) { return post<{ ok: b
 export function crmSaveRelation(payload: Partial<CrmRelation>) { return post<{ ok: boolean; relation?: CrmRelation; error?: string }>('/crm/relation/save', payload) }
 export function crmAddAction(payload: Partial<CrmAction>) { return post<{ ok: boolean; action?: CrmAction; relation?: CrmRelation; error?: string }>('/crm/action/add', payload) }
 export function crmSaveLink(payload: { id?: string; project_id: string; decision_node: string; person_id: string; our_member?: string }) { return post<{ ok: boolean; error?: string }>('/crm/link/save', payload) }
-export function crmImportOpportunities(payload: { filename: string; data: string }) { return post<{ ok: boolean; imported?: number; active?: number; archived?: number; error?: string }>('/crm/opportunities/import', payload) }
+export interface CrmOpportunityImportResult {
+  ok: boolean
+  preview?: boolean
+  total?: number
+  unique_count?: number
+  new_count?: number
+  duplicate_count?: number
+  duplicates?: { code: string; name: string; owner_unit: string; existing_name: string; reason: string }[]
+  duplicates_truncated?: boolean
+  imported?: number
+  created?: number
+  updated?: number
+  skipped?: number
+  active?: number
+  archived?: number
+  error?: string
+}
+export function crmImportOpportunities(payload: { filename: string; data: string; mode?: 'preview' | 'skip' | 'update' }) { return post<CrmOpportunityImportResult>('/crm/opportunities/import', payload) }
+export function crmImportSalesContracts(payload: { filename: string; data: string }) { return post<{ ok: boolean; contracts?: number; contract_projects?: number; matched_opportunities?: number; unmatched_projects?: number; won_opportunities?: number; error?: string }>('/crm/sales-contracts/import', payload) }
+export async function crmOpportunityTemplate() {
+  const base = backendUrl ? backendUrl + '/api/crm/opportunities/template' : '/personal-work-api/crm/opportunities/template'
+  const response = await fetch(base, { credentials: 'include' })
+  if (!response.ok) { let m = '下载模板失败'; try { m = (await response.json()).error || m } catch { /* non-JSON */ } throw new Error(m) }
+  const disposition = response.headers.get('content-disposition') || ''
+  const name = decodeURIComponent(disposition.split("filename*=UTF-8''")[1] || '机会点导入模板.xlsx')
+  return { blob: await response.blob(), name }
+}
 export function crmSaveOpportunity(payload: Partial<CrmOpportunity>) { return post<{ ok: boolean; opportunity?: CrmOpportunity; error?: string }>('/crm/opportunity/save', payload) }
-export async function crmExportOpportunities(filters: { state?: 'all' | 'active' | 'archived'; stage?: string; keyword?: string } = {}) {
+export async function crmExportOpportunities(filters: { state?: 'all' | 'active' | 'archived'; stage?: string; region?: string; sales_stage?: string; keyword?: string } = {}) {
   const query = new URLSearchParams()
   if (filters.state && filters.state !== 'all') query.set('state', filters.state)
   if (filters.stage && filters.stage !== 'all') query.set('stage', filters.stage)
+  if (filters.region && filters.region !== 'all') query.set('region', filters.region)
+  if (filters.sales_stage && filters.sales_stage !== 'all') query.set('sales_stage', filters.sales_stage)
   if (filters.keyword?.trim()) query.set('keyword', filters.keyword.trim())
   const base = backendUrl ? backendUrl + '/api/crm/opportunities/export' : '/personal-work-api/crm/opportunities/export'
   const response = await fetch(`${base}?${query.toString()}`, { credentials: 'include' })
@@ -1211,8 +1321,45 @@ export async function crmExportOpportunities(filters: { state?: 'all' | 'active'
   const name = decodeURIComponent(disposition.split("filename*=UTF-8''")[1] || '机会点清单.xlsx')
   return { blob: await response.blob(), name }
 }
+export type BusinessCell = string | number | boolean
+export interface BusinessSheet { key: string; title: string; source: string; headers: string[]; rows: BusinessCell[][] }
+export interface BusinessAnalysisData { imported_at: string; imported_by: string; filename: string; sheets: BusinessSheet[]; version?: string; scope?: { level: 'company' | 'region' | 'personal'; label: string; regions: string[]; can_import: boolean } }
+export interface BusinessVersion { version: string; imported_at: string; imported_by: string; filename: string; sheets: number }
+export interface BusinessView { view: 'company' | 'region' | 'personal'; region?: string; manager?: string }
+export interface BusinessViewOptions { regions: string[]; managers: { username: string; name: string }[] }
+export function crmBusinessAnalysis(version?: string, selection?: BusinessView) {
+  const query = new URLSearchParams()
+  if (version) query.set('version', version)
+  if (selection) Object.entries(selection).forEach(([key, value]) => { if (value) query.set(key, value) })
+  return request<{ ok: boolean; error?: string; data: BusinessAnalysisData | null; versions: BusinessVersion[]; view_options?: BusinessViewOptions | null }>('/crm/business-analysis?' + query)
+}
+export function crmBusinessImport(payload: { filename: string; data: string }) { return post<{ ok: boolean; sheets?: number; imported_at?: string; error?: string }>('/crm/business-analysis/import', payload) }
+export function crmTaskOrderImport(payload: { filename: string; data: string }) { return post<{ ok: boolean; sheets?: number; rows?: number; imported_at?: string; error?: string }>('/crm/business-analysis/task-order-import', payload) }
+export function crmBusinessDashboardUrl(version?: string) {
+  const base = backendUrl ? backendUrl + '/api/crm/business-analysis/dashboard' : '/personal-work-api/crm/business-analysis/dashboard'
+  return base + (version ? `?version=${encodeURIComponent(version)}` : '')
+}
+export async function crmBusinessTemplate(version?: string, blocks?: string[]) {
+  const base = backendUrl ? backendUrl + '/api/crm/business-analysis/template' : '/personal-work-api/crm/business-analysis/template'
+  const query = new URLSearchParams()
+  if (version) query.set('version', version)
+  if (blocks?.length) query.set('blocks', blocks.join(','))
+  const response = await fetch(base + '?' + query, { credentials: 'include' })
+  if (!response.ok) { let m = '下载模板失败'; try { m = (await response.json()).error || m } catch { /* non-JSON */ } throw new Error(m) }
+  const disposition = response.headers.get('content-disposition') || ''
+  const name = decodeURIComponent(disposition.split("filename*=UTF-8''")[1] || '2026联指经营数据_标准导入模板.xlsx')
+  return { blob: await response.blob(), name }
+}
+export async function crmTaskOrderTemplate() {
+  const base = backendUrl ? backendUrl + '/api/crm/business-analysis/task-order-template' : '/personal-work-api/crm/business-analysis/task-order-template'
+  const response = await fetch(base, { credentials: 'include' })
+  if (!response.ok) { let message = '下载任务令模板失败'; try { message = (await response.json()).error || message } catch { /* non-JSON */ } throw new Error(message) }
+  const disposition = response.headers.get('content-disposition') || ''
+  const name = decodeURIComponent(disposition.split("filename*=UTF-8''")[1] || '联指经营助手_任务令数据导入模板.xlsx')
+  return { blob: await response.blob(), name }
+}
 export function crmBulkUpdate(payload: { collection: 'units' | 'people' | 'relations'; ids: string[]; changes: Record<string, string | boolean | number> }) { return post<{ ok: boolean; updated: number }>('/crm/bulk-update', payload) }
-export function crmBatchAssignRelations(payload: { relation_ids: string[]; our_member?: string; transfer?: boolean; supervision?: { next_step: string; due_date?: string; supervisor?: string } }) { return post<{ ok: boolean; updated: number; plans_created: number; plans_transferred?: number; our_member: string; supervisor: string }>('/crm/relations/batch-assign', payload) }
+export function crmBatchAssignRelations(payload: { relation_ids?: string[]; person_ids?: string[]; mode?: 'add'; our_member?: string; transfer?: boolean; supervision?: { next_step: string; due_date?: string; supervisor?: string } }) { return post<{ ok: boolean; updated: number; skipped?: number; plans_created: number; plans_transferred?: number; our_member: string; supervisor: string }>('/crm/relations/batch-assign', payload) }
 export async function crmExportRelationships(level: 'all' | 'region' | 'manager', target = '', region = '') {
   const query = new URLSearchParams({ level, target })
   if (region) query.set('region', region)
@@ -2282,7 +2429,7 @@ export function writingDownloadUrl(path: string) {
 }
 
 export interface CrmRailStage { id: string; title: string; action: string; deliverable: string; gate: string }
-export interface CrmPlaybook { organizations: { type: string; label: string; departments: string; duty: string; evidence: string; stages: string[] }[]; stages: CrmRailStage[]; followups: (CrmAction & { person_name: string; can_complete?: boolean; owner_label?: string; overdue: boolean })[]; sources: { title: string; url: string }[] }
+export interface CrmPlaybook { organizations: { type: string; label: string; departments: string; duty: string; evidence: string; stages: string[] }[]; stages: CrmRailStage[]; followups: (CrmAction & { person_name: string; can_complete?: boolean; owner_label?: string; owner_staff?: CrmStaff | null; overdue: boolean })[]; sources: { title: string; url: string }[] }
 export function crmPlaybook() { return request<CrmPlaybook>('/crm/playbook') }
 export function crmCompleteFollowup(id: string) { return post<{ ok: boolean; error?: string }>('/crm/followup/complete', { id }) }
 
@@ -2346,6 +2493,7 @@ export interface CrmSecurityUser { username: string; name: string; employee_id?:
 export interface CrmAuditEvent { outcome?: string; at: string; actor: string; operation: string; path: string; status: number; target: string; grant?: { role: string; expires_on: string } }
 export function crmSecurityMe() { return request<{ ok: boolean; capabilities: CrmCapabilities }>('/crm/security/me') }
 export interface CrmManagerView { username: string; name: string; department: string; member_keys: string[] }
+export function crmAssignmentDirectory() { return request<{ok:boolean;people:{username:string;member_key:string;name:string;department:string;company:string}[]}>('/crm/assignment-directory') }
 export function crmManagerDirectory() { return request<{ ok: boolean; managers: CrmManagerView[] }>('/crm/manager-directory') }
 export type CrmRegionCity = { province: string; city: string }
 export type CrmRegionSettings = { ok: boolean; regions: Record<string, string[]>; cities: Record<string, CrmRegionCity[]>; city_options: Record<string, string[]>; version: number; updated_at: string; updated_by: string }
@@ -2364,6 +2512,10 @@ export function crmAmapSettings() { return request<CrmAmapSettings>('/crm/securi
 export function crmSaveAmapSettings(payload: { key: string; enabled: boolean; security_code: string; version: number }) { return post<CrmAmapSettings>('/crm/security/amap-settings', payload) }
 export function crmSaveRegionSettings(payload: { regions: Record<string, string[]>; cities?: Record<string, CrmRegionCity[]>; version: number }) { return post<CrmRegionSettings>('/crm/security/region-settings', payload) }
 export function crmSecurityUsers() { return request<{ ok: boolean; users: CrmSecurityUser[] }>('/crm/security/users') }
+export interface CrmBattleUnit { id:string; name:string; business_region:string; areas:string; leaders:string[]; roles:Record<string,string[]> }
+export interface CrmBattleRoster { ok:boolean; version:number; updated_at:string; updated_by:string; management:string[]; units:CrmBattleUnit[] }
+export function crmBattleRoster() { return request<CrmBattleRoster>('/crm/security/battle-roster') }
+export function crmSaveBattleRoster(payload: Pick<CrmBattleRoster,'version'|'management'|'units'>) { return post<CrmBattleRoster>('/crm/security/battle-roster', payload) }
 export function crmSecurityAudit() { return request<{ ok: boolean; events: CrmAuditEvent[]; scope?: 'all' | 'limited' }>('/crm/security/audit') }
 export function crmSecurityGrant(payload: { username: string; role: string; register_action?: boolean; expires_on: string; data_scope?: CrmCapabilities['data_scope']; scope_company?: string; scope_departments?: string[]; regions?: string[] }) { return post<{ ok: boolean }>('/crm/security/grant', payload) }
 export function crmSecurityBatchGrant(payload: { company: string; departments: string[]; role: string; register_action?: boolean; expires_on: string; data_scope?: 'self' | 'team' }) { return post<{ ok: boolean; updated: number; role: string; expires_on: string }>('/crm/security/batch-grant', payload) }
@@ -2374,3 +2526,4 @@ export function crmSecurityAppoint(username: string, manager: boolean) { return 
 export interface CrmStaff { id: string; name: string; member_key: string; username?: string; company: string; department: string; title: string; manager_id: string; business_region: string; responsibilities: string; version: number }
 export function crmStaff() { return request<{ok:boolean;staff:CrmStaff[]}>('/crm/staff') }
 export function crmSaveStaff(payload: Partial<CrmStaff>) { return post<{ok:boolean;staff?:CrmStaff;error?:string}>('/crm/staff/save',payload) }
+export interface MonthlyBattleEvent { event_type?: 'action' | 'stage_change' }

@@ -78,11 +78,14 @@ def organization_excel_export():
 def _organization_directory_update(employee_id, fields):
     if not employee_id:
         return
-    path = Path(USER_DATA_DIR) / '_crm_staff_directory.json'
-    try:
-        directory = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
-    except (OSError, json.JSONDecodeError):
-        return
+    if crmdb_enabled():
+        directory = crmdb_staff_directory()
+    else:
+        path = Path(USER_DATA_DIR) / '_crm_staff_directory.json'
+        try:
+            directory = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+        except (OSError, json.JSONDecodeError):
+            return
     changed = False
     for record in directory.values():
         if str(record.get('member_key', '') or '').strip() != employee_id:
@@ -94,10 +97,14 @@ def _organization_directory_update(employee_id, fields):
         if fields['position']:
             record['title'] = fields['position']
         changed = True
-    if changed:
-        temporary = path.with_suffix('.tmp')
-        temporary.write_text(json.dumps(directory, ensure_ascii=False, indent=2), encoding='utf-8')
-        temporary.replace(path)
+    if not changed:
+        return
+    if crmdb_enabled():
+        crmdb_store_staff_directory(directory)
+        return
+    temporary = path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(directory, ensure_ascii=False, indent=2), encoding='utf-8')
+    temporary.replace(path)
 
 
 def organization_roster_reconcile(config, identities, source_filename):

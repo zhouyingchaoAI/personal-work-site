@@ -1,0 +1,8 @@
+<!doctype html><html><meta charset="UTF-8"><div id="app"></div>
+<script type="module">
+import {createApp} from 'vue/dist/vue.esm-bundler.js'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import '../../src/views/CrmAssistantView/businessDarkControls.css'
+createApp({template:`<main><section v-for="dark in [true,false]" class="business-analysis" :class="{'is-dark':dark}"><el-button>下载核验清单</el-button><el-select model-value="company"><el-option label="管理者视图" value="company" /></el-select><el-alert title="数据核验提示" type="info" /></section></main>`}).use(ElementPlus).mount('#app')
+</script></html>

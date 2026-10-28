@@ -8,17 +8,11 @@ def _ledger_path(username):
     return user_root(username) / "operating_ledger.json"
 
 def _ledger_items(username):
-    path = _ledger_path(username)
-    if not path.exists(): return []
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
-    except (OSError, json.JSONDecodeError): return []
+    data = office_doc_read("ledger", _ledger_path(username), [])
+    return data if isinstance(data, list) else []
 
 def _save_ledger(username, items):
-    path = _ledger_path(username)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    office_doc_write("ledger", _ledger_path(username), items)
 
 def ledger_list(username):
     items = _ledger_items(username)

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 FASTGPT_INTERNAL_URL = os.getenv("FASTGPT_INTERNAL_URL", "http://fastgpt-app:3000").rstrip("/")
 FASTGPT_SSO_URL = os.getenv("FASTGPT_SSO_URL", "http://fastgpt-sso:3100").rstrip("/")
-FASTGPT_SSO_SECRET = os.getenv("FASTGPT_SSO_SECRET", "")
+FASTGPT_SSO_SECRET = os.getenv("FASTGPT_SSO_SECRET", "office_fastgpt_sso_9Rm4Kv7Lx2Np8Qw")
 FASTGPT_MCP_HOST = os.getenv("FASTGPT_MCP_HOST", "http://personal-work-site:8765").rstrip("/")
 FASTGPT_EMBEDDING_URL = os.getenv("FASTGPT_EMBEDDING_URL", "http://xinference-gpu:9997/v1").rstrip("/")
 FASTGPT_AIPROXY_URL = os.getenv("FASTGPT_AIPROXY_URL", "http://fastgpt-aiproxy:3000").rstrip("/")

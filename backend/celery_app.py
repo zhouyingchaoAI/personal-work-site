@@ -1,4 +1,4 @@
-"""客户经营助手的 Celery 应用与异步任务。
+"""联指经营助手的 Celery 应用与异步任务。
 
 独立入口（不由 runtime 载入 HTTP 服务）：worker 容器执行
 ``celery -A backend.celery_app worker -B``。任务体通过 ``backend.runtime`` 复用

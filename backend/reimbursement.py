@@ -110,6 +110,15 @@ def _imap_connect_safe(settings):
 
 def _reimbursement_dir(username, sub):
     path = user_root(username) / "reimbursement" / sub
+    if not officedb_enabled("reimbursement"):
+        path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _reimbursement_local_dir(username):
+    """数据库模式下的本地工作副本目录：发票解析、渲染、合并都要真实文件路径，
+    从数据库取出后落在系统临时目录，可随时删除重建。"""
+    path = Path(tempfile.gettempdir()) / "office-reimbursement" / safe_username(username)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -210,9 +219,8 @@ def _search_record_summary(record):
 
 def list_reimbursement_searches(username):
     records = []
-    for path in reimbursement_search_dir(username).glob("*.json"):
+    for _, record, _ in office_doc_list("reimbursement", reimbursement_search_dir(username)):
         try:
-            record = json.loads(path.read_text(encoding="utf-8"))
             records.append(_search_record_summary(record))
         except Exception:
             continue
@@ -220,10 +228,9 @@ def list_reimbursement_searches(username):
     return {"ok": True, "records": records}
 
 def get_reimbursement_search(username, record_id):
-    path = _reimbursement_search_path(username, record_id)
-    if not path.exists():
+    record = office_doc_read("reimbursement", _reimbursement_search_path(username, record_id), None)
+    if not isinstance(record, dict):
         raise ValueError("搜索记录不存在")
-    record = json.loads(path.read_text(encoding="utf-8"))
     record["item_count"] = len(record.get("items", []) or [])
     record["scan_chunks"] = [_clean_scan_chunk(chunk) for chunk in record.get("scan_chunks", []) if _clean_scan_chunk(chunk)]
     return {"ok": True, "record": record}
@@ -233,9 +240,8 @@ def save_reimbursement_search(username, payload):
     record_id = str(payload.get("id") or uuid.uuid4().hex)
     now = _now_iso()
     path = _reimbursement_search_path(username, record_id)
-    if path.exists():
-        record = json.loads(path.read_text(encoding="utf-8"))
-    else:
+    record = office_doc_read("reimbursement", path, None)
+    if not isinstance(record, dict):
         title = str(payload.get("title") or "").strip()
         if not title:
             start = str(payload.get("start") or "").strip()
@@ -283,18 +289,37 @@ def save_reimbursement_search(username, payload):
     else:
         record["total_scanned"] = int(record.get("total_scanned") or 0) + int(payload.get("total_scanned") or 0)
     record["updated_at"] = now
-    path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    office_doc_write("reimbursement", path, record)
     return {"ok": True, "record": record}
 
 def _cache_path_for_key(username, key):
-    for p in reimbursement_cache_dir(username).glob(f"{key}__*"):
-        return p
+    """发票文件的真实路径：文件模式直接是缓存目录；数据库模式先取到本地工作副本。"""
+    key = re.sub(r"[^A-Za-z0-9_-]+", "", str(key or ""))
+    if not key:
+        return None
+    directory = reimbursement_cache_dir(username)
+    if not officedb_enabled("reimbursement"):
+        for p in directory.glob(f"{key}__*"):
+            return p
+        return None
+    for name, size, _ in office_blob_list("reimbursement", directory, prefix=f"{key}__"):
+        local = _reimbursement_local_dir(username) / name
+        if not local.exists() or local.stat().st_size != size:
+            raw = office_blob_read("reimbursement", directory / name)
+            if raw is None:
+                return None
+            local.write_bytes(raw)
+        return local
     return None
 
 def _save_cache(username, key, filename, data):
     safe = re.sub(r'[^\w.-]+', '_', filename) or 'attachment'
     path = reimbursement_cache_dir(username) / f"{key}__{safe}"
-    path.write_bytes(data)
+    office_blob_write("reimbursement", path, data, content_type=mimetypes.guess_type(safe)[0])
+    if officedb_enabled("reimbursement"):
+        local = _reimbursement_local_dir(username) / path.name
+        local.write_bytes(data)
+        return local
     return path
 
 
@@ -1595,8 +1620,9 @@ def render_ofd_preview(username, key):
     if not path or not path.exists() or path.suffix.lower() != '.ofd':
         return None
     cache_png = _ofd_preview_path(username, key)
-    if cache_png.exists():
-        return cache_png.read_bytes()
+    cached = office_blob_read("reimbursement", cache_png)
+    if cached is not None:
+        return cached
     try:
         _ensure_ofd_runtime()
         import sys, os
@@ -1625,7 +1651,7 @@ def render_ofd_preview(username, key):
                 y += p.height
         buf = io.BytesIO()
         canvas.save(buf, format='PNG')
-        cache_png.write_bytes(buf.getvalue())
+        office_blob_write("reimbursement", cache_png, buf.getvalue(), content_type="image/png")
         return buf.getvalue()
     except Exception:
         return None
@@ -1834,13 +1860,14 @@ def download_reimbursement_invoices_zip(username, items, output_name='发票批�
     filename = safe_output if safe_output.lower().endswith('.zip') else safe_output + '.zip'
     output_path = reimbursement_output_dir(username) / filename
     counter = 1
-    while output_path.exists():
+    while office_blob_exists("reimbursement", output_path):
         output_path = reimbursement_output_dir(username) / f"{Path(filename).stem}_{counter}{Path(filename).suffix}"
         counter += 1
 
     used_names = {}
     added = 0
-    with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         for item in items or []:
             key = str((item or {}).get('key') or '').strip()
             if not key:
@@ -1858,11 +1885,8 @@ def download_reimbursement_invoices_zip(username, items, output_name='发票批�
             zf.write(path, arcname)
             added += 1
     if not added:
-        try:
-            output_path.unlink()
-        except Exception:
-            pass
         raise ValueError('没有可下载的发票文件')
+    office_blob_write("reimbursement", output_path, buffer.getvalue(), content_type="application/zip")
     return {'ok': True, 'filename': output_path.name, 'count': added}
 
 # ── 合并 PDF ───────────────────────────────────────────────────
@@ -2030,8 +2054,9 @@ def merge_reimbursement_pdf(username, items, output_name, merge_train_tickets=Fa
         safe_name += '.pdf'
     output_path = reimbursement_output_dir(username) / safe_name
 
-    with open(str(output_path), 'wb') as f:
-        writer.write(f)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    office_blob_write("reimbursement", output_path, buffer.getvalue(), content_type="application/pdf")
 
     result: dict = {"ok": True, "filename": safe_name, "pages": len(writer.pages)}
     if train_entries:
@@ -2043,8 +2068,18 @@ def merge_reimbursement_pdf(username, items, output_name, merge_train_tickets=Fa
 
 
 def list_reimbursement_outputs(username):
-    out_dir = reimbursement_output_dir(username)
     files   = []
-    for p in sorted(out_dir.glob("*.pdf"), key=lambda x: x.stat().st_mtime, reverse=True):
-        files.append({"filename": p.name, "size": p.stat().st_size})
+    entries = office_blob_list("reimbursement", reimbursement_output_dir(username))
+    for name, size, _ in sorted(entries, key=lambda entry: entry[2], reverse=True):
+        if name.lower().endswith(".pdf"):
+            files.append({"filename": name, "size": size})
     return files
+
+
+def get_reimbursement_output(username, filename):
+    """输出文件内容：(路径, 字节)；不存在返回 None。"""
+    path = reimbursement_output_dir(username) / Path(str(filename or "")).name
+    if not path.name:
+        return None
+    raw = office_blob_read("reimbursement", path)
+    return None if raw is None else (path, raw)

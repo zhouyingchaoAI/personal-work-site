@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>2026 联指经营看板</title>
+<style>
+:root{
+--primary:#2E1B93;--primary-deep:#1A0857;--primary-mid:#38139E;
+--tint-bg:#ECE8FA;--tint-line:#E4E0F2;--page-bg:#FAFAFD;
+--danger:#D5013C;--success:#04BC8A;--warning:#FB901C;--magenta:#9D1D7E;
+--text:#2B2B3C;--text-sub:#6B6B80;--text-muted:#8A8AA0;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#e9e9f2;font-family:"Microsoft YaHei","PingFang SC",-apple-system,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased}
+#nav{position:fixed;left:0;top:0;bottom:0;width:132px;background:var(--primary-deep);color:#fff;z-index:50;overflow:auto;padding:14px 0}
+#nav h1{font-size:13px;font-weight:700;padding:0 14px 12px;color:#fff;opacity:.9;line-height:1.4}
+#nav a{display:block;padding:9px 14px;font-size:12.5px;color:rgba(255,255,255,.7);text-decoration:none;border-left:3px solid transparent;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#nav a:hover{background:rgba(255,255,255,.06);color:#fff}
+#nav a.on{background:var(--primary);color:#fff;border-left-color:var(--warning)}
+#stage{margin-left:132px;padding:24px;display:flex;flex-direction:column;align-items:center;gap:28px}
+.page{width:1600px;height:1067px;background:var(--page-bg);position:relative;box-shadow:0 8px 40px -12px rgba(26,8,87,.4);overflow:hidden;flex:none}
+.hdr{position:absolute;left:0;top:0;width:100%;background:linear-gradient(120deg,var(--primary) 0%,var(--primary-deep) 100%);color:#fff}
+.hdr .no{position:absolute;left:48px;top:22px;width:48px;height:36px;background:rgba(255,255,255,.18);border-radius:6px;display:grid;place-items:center;font-size:16px;font-weight:700}
+.hdr .t{position:absolute;left:112px;top:24px;font-size:28px;font-weight:700}
+.hdr .s{position:absolute;left:112px;top:62px;font-size:13px;color:rgba(255,255,255,.6)}
+.band{position:absolute;left:48px;width:1504px}
+.foot{position:absolute;left:48px;right:48px;bottom:0;height:40px;display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--text-muted);border-top:1px solid var(--tint-line)}
+.row{display:flex;gap:16px}
+.kpis{position:absolute;left:48px;top:128px;width:1504px;height:128px;display:flex;gap:16px}
+.card{flex:1;height:128px;background:#fff;border:1px solid var(--tint-line);border-radius:10px;padding:16px;position:relative;overflow:hidden}
+.card .bar{position:absolute;left:0;top:0;bottom:0;width:4px}
+.card .lb{font-size:12px;color:var(--text-sub);display:flex;align-items:center;gap:6px}
+.card .vv{font-size:32px;font-weight:700;line-height:1.05;margin-top:8px}
+.card .sub{font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.3}
+.dot{width:8px;height:8px;border-radius:50%;position:absolute;right:14px;top:16px}
+.g-green{background:var(--success)}.g-amber{background:var(--warning)}.g-red{background:var(--danger)}.g-gray{background:var(--text-muted)}
+.box{background:#fff;border:1px solid var(--tint-line);border-radius:10px;padding:16px;height:100%;overflow:hidden}
+.box h3{font-size:16px;font-weight:600;color:var(--primary-deep);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.legend{display:flex;gap:12px;font-size:11px;color:var(--text-sub);font-weight:400}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--tint-bg);color:var(--primary-deep);font-weight:600;height:30px;padding:0 8px;text-align:right}
+th:first-child{text-align:left}
+td{height:27px;padding:0 8px;text-align:right;font-variant-numeric:tabular-nums;border-bottom:1px solid var(--tint-line)}
+td:first-child{text-align:left;color:var(--text)}
+tr:nth-child(even) td{background:#FAFAFD}
+tr.total td{font-weight:700;border-top:1.5px solid var(--primary)}
+.neg{color:var(--danger)}.pos{color:var(--success)}
+.pcard{background:#fff;border-radius:8px;border-left:3px solid var(--primary);padding:11px 12px;margin-bottom:9px}
+.pcard .h{font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.pcard .d{font-size:11px;color:var(--text-sub);margin-top:4px;line-height:1.5}
+.pill{font-size:10px;padding:1px 8px;border-radius:10px;font-weight:600;flex:none}
+.chk{font-size:12.5px;color:var(--text);line-height:1.7;padding:5px 0;display:flex;gap:7px}
+.chk b{color:var(--success)}
+.banner{background:rgba(213,1,60,.06);border:1px solid rgba(213,1,60,.25);border-radius:8px;padding:12px 14px;font-size:12.5px;color:var(--danger);line-height:1.6;font-weight:500}
+svg{display:block}
+.flowbox{background:var(--tint-bg);border-radius:6px;height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:11.5px;margin-bottom:0}
+.flowbox b{color:var(--primary-deep)}
+.flowbox .m{color:var(--text-sub);font-size:11px}
+.flowarrow{text-align:center;color:var(--text-muted);font-size:12px;line-height:12px}
+.flowend{background:rgba(213,1,60,.08);border:1.5px solid var(--danger);color:var(--danger);font-weight:600}
+body.embed{background:transparent}
+body.embed #nav{display:none}
+body.embed #stage{margin-left:0;padding:0;gap:0}
+body.embed .page{box-shadow:none}
+@media print{@page{size:1600px 1067px;margin:0}body{background:#fff}#nav{display:none}#stage{margin:0;padding:0;gap:0}.page{box-shadow:none;break-after:always}}
+</style>
+</head>
+<body>
+<nav id="nav"><h1>2026 联指<br/>经营看板</h1><div id="navlinks"></div></nav>
+<div id="stage"></div>
+<script>const DATA = __DASHBOARD_DATA__;</script>
+<script>
+const C={primary:'#2E1B93',deep:'#1A0857',mid:'#38139E',tintBg:'#ECE8FA',tintLine:'#E4E0F2',danger:'#D5013C',success:'#04BC8A',warning:'#FB901C',magenta:'#9D1D7E',text:'#2B2B3C',sub:'#6B6B80',muted:'#8A8AA0'};
+const LIGHT={green:C.success,amber:C.warning,red:C.danger,gray:C.muted};
+function fmt(v){if(v===null||v===undefined||v==='')return '—';const num=Number(v);if(!isFinite(num))return '—';return num.toLocaleString('zh-CN',{minimumFractionDigits:1,maximumFractionDigits:1});}
+function fmt0(v){if(v===null||v===undefined||v==='')return '—';return Number(v).toLocaleString('zh-CN',{maximumFractionDigits:0});}
+function pct(v){if(v===null||v===undefined||v==='')return '—';return (Number(v)*100).toFixed(1)+'%';}
+function signed(v){if(v===null||v===undefined||v==='')return '—';const s=fmt(v);return Number(v)<0?s:'+'+s;}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+const A=(x)=>Array.isArray(x)?x:[];
+const findK=(arr,key,val)=>A(arr).find(r=>r[key]===val)||{};
+
+// ---------- SVG chart primitives ----------
+function axisY(x0,y0,h,max,ticks=5){let s='';for(let i=0;i<=ticks;i++){const y=y0+h-h*i/ticks;const v=max*i/ticks;s+=`<line x1="${x0}" y1="${y}" x2="${x0+9999}" y2="${y}" stroke="${C.tintLine}" stroke-width="1"/><text x="${x0-8}" y="${y+3}" font-size="10" fill="${C.muted}" text-anchor="end">${v>=1000?Math.round(v).toLocaleString():v.toFixed(0)}</text>`;}return s;}
+
+function barChart({data,xKey,series,width,height,colors,valueLabels=[]}){
+ const L=56,R=16,T=16,B=32;const pw=width-L-R,ph=height-T-B;
+ let max=0;data.forEach(d=>series.forEach(s=>{max=Math.max(max,Number(d[s]||0))}));
+ max=niceMax(max);
+ let s=`<svg width="${width}" height="${height}">`;
+ s+=`<g transform="translate(0,0)">`+axisY(L,T,ph,max).replace(/x2="\d+"/,`x2="${L+pw}"`)+`</g>`;
+ const groups=data.length;const gw=pw/groups;const bw=Math.min(18,(gw-8)/series.length);
+ data.forEach((d,gi)=>{
+  const gx=L+gi*gw+(gw-bw*series.length-4*(series.length-1))/2;
+  series.forEach((se,si)=>{
+   const v=Number(d[se]||0);const bh=max?v/max*ph:0;const x=gx+si*(bw+4);const y=T+ph-bh;
+   s+=`<rect x="${x}" y="${y}" width="${bw}" height="${bh}" fill="${colors[si]}"/>`;
+   if(valueLabels.includes(se)&&v)s+=`<text x="${x+bw/2}" y="${y-4}" font-size="10" fill="${C.sub}" text-anchor="middle">${fmt(v)}</text>`;
+  });
+  s+=`<text x="${L+gi*gw+gw/2}" y="${T+ph+18}" font-size="11" fill="${C.muted}" text-anchor="middle">${esc(d[xKey])}</text>`;
+ });
+ s+=`</svg>`;return s;
+}
+function niceMax(m){if(m<=0)return 10;const p=Math.pow(10,Math.floor(Math.log10(m)));const n=m/p;const step=n<=1?1:n<=2?2:n<=5?5:10;return step*p;}
+
+function hBarChart({data,yKey,series,width,height,colors,xMax,rightLabels}){
+ const L=120,R=90,T=8,B=8;const pw=width-L-R;const rowH=(height-T-B)/data.length;const bh=Math.min(14,rowH/(series.length+0.6));
+ let max=xMax||0;if(!max)data.forEach(d=>series.forEach(se=>max=Math.max(max,Number(d[se]||0))));max=niceMax(max);
+ let s=`<svg width="${width}" height="${height}">`;
+ data.forEach((d,i)=>{
+  const cy=T+i*rowH+rowH/2;
+  s+=`<text x="${L-8}" y="${cy+4}" font-size="11" fill="${C.text}" text-anchor="end">${esc(d[yKey])}</text>`;
+  series.forEach((se,si)=>{
+   const v=Number(d[se]||0);const w=max?Math.abs(v)/max*pw:0;const y=cy-(series.length*bh)/2+si*bh;
+   s+=`<rect x="${L}" y="${y}" width="${w}" height="${bh-2}" fill="${colors[si]}" rx="2"/>`;
+  });
+  if(rightLabels&&rightLabels[i]!=null)s+=`<text x="${L+pw+8}" y="${cy+4}" font-size="11" font-weight="600" fill="${rightLabels[i].color||C.sub}" text-anchor="start">${rightLabels[i].text}</text>`;
+ });
+ s+=`</svg>`;return s;
+}
+
+function waterfall({steps,width,height}){
+ const L=16,R=16,T=24,B=40;const pw=width-L-R,ph=height-T-B;
+ let vals=steps.map(s=>Number(s.值||0));
+ let cum=0,points=[],minC=0,maxC=0;
+ steps.forEach((st,i)=>{
+  if(st.类型==='start'||st.类型==='end'){points.push({base:0,top:vals[i],val:vals[i],st});cum=vals[i];}
+  else{const b=cum;cum+=vals[i];points.push({base:Math.min(b,cum),top:Math.max(b,cum),val:vals[i],st});}
+  minC=Math.min(minC,cum,0);maxC=Math.max(maxC,cum,vals[i]);
+ });
+ const range=maxC-minC||1;const y0=T+ph-(0-minC)/range*ph;
+ const n=steps.length;const bw=Math.min(64,(pw-(n-1)*20)/n);const gap=(pw-bw*n)/(n-1);
+ const Y=v=>T+ph-(v-minC)/range*ph;
+ let s=`<svg width="${width}" height="${height}">`;
+ s+=`<rect x="${L}" y="${y0}" width="${pw}" height="${T+ph-y0}" fill="rgba(213,1,60,0.03)"/>`;
+ s+=`<line x1="${L}" y1="${y0}" x2="${L+pw}" y2="${y0}" stroke="${C.sub}" stroke-width="1.5"/>`;
+ points.forEach((p,i)=>{
+  const x=L+i*(bw+gap);const yt=Y(p.top),yb=Y(p.base);const h=Math.max(2,yb-yt);
+  const col=p.st.类型==='end'?C.danger:p.st.类型==='start'?C.primary:(p.val>=0?C.success:C.danger);
+  s+=`<rect x="${x}" y="${yt}" width="${bw}" height="${h}" fill="${col}"/>`;
+  const label=(p.val>=0?'+':'')+fmt(p.val);
+  s+=`<text x="${x+bw/2}" y="${yt-5}" font-size="11" font-weight="600" fill="${C.text}" text-anchor="middle">${p.st.类型==='start'||p.st.类型==='end'?fmt(p.val):label}</text>`;
+  s+=`<text x="${x+bw/2}" y="${T+ph+16}" font-size="10.5" fill="${C.muted}" text-anchor="middle">${esc(p.st.科目)}</text>`;
+  if(i<points.length-1){const nx=L+(i+1)*(bw+gap);const yl=Y(points[i+1].st.类型==='end'||points[i+1].st.类型==='start'?points[i+1].top:(points[i+1].val>=0?points[i+1].base:points[i+1].top));s+=`<line x1="${x+bw}" y1="${Y(p.st.类型==='minus'?p.base:p.top)}" x2="${nx}" y2="${Y(p.st.类型==='minus'?p.base:p.top)}" stroke="${C.muted}" stroke-width="1" stroke-dasharray="3 3"/>`;}
+ });
+ s+=`</svg>`;return s;
+}
+
+function donut({slices,width,height,centerTitle,centerValue}){
+ const cx=width*0.36,cy=height/2,rO=Math.min(width*0.32,height/2-8),rI=rO*0.6;
+ const total=slices.reduce((a,b)=>a+Number(b.value||0),0)||1;let ang=-Math.PI/2;
+ let s=`<svg width="${width}" height="${height}">`;
+ slices.forEach(sl=>{const frac=Number(sl.value||0)/total;const a2=ang+frac*Math.PI*2;
+  const x1=cx+rO*Math.cos(ang),y1=cy+rO*Math.sin(ang),x2=cx+rO*Math.cos(a2),y2=cy+rO*Math.sin(a2);
+  const xi1=cx+rI*Math.cos(a2),yi1=cy+rI*Math.sin(a2),xi2=cx+rI*Math.cos(ang),yi2=cy+rI*Math.sin(ang);
+  const large=frac>0.5?1:0;
+  s+=`<path d="M${x1},${y1} A${rO},${rO} 0 ${large} 1 ${x2},${y2} L${xi1},${yi1} A${rI},${rI} 0 ${large} 0 ${xi2},${yi2} Z" fill="${sl.color}"/>`;ang=a2;});
+ s+=`<text x="${cx}" y="${cy-2}" font-size="24" font-weight="700" fill="${C.text}" text-anchor="middle">${centerValue}</text>`;
+ s+=`<text x="${cx}" y="${cy+18}" font-size="11" fill="${C.muted}" text-anchor="middle">${centerTitle}</text>`;
+ let ly=cy-slices.length*11+8;const lx=width*0.66;
+ slices.forEach(sl=>{const p=(Number(sl.value||0)/total*100).toFixed(1);s+=`<rect x="${lx}" y="${ly-9}" width="10" height="10" rx="2" fill="${sl.color}"/><text x="${lx+16}" y="${ly}" font-size="11.5" fill="${C.text}">${esc(sl.label)}</text><text x="${width-4}" y="${ly}" font-size="11.5" fill="${C.sub}" text-anchor="end">${fmt(sl.value)} · ${p}%</text>`;ly+=22;});
+ s+=`</svg>`;return s;
+}
+
+function lineChart({data,xKey,series,width,height,highlightLast}){
+ const L=48,R=16,T=16,B=30;const pw=width-L-R,ph=height-T-B;const max=1;
+ let s=`<svg width="${width}" height="${height}">`;
+ for(let i=0;i<=5;i++){const y=T+ph-ph*i/5;s+=`<line x1="${L}" y1="${y}" x2="${L+pw}" y2="${y}" stroke="${C.tintLine}"/><text x="${L-6}" y="${y+3}" font-size="10" fill="${C.muted}" text-anchor="end">${i*20}%</text>`;}
+ const X=i=>L+(data.length===1?pw/2:pw*i/(data.length-1));const Y=v=>T+ph-Math.min(v,max)/max*ph;
+ data.forEach((d,i)=>s+=`<text x="${X(i)}" y="${T+ph+18}" font-size="11" fill="${C.muted}" text-anchor="middle">${esc(d[xKey])}</text>`);
+ series.forEach(se=>{let path='';data.forEach((d,i)=>{path+=(i?'L':'M')+X(i)+','+Y(Number(d[se.key]||0));});
+  s+=`<path d="${path}" fill="none" stroke="${se.color}" stroke-width="${se.width||2}"/>`;
+  data.forEach((d,i)=>{const v=Number(d[se.key]||0);const last=i===data.length-1;
+   if(se.highlight&&last)s+=`<circle cx="${X(i)}" cy="${Y(v)}" r="10" fill="${se.color}" opacity="0.15"/>`;
+   s+=`<circle cx="${X(i)}" cy="${Y(v)}" r="${se.width>2?5:4}" fill="${se.color}"/>`;
+   s+=`<text x="${X(i)}" y="${Y(v)-9}" font-size="11" font-weight="${se.highlight&&last?700:400}" fill="${se.highlight&&last?C.danger:C.sub}" text-anchor="middle">${pct(v)}</text>`;});
+ });
+ s+=`</svg>`;return s;
+}
+
+function comboChart({data,xKey,bars,line,width,height,refLine}){
+ const L=52,R=52,T=18,B=32;const pw=width-L-R,ph=height-T-B;
+ let bmax=0;data.forEach(d=>bars.forEach(b=>bmax=Math.max(bmax,Number(d[b.key]||0))));bmax=niceMax(bmax);
+ let lmax=refLine?Math.max(refLine.value,...data.map(d=>Number(d[line.key]||0))):Math.max(...data.map(d=>Number(d[line.key]||0)));lmax=niceMax(lmax);
+ let s=`<svg width="${width}" height="${height}">`;
+ for(let i=0;i<=4;i++){const y=T+ph-ph*i/4;s+=`<line x1="${L}" y1="${y}" x2="${L+pw}" y2="${y}" stroke="${C.tintLine}"/><text x="${L-6}" y="${y+3}" font-size="9.5" fill="${C.muted}" text-anchor="end">${Math.round(bmax*i/4).toLocaleString()}</text>`;}
+ const gw=pw/data.length;const bw=Math.min(16,(gw-10)/bars.length);
+ const Y=v=>T+ph-v/bmax*ph;const YL=v=>T+ph-v/lmax*ph;
+ data.forEach((d,gi)=>{const gx=L+gi*gw+(gw-bw*bars.length-4)/2;
+  bars.forEach((b,bi)=>{const v=Number(d[b.key]||0);const h=v/bmax*ph;const x=gx+bi*(bw+4);
+   const hl=d.__hl&&bi===0;s+=`<rect x="${x}" y="${Y(v)}" width="${bw}" height="${h}" fill="${b.color}" ${hl?`stroke="${C.danger}" stroke-width="2"`:''}/>`;});
+  s+=`<text x="${L+gi*gw+gw/2}" y="${T+ph+18}" font-size="10.5" fill="${C.muted}" text-anchor="middle">${esc(d[xKey])}</text>`;});
+ if(refLine){const y=YL(refLine.value);s+=`<line x1="${L}" y1="${y}" x2="${L+pw}" y2="${y}" stroke="${C.danger}" stroke-width="1" stroke-dasharray="5 4"/><text x="${L+pw}" y="${y-4}" font-size="10" fill="${C.danger}" text-anchor="end">${refLine.label}</text>`;}
+ let path='';data.forEach((d,i)=>{path+=(i?'L':'M')+(L+i*gw+gw/2)+','+YL(Number(d[line.key]||0));});
+ s+=`<path d="${path}" fill="none" stroke="${line.color}" stroke-width="2"/>`;
+ data.forEach((d,i)=>{const v=Number(d[line.key]||0);s+=`<circle cx="${L+i*gw+gw/2}" cy="${YL(v)}" r="4" fill="${line.color}"/><text x="${L+i*gw+gw/2}" y="${YL(v)-8}" font-size="10" fill="${line.color}" text-anchor="middle">${v.toFixed(2)}</text>`;});
+ s+=`</svg>`;return s;
+}
+
+function bubbleChart({points,width,height,refLineY}){
+ const L=56,R=16,T=16,B=34;const pw=width-L-R,ph=height-T-B;
+ const xmax=niceMax(Math.max(...points.map(p=>p.x)));const ymax=0.30;
+ let s=`<svg width="${width}" height="${height}">`;
+ for(let i=0;i<=5;i++){const y=T+ph-ph*i/5;s+=`<line x1="${L}" y1="${y}" x2="${L+pw}" y2="${y}" stroke="${C.tintLine}"/><text x="${L-6}" y="${y+3}" font-size="9.5" fill="${C.muted}" text-anchor="end">${(ymax*i/5*100).toFixed(0)}%</text>`;}
+ for(let i=0;i<=4;i++){const x=L+pw*i/4;s+=`<text x="${x}" y="${T+ph+18}" font-size="9.5" fill="${C.muted}" text-anchor="middle">${Math.round(xmax*i/4).toLocaleString()}</text>`;}
+ if(refLineY!=null){const y=T+ph-Math.min(refLineY,ymax)/ymax*ph;s+=`<line x1="${L}" y1="${y}" x2="${L+pw}" y2="${y}" stroke="${C.danger}" stroke-width="1" stroke-dasharray="5 4"/><text x="${L+pw}" y="${y-4}" font-size="10" fill="${C.danger}" text-anchor="end">目标 ${pct(refLineY)}</text>`;}
+ points.forEach(p=>{const x=L+Math.min(p.x,xmax)/xmax*pw;const y=T+ph-Math.min(p.y,ymax)/ymax*ph;const r=Math.max(6,Math.min(30,Math.sqrt(Math.abs(p.r))*1.6));const col=p.pos?C.success:C.danger;
+  s+=`<circle cx="${x}" cy="${y}" r="${r}" fill="${col}" fill-opacity="0.55" stroke="${col}" stroke-width="1"/>`;
+  if(p.label)s+=`<text x="${x}" y="${y-r-3}" font-size="10.5" fill="${C.text}" text-anchor="middle">${esc(p.label)}</text>`;});
+ s+=`</svg>`;return s;
+}
+
+function funnel({stages,width,height}){
+ const T=8,gap=8;const h=(height-T-gap*(stages.length-1))/stages.length;const cx=width/2;
+ const maxv=Math.max(...stages.map(s=>Math.max(1,s.count)));
+ let s=`<svg width="${width}" height="${height}">`;let y=T;
+ const wid=i=>Math.max(80,width*0.9*(0.45+0.55*(stages.length-i)/stages.length));
+ stages.forEach((st,i)=>{const wTop=wid(i),wBot=wid(i+1);
+  s+=`<polygon points="${cx-wTop/2},${y} ${cx+wTop/2},${y} ${cx+wBot/2},${y+h} ${cx-wBot/2},${y+h}" fill="${st.color}"/>`;
+  s+=`<text x="${cx}" y="${y+h/2-2}" font-size="12" font-weight="600" fill="${st.textDark?C.text:'#fff'}" text-anchor="middle">${esc(st.label)} · ${st.count} 个</text>`;
+  s+=`<text x="${cx}" y="${y+h/2+14}" font-size="10.5" fill="${st.textDark?C.sub:'rgba(255,255,255,.85)'}" text-anchor="middle">${st.amount}</text>`;
+  y+=h+gap;});
+ s+=`</svg>`;return s;
+}
+
+function stackedFlow({rows,width,height}){
+ const L=110,R=150,T=8;const pw=width-L-R;const rowH=(height-T)/rows.length;const bh=Math.min(26,rowH*0.62);
+ const max=Math.max(...rows.map(r=>Number(r.total||0)))||1;
+ let s=`<svg width="${width}" height="${height}"><defs><pattern id="hatch" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="${C.tintBg}"/><line x1="0" y1="0" x2="0" y2="6" stroke="${C.tintLine}" stroke-width="3"/></pattern></defs>`;
+ rows.forEach((r,i)=>{const cy=T+i*rowH+rowH/2;const total=Number(r.total||0);const keep=Number(r.keep||0);
+  const wTot=total/max*pw;const wKeep=total?keep/total*wTot:0;
+  const isTot=r.isTotal;
+  s+=`<text x="${L-8}" y="${cy+4}" font-size="12" ${isTot?'font-weight="700"':''} fill="${C.text}" text-anchor="end">${esc(r.name)}</text>`;
+  s+=`<rect x="${L}" y="${cy-bh/2}" width="${wKeep}" height="${bh}" fill="${C.primary}"/>`;
+  s+=`<rect x="${L+wKeep}" y="${cy-bh/2}" width="${wTot-wKeep}" height="${bh}" fill="url(#hatch)"/>`;
+  const loss=total?((total-keep)/total*100).toFixed(1):'0';
+  s+=`<text x="${L+wTot+8}" y="${cy+4}" font-size="11.5" font-weight="600" fill="${C.danger}" text-anchor="start">流失 ${loss}% · 留 ${fmt(keep)}</text>`;
+  if(isTot)s+=`<line x1="${L}" y1="${cy-rowH/2}" x2="${L+pw}" y2="${cy-rowH/2}" stroke="${C.primary}" stroke-width="1"/>`;
+ });
+ s+=`</svg>`;return s;
+}
+
+// ---------- shared building blocks ----------
+function kpi(label,val,sub,color,light,valColor){
+ return `<div class="card"><div class="bar" style="background:${color}"></div>${light?`<span class="dot g-${light}"></span>`:''}<div class="lb">${label}</div><div class="vv" style="color:${valColor||C.text}">${val}</div><div class="sub">${sub||''}</div></div>`;
+}
+function progress(rate,light){const p=Math.min(1,Math.max(0,Number(rate||0)))*100;return `<div style="height:8px;background:${C.tintLine};border-radius:4px;position:relative;overflow:hidden;margin:6px 0"><div style="height:100%;width:${p}%;background:${LIGHT[light]||C.primary};border-radius:4px"></div></div>`;}
+function pcard(no,title,pill,pillColor,desc,barColor){return `<div class="pcard" style="border-left-color:${barColor}"><div class="h"><span>${no?no+'  ':''}${title}</span>${pill?`<span class="pill" style="color:${pillColor};background:${pillColor}1f">${pill}</span>`:''}</div><div class="d">${desc}</div></div>`;}
+function shell(no,title,sub,bigHeader){
+ const hh=bigHeader?208:104;
+ return {open:`<div class="page" id="p${no}"><div class="hdr" style="height:${hh}px"><div class="no">${no}</div><div class="t" style="${bigHeader?'font-size:44px;top:70px':''}">${title}</div><div class="s" style="${bigHeader?'top:132px;font-size:15px':''}">${sub}</div></div>`,
+  foot:`<div class="foot"><span>数据口径：联指（不含其他）· 截至 2026 年 8 月 / Q3 累计 · 单位：万元</span><span>${no} / 10</span></div></div>`,hh};
+}
+function band(top,h,inner,cls=''){return `<div class="band ${cls}" style="top:${top}px;height:${h}px">${inner}</div>`;}
+
+// ================= PAGES =================
+function P01(){
+ const K=A(DATA.P01_红绿灯),aux=DATA.P01_辅助||{};
+ const s=shell('01','2026年联指经营分析','截至8月 · Q3累计 | 订货·管理订货·收入·回款·毛利·费用',true);
+ let cards='';K.forEach(k=>{cards+=`<div style="background:#fff;border:1px solid ${C.tintLine};border-radius:10px;padding:18px;position:relative">
+  <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:14px;font-weight:600">${k.指标}</span><span style="width:14px;height:14px;border-radius:50%;background:${LIGHT[k.灯]}"></span></div>
+  <div style="font-size:40px;font-weight:700;color:${LIGHT[k.灯]};margin:6px 0">${fmt(k.实际)}</div>
+  ${progress(k.Q3完成率,k.灯)}
+  <div style="display:flex;justify-content:space-between;font-size:11px;color:${C.muted}"><span>Q3目标 ${fmt0(k.Q3目标)}</span><span>${pct(k.Q3完成率)}</span></div>
+  <div style="font-size:11px;color:${C.muted};margin-top:4px">全年 ${fmt0(k.全年目标)} · 缺口 ${fmt(k.全年缺口)}</div></div>`;});
+ const concl=`${pcard('','费用进度 82.2%，毛利进度 29.2%','','',`投入产出倒挂。费效比 ${fmt(aux.费效比实际)}，目标 ${fmt(aux.费效比目标)}。`,C.danger)}
+  ${pcard('',`营业利润 ${fmt(aux.营业利润)} 万元`,'','','四个作战平台最终利润全部为负。',C.danger)}
+  ${pcard('',`毛利率 ${pct(aux.毛利率实际)}，目标 ${pct(aux.毛利率目标)}`,'','','缺口 5.2pp。根因在订货结构，不在执行力度。',C.warning)}`;
+ const grid=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">${cards}</div>`;
+ const mid=band(240,440,`<div class="row" style="height:100%"><div style="flex:8">${grid}</div><div style="flex:4">${concl}</div></div>`);
+ // progress strip
+ let strip='';K.forEach(k=>{strip+=`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px"><span>${k.指标}</span><span style="color:${LIGHT[k.灯]}">${pct(k.Q3完成率)}</span></div>${progress(k.Q3完成率,k.灯)}</div>`;});
+ const strat=band(700,200,`<div class="box"><h3>六大指标 Q3 进度对比</h3><div style="columns:2;column-gap:40px">${strip}</div></div>`);
+ return s.open+mid+strat+s.foot;
+}
+
+function P02(){
+ const K=A(DATA.P01_红绿灯),aux=DATA.P01_辅助||{},plat=A(DATA.P02_平台),ind=A(DATA.P05_产业);
+ const s=shell('02','经营总览','订货高度集中于东区，毛利率普遍不达标');
+ const kv=n=>findK(K,'指标',n);
+ const kpis=`<div class="kpis">
+  ${kpi('订货',fmt(kv('订货').实际),'Q3 '+pct(kv('订货').Q3完成率),C.primary,kv('订货').灯)}
+  ${kpi('管理订货',fmt(kv('管理订货').实际),'Q3 '+pct(kv('管理订货').Q3完成率),C.primary,kv('管理订货').灯)}
+  ${kpi('财务收入',fmt(kv('财务收入').实际),'Q3 '+pct(kv('财务收入').Q3完成率),C.primary,kv('财务收入').灯)}
+  ${kpi('回款',fmt(kv('回款').实际),'Q3 '+pct(kv('回款').Q3完成率),C.primary,kv('回款').灯)}
+  ${kpi('毛利',fmt(kv('毛利').实际),'毛利率 '+pct(aux.毛利率实际),C.primary,kv('毛利').灯)}
+  ${kpi('费效比',fmt(aux.费效比实际),'目标 '+fmt(aux.费效比目标),C.warning,'red')}</div>`;
+ const barData=plat.filter(p=>p.订货!=null).map(p=>({x:p.平台.replace('作战平台',''),订货:p.订货,毛利:p.毛利,销售费用:p.销售费用}));
+ const chart=`<div class="box"><h3>作战平台经营对比<span class="legend"><span><i style="background:${C.primary}"></i>订货</span><span><i style="background:${C.mid}"></i>毛利</span><span><i style="background:${C.warning}"></i>销售费用</span></span></h3>${barChart({data:barData,xKey:'x',series:['订货','毛利','销售费用'],width:820,height:280,colors:[C.primary,C.mid,C.warning],valueLabels:['订货','毛利']})}</div>`;
+ const probs=pcard('01','订货进度仅 35.7%','高',C.danger,'Q3任务令 33,000万，实际 11,785.8万，缺口 21,214.2万',C.danger)
+  +pcard('02','毛利率 11.3% 不达标','高',C.danger,'目标 16.5%，缺 5.2pp；集成业务毛利率仅 9.4%',C.danger)
+  +pcard('03','费用已用 82.2%','高',C.danger,'Q3预算 998.2万用掉 820.4万，毛利仅完成 29.2%',C.danger)
+  +pcard('04','订货高度集中','中',C.warning,'东区占 61.6%，广东仅 330.4万占 2.8%',C.warning);
+ const mid=band(272,340,`<div class="row" style="height:100%"><div style="flex:7">${chart}</div><div style="flex:5;overflow:auto"><div class="box"><h3>问题摘要</h3>${probs}</div></div></div>`);
+ let trows='';ind.forEach(r=>{const tot=r.产业==='合计';trows+=`<tr class="${tot?'total':''}"><td>${esc(r.产业)}</td><td>${fmt(r.订货)}</td><td>${fmt(r.毛利)}</td><td>${pct(r.毛利率)}</td><td>${pct(r.订货完成率)}</td></tr>`;});
+ const table=`<div class="box"><h3>产业贡献</h3><table><thead><tr><th>产业</th><th>订货</th><th>毛利</th><th>毛利率</th><th>订货完成率</th></tr></thead><tbody>${trows}</tbody></table></div>`;
+ const focus=`<div class="box"><h3>管理关注</h3><div class="chk"><b>✓</b> 压降合作／过单垫资类项目占比，提升自行拓展比重</div><div class="chk"><b>✓</b> 广东平台费用与产出严重失衡（费效比 0.31），需专项处置</div><div class="chk"><b>✓</b> 服务类毛利率 21.9%–35.7%，是结构性改善的唯一抓手，当前占比仅 12.1%</div></div>`;
+ const bot=band(628,300,`<div class="row" style="height:100%"><div style="flex:7">${table}</div><div style="flex:5">${focus}</div></div>`);
+ return s.open+kpis+mid+bot+s.foot;
+}
+
+function P03(){
+ const K=A(DATA.P01_红绿灯);const s=shell('03','核心指标达成','五项任务令全部落后于时间进度');
+ let mini='';K.forEach(k=>{mini+=kpi(k.指标,pct(k.Q3完成率),'Q3完成率',LIGHT[k.灯],k.灯,LIGHT[k.灯]);});
+ const kpis=`<div class="kpis">${mini}</div>`;
+ const barData=K.filter(k=>!k.逆向指标||true).map(k=>({y:k.指标,目标:k.Q3目标,实际:k.实际}));
+ const rlabels=K.map(k=>({text:pct(k.Q3完成率),color:LIGHT[k.灯]}));
+ const chart=`<div class="box"><h3>Q3目标 vs 实际<span class="legend"><span><i style="background:${C.tintLine}"></i>Q3目标</span><span><i style="background:${C.primary}"></i>实际</span></span></h3>${hBarChart({data:barData,yKey:'y',series:['目标','实际'],width:820,height:280,colors:[C.tintLine,C.primary],rightLabels:rlabels})}</div>`;
+ let dr='';K.forEach(k=>{dr+=`<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;font-size:12px"><span>${k.指标}</span><span style="color:${LIGHT[k.灯]};font-weight:600">${pct(k.Q3完成率)}</span></div>${progress(k.Q3完成率,k.灯)}</div>`;});
+ const mid=band(272,340,`<div class="row" style="height:100%"><div style="flex:7">${chart}</div><div style="flex:5"><div class="box"><h3>达成率对比（目标=100%）</h3>${dr}</div></div></div>`);
+ let trows='';K.forEach(k=>{trows+=`<tr><td>${k.指标}</td><td>${fmt0(k.全年目标)}</td><td>${fmt0(k.Q3目标)}</td><td>${fmt(k.实际)}</td><td style="background:${LIGHT[k.灯]}1f;color:${LIGHT[k.灯]};font-weight:600">${pct(k.Q3完成率)}</td><td>${pct(k.全年完成率)}</td><td class="neg">${fmt(k.全年缺口)}</td><td>${fmt0(k['10月预估'])}</td><td class="${Number(k.对比同期预算偏差)<0?'neg':'pos'}">${signed(k.对比同期预算偏差)}</td></tr>`;});
+ const table=`<div class="box"><h3>指标目标实际差异表</h3><table><thead><tr><th>指标</th><th>全年目标</th><th>Q3任务令</th><th>实际完成</th><th>Q3完成率</th><th>全年完成率</th><th>全年缺口</th><th>10月预估</th><th>对比全预算偏差</th></tr></thead><tbody>${trows}</tbody></table></div>`;
+ const bot=band(628,300,table);
+ return s.open+kpis+mid+bot+s.foot;
+}
+
+function P04(){
+ const plat=A(DATA.P02_平台),tgt=A(DATA.P04_目标达成),bridge=A(DATA.P04_利润桥);
+ const s=shell('04','作战平台经营表现','四平台最终利润全负，合计营业利润 −390.8 万');
+ let cards='';plat.filter(p=>p.平台!=='上海作战平台'&&p.平台!=='铁路先遣队').forEach(p=>{cards+=kpi(`${p.平台.replace('作战平台','')} · ${p.区总||'—'}`,fmt(p.订货),`毛利率 ${pct(p.毛利率)} · 最终利润 ${fmt(p.最终利润)}`,C.primary,null,null);});
+ const kpis=`<div class="kpis">${cards}</div>`;
+ const chart=`<div class="box"><h3>联指利润桥（财务收入毛利 → 营业利润）</h3>${waterfall({steps:bridge,width:1470,height:290})}</div>`;
+ const mid=band(272,340,chart);
+ let trows='';tgt.forEach(t=>{trows+=`<tr class="${t.平台==='联指'?'total':''}"><td>${t.平台}</td><td>${fmt0(t.Q3订货任务令)}</td><td>${fmt(t.管理订货)}</td><td>${fmt0(t.Q3收入任务令)}</td><td>${fmt(t.已完成收入)}</td><td>${fmt0(t.Q3毛利任务令)}</td><td>${fmt(t.已完成毛利)}</td></tr>`;});
+ const table=`<div class="box"><h3>平台目标达成</h3><table><thead><tr><th>平台</th><th>Q3订货</th><th>管理订货</th><th>Q3收入</th><th>已完成收入</th><th>Q3毛利</th><th>已完成毛利</th></tr></thead><tbody>${trows}</tbody></table></div>`;
+ const profitRows=plat.filter(p=>p.最终利润!=null&&p.平台!=='上海作战平台').map(p=>({y:p.平台.replace('作战平台',''),v:Math.abs(p.最终利润)}));
+ const rl=profitRows.map((p,i)=>({text:fmt(-p.v),color:C.danger}));
+ const profitChart=`<div class="box"><h3>平台最终利润</h3>${hBarChart({data:profitRows,yKey:'y',series:['v'],width:400,height:250,colors:[C.danger],rightLabels:rl})}</div>`;
+ const bot=band(628,300,`<div class="row" style="height:100%"><div style="flex:7">${table}</div><div style="flex:5">${profitChart}</div></div>`);
+ return s.open+kpis+mid+bot+s.foot;
+}
+
+function P05(){
+ const ind=A(DATA.P05_产业),loss=A(DATA.P05_毛利流失),sub=A(DATA.P05_子产业);
+ const s=shell('05','产业结构与毛利去向','解决方案毛利 3,231.8 万，公司只留下 1,269.0 万，60.7% 流向合作伙伴');
+ let cards='';ind.filter(r=>['集成','服务1.0','服务2.0','其他'].includes(r.产业)).forEach(r=>{cards+=kpi(r.产业,fmt(r.订货),`订货完成率 ${pct(r.订货完成率)}`,C.primary,null,null);});
+ const kpis=`<div class="kpis">${cards}</div>`;
+ const flowRows=loss.map(r=>({name:r.产业,total:r.解决方案毛利,keep:r.公司留存毛利,isTotal:r.产业==='合计'}));
+ const flow=`<div class="box"><h3>毛利去向：公司留存 vs 流向合作伙伴<span class="legend"><span><i style="background:${C.primary}"></i>公司留存</span><span><i style="background:${C.tintLine}"></i>流失</span></span></h3>${stackedFlow({rows:flowRows,width:820,height:280})}</div>`;
+ let rateRows='';ind.filter(r=>['集成','服务1.0','服务2.0','合计'].includes(r.产业)).forEach(r=>{const diff=((r.解决方案毛利率||0)-(r.毛利率||0))*100;rateRows+=`<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:12px"><span>${r.产业}</span><span class="neg">差 ${diff.toFixed(1)}pp</span></div><div style="display:flex;gap:6px;align-items:center;font-size:11px;margin-top:3px"><span style="color:${C.mid}">方案 ${pct(r.解决方案毛利率)}</span><span style="color:${C.muted}">→</span><span style="color:${C.primary};font-weight:600">公司 ${pct(r.毛利率)}</span></div></div>`;});
+ const mid=band(272,340,`<div class="row" style="height:100%"><div style="flex:7">${flow}</div><div style="flex:5"><div class="box"><h3>解决方案毛利率 vs 公司毛利率</h3>${rateRows}</div></div></div>`);
+ let trows='';sub.forEach(r=>{trows+=`<tr><td>${esc(r.子产业)}</td><td>${esc(r.大产业)}</td><td>${fmt(r.订货)}</td><td>${fmt(r.毛利)}</td><td>${pct(r.毛利率)}</td></tr>`;});
+ const table=`<div class="box" style="height:auto"><h3>子产业明细</h3><div style="max-height:150px;overflow:auto"><table><thead><tr><th>子产业</th><th>大产业</th><th>订货</th><th>毛利</th><th>毛利率</th></tr></thead><tbody>${trows}</tbody></table></div><div class="banner" style="margin-top:10px">集成业务做了 87.0% 的订货量，解决方案毛利率 29.7%，公司只拿到 9.4%——20.3pp 的差额流向合作伙伴。这不是定价问题，是「过单垫资」商业模式决定的。服务类留存率最高（服务1.0 流失仅 10.2%），但订货占比只有 12.1%。</div></div>`;
+ const bot=band(628,300,table);
+ return s.open+kpis+mid+bot+s.foot;
+}
+
+function P06(){
+ const cons=A(DATA.P06_费用构成),budget=A(DATA.P06_预算执行),ie=A(DATA.P06_产业费效),pf=A(DATA.P06_平台费用);
+ const s=shell('06','费用效率诊断','薪酬占费用 69.3%；公共费用占 66.0% 无产业归属；广东超支 10.4%，费效比 0.31');
+ const total=cons.reduce((a,b)=>a+Number(b.金额||0),0);
+ const sal=findK(cons,'科目','薪酬类').金额||0,tr=findK(cons,'科目','差旅费').金额||0,ent=findK(cons,'科目','招待费-日常').金额||0;
+ const kpis=`<div class="kpis">${kpi('费用合计',fmt(total),'Q3 · 万元',C.warning)}${kpi('薪酬类',fmt(sal),(total?(sal/total*100).toFixed(1):'0')+'%',C.primary)}${kpi('差旅费',fmt(tr),(total?(tr/total*100).toFixed(1):'0')+'%',C.mid)}${kpi('招待费',fmt(ent),(total?(ent/total*100).toFixed(1):'0')+'%',C.magenta)}${kpi('综合费效比',fmt(findK(ie,'产业','合计').费效比||1.43),'目标 5.26',C.warning,'red')}</div>`;
+ const palette=[C.primary,C.mid,C.magenta,C.warning,C.muted,C.tintLine];
+ const slices=cons.map((c,i)=>({label:c.科目,value:c.金额,color:palette[i%palette.length]}));
+ const donutBox=`<div class="box"><h3>费用构成</h3>${donut({slices,width:420,height:280,centerTitle:'Q3 费用 · 万元',centerValue:fmt(total)})}</div>`;
+ const comboData=pf.map(p=>({x:p.平台.replace('作战平台','').replace('先遣队',''),销售费用:p.合计,订货毛利:p.订货毛利,费效比:p.费效比,__hl:p.平台.includes('广东')}));
+ const combo=`<div class="box"><h3>平台费用/毛利与费效比<span class="legend"><span><i style="background:${C.warning}"></i>费用</span><span><i style="background:${C.primary}"></i>毛利</span><span><i style="background:${C.magenta}"></i>费效比</span></span></h3>${comboChart({data:comboData,xKey:'x',bars:[{key:'销售费用',color:C.warning},{key:'订货毛利',color:C.primary}],line:{key:'费效比',color:C.magenta},width:560,height:280,refLine:{value:5.26,label:'目标 5.26'}})}</div>`;
+ const mid=band(272,340,`<div class="row" style="height:100%"><div style="flex:5">${donutBox}</div><div style="flex:7">${combo}</div></div>`);
+ let trows='';budget.forEach(b=>{const over=Number(b.使用率)>1;trows+=`<tr class="${b.平台==='联指'?'total':''}"><td>${b.平台}</td><td>${fmt0(b.Q3费用目标)}</td><td>${fmt(b.已使用)}</td><td class="${Number(b.剩余)<0?'neg':''}">${fmt(b.剩余)}</td><td style="${over?`background:${C.danger}1f;`:''}color:${over?C.danger:C.text};font-weight:${over?600:400}">${pct(b.使用率)}</td><td class="${Number(b.费效比)<1?'neg':''}">${fmt(b.费效比)}</td></tr>`;});
+ const table=`<div class="box"><h3>预算执行</h3><table><thead><tr><th>平台</th><th>Q3费用目标</th><th>已使用</th><th>剩余</th><th>使用率</th><th>区域费效比</th></tr></thead><tbody>${trows}</tbody></table></div>`;
+ let ieHtml='';ie.forEach(r=>{ieHtml+=`<div class="chk"><b style="color:${Number(r.费效比)>=2?C.success:C.warning}">${Number(r.费效比)>=2?'✅':'⚠'}</b> ${r.产业}：费用 ${fmt(r.合计费用)} → 毛利 ${fmt(r.产业毛利)}，费效比 ${fmt(r.费效比)}</div>`;});
+ const advice=`<div class="box"><h3>产业费效比 & 管控建议</h3>${ieHtml}<div style="border-top:1px solid ${C.tintLine};margin:8px 0"></div><div class="chk">· 公共费用 541.8 万占 66.0%，需分摊到产业口径考核</div><div class="chk">· 广东平台费用冻结：Q3 已超支 14.5 万，产出仅 48.4 万毛利</div><div class="chk">· 薪酬类 568.1 万为刚性支出，靠提升人均产出改善</div></div>`;
+ const bot=band(628,300,`<div class="row" style="height:100%"><div style="flex:7">${table}</div><div style="flex:5">${advice}</div></div>`);
+ return s.open+kpis+mid+bot+s.foot;
+}
+
+function P07(){
+ const pre=A(DATA.P07_预付趋势),age=A(DATA.P07_账龄).filter(r=>r.产业==='合计'),cfr=A(DATA.P07_现金流区域),cfy=A(DATA.P07_现金流年份);
+ const s=shell('07','现金流与合同质量','预付≥30% 金额占比从 2024 年 37.4% 跌到 2026 年 3.6%，6 个月回款率同步从 57.7% 跌到 17.7%');
+ const cf2026=cfy.find(y=>String(y.项目年份).includes('2026'))||{};
+ const pre26=pre.find(p=>p.年份===2026)||{},pre24=pre.find(p=>p.年份===2024)||{};
+ const age26=age.find(a=>a.年份===2026)||{},age24=age.find(a=>a.年份===2024)||{};
+ const kpis=`<div class="kpis">
+  ${kpi('2026年项目累计现金流',fmt(cf2026.累计项目现金流),'经营现金流 '+fmt(cf2026.经营现金流),C.danger,'red',C.danger)}
+  ${kpi('预付≥30%金额占比',pct(pre26['预付≥30%金额占比']),'2024年 '+pct(pre24['预付≥30%金额占比']),C.danger,'red',C.danger)}
+  ${kpi('6个月回款率',pct(age26.M6),'2024年 '+pct(age24.M6),C.danger,'red',C.danger)}
+  ${kpi('2026合同额',fmt(pre26.合同额万元),(pre26.项目数||'—')+' 个项目',C.primary)}</div>`;
+ const line1=`<div class="box"><h3 style="font-size:14px">预付条款三年趋势</h3>${lineChart({data:pre,xKey:'年份',series:[{key:'有预付金额占比',color:C.mid,width:2},{key:'预付≥30%金额占比',color:C.danger,width:3,highlight:true}],width:460,height:290})}</div>`;
+ const ageData=age.map(a=>({x:a.年份,M1:(a.M1||0)*100,M3:(a.M3||0)*100,M6:(a.M6||0)*100}));
+ const line2=`<div class="box"><h3 style="font-size:14px">回款账龄转化率 %<span class="legend"><span><i style="background:${C.tintLine}"></i>M1</span><span><i style="background:${C.mid}"></i>M3</span><span><i style="background:${C.primary}"></i>M6</span></span></h3>${barChart({data:ageData,xKey:'x',series:['M1','M3','M6'],width:460,height:290,colors:[C.tintLine,C.mid,C.primary]})}</div>`;
+ const chain=['合作 / 过单垫资模式','议价能力弱','预付条款被压缩','回款周期拉长','垫资规模扩大'];
+ let chainHtml='';chain.forEach((c,i)=>{chainHtml+=`<div class="flowbox"><b>${c}</b></div>${i<chain.length?'<div class="flowarrow">↓</div>':''}`;});
+ chainHtml+=`<div class="flowbox flowend"><b style="color:${C.danger}">累计现金流 ${fmt(cf2026.累计项目现金流)} 万</b></div>`;
+ const chainBox=`<div class="box"><h3 style="font-size:14px">根因链</h3>${chainHtml}</div>`;
+ const mid=band(272,340,`<div class="row" style="height:100%"><div style="flex:1">${line1}</div><div style="flex:1">${line2}</div><div style="flex:1">${chainBox}</div></div>`);
+ let trows='';cfr.forEach(r=>{trows+=`<tr><td>${esc(r.区域)}</td><td>${fmt(r.回款)}</td><td>${fmt(r.合同付款)}</td><td class="${Number(r.经营现金流)<0?'neg':'pos'}">${fmt(r.经营现金流)}</td><td class="${Number(r.累计项目现金流)<0?'neg':'pos'}">${fmt(r.累计项目现金流)}</td></tr>`;});
+ const table=`<div class="box"><h3>2026年项目 · 分区域现金流</h3><table><thead><tr><th>区域</th><th>回款</th><th>合同付款</th><th>经营现金流</th><th>累计现金流</th></tr></thead><tbody>${trows}</tbody></table></div>`;
+ const banner=`<div class="box"><h3>结论</h3><div class="banner">不是回款不力，是签约条款在系统性恶化：预付≥30% 占比 ${pct(pre24['预付≥30%金额占比'])} → ${pct(pre26['预付≥30%金额占比'])}，6个月回款率 ${pct(age24.M6)} → ${pct(age26.M6)}。中区是最大失血点。</div></div>`;
+ const bot=band(628,300,`<div class="row" style="height:100%"><div style="flex:7">${table}</div><div style="flex:5">${banner}</div></div>`);
+ return s.open+kpis+mid+bot+s.foot;
+}
+
+function P08(){
+ const prov=A(DATA.P08_省份),fun=A(DATA.P08_漏斗),stage=A(DATA.P08_阶段);
+ const s=shell('08','省份与项目分布','浙江占订货 51.3%，毛利率仅 10.6%；湖南毛利率 18.8% 为主力省份最高');
+ const totalOpp=fun.reduce((a,b)=>a+b.机会点数,0),totalShare=fun.reduce((a,b)=>a+Number(b.可参与份额||0),0);
+ const top=[...prov].sort((a,b)=>Number(b.订货||0)-Number(a.订货||0));
+ const zj=top[0]||{};
+ const kpis=`<div class="kpis">${kpi('覆盖省份',prov.length+' 个','订货分布',C.primary)}${kpi(zj.省份||'—',fmt(zj.订货),'毛利率 '+pct(zj.毛利率),C.primary)}${kpi('在手机会点',totalOpp+' 个','可参与份额 '+fmt0(totalShare)+' 万',C.mid)}${kpi('高赢率(≥90%)',(fun[0]?fun[0].机会点数:0)+' 个',fmt(fun[0]?fun[0].可参与份额:0)+' 万',C.success)}</div>`;
+ const pts=prov.filter(p=>Number(p.订货||0)>0).map(p=>({x:Number(p.订货||0),y:Number(p.毛利率||0),r:Math.abs(Number(p.现金流||0)),pos:Number(p.现金流||0)>=0,label:Number(p.订货||0)>400?p.省份:''}));
+ const bubble=`<div class="box"><h3>省份分布（X=订货 Y=毛利率 R=|现金流|）</h3>${bubbleChart({points:pts,width:820,height:280,refLineY:0.165})}</div>`;
+ let trows='';top.slice(0,8).forEach(r=>{trows+=`<tr><td>${esc(r.省份)}</td><td>${fmt(r.订货)}</td><td>${pct(r.毛利率)}</td><td>${pct(r.回款转化率)}</td><td class="${Number(r.现金流)<0?'neg':'pos'}">${signed(r.现金流)}</td></tr>`;});
+ const table=`<div class="box"><h3>省份 TOP8</h3><table><thead><tr><th>省份</th><th>订货</th><th>毛利率</th><th>回款转化率</th><th>现金流</th></tr></thead><tbody>${trows}</tbody></table></div>`;
+ const mid=band(272,340,`<div class="row" style="height:100%"><div style="flex:7">${bubble}</div><div style="flex:5">${table}</div></div>`);
+ const bandColors=[C.deep,C.primary,C.mid,C.tintLine];
+ const stages=fun.map((f,i)=>({label:f.赢率区间,count:f.机会点数,amount:fmt0(f.可参与份额)+' 万',color:bandColors[i],textDark:i===3}));
+ const funnelBox=`<div class="box"><h3 style="font-size:14px">机会点赢率漏斗</h3>${funnel({stages,width:400,height:250})}</div>`;
+ const stTop=stage.slice(0,6);const stMax=Math.max(...stTop.map(x=>x.机会点数),1);
+ let stHtml='';stTop.forEach(x=>{stHtml+=`<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:11.5px"><span>${esc(x.阶段).slice(0,14)}</span><span style="color:${C.sub}">${x.机会点数} 个 · ${fmt0(x.可参与份额)}万</span></div><div style="height:8px;background:${C.tintLine};border-radius:4px;margin-top:3px"><div style="height:100%;width:${x.机会点数/stMax*100}%;background:${C.primary};border-radius:4px"></div></div></div>`;});
+ const stageBox=`<div class="box"><h3 style="font-size:14px">机会点阶段分布</h3>${stHtml}</div>`;
+ const covBox=`<div class="box"><h3 style="font-size:14px">覆盖度</h3><div class="banner" style="background:rgba(4,188,138,.06);border-color:rgba(4,188,138,.3);color:${C.success}">75% 以上赢率合计 ${fmt0((fun[0]?fun[0].可参与份额:0)+(fun[1]?fun[1].可参与份额:0))} 万，对 Q3 订货缺口 21,214.2 万形成充足覆盖。</div></div>`;
+ const bot=band(628,300,`<div class="row" style="height:100%"><div style="flex:1">${funnelBox}</div><div style="flex:1">${stageBox}</div><div style="flex:1">${covBox}</div></div>`);
+ return s.open+kpis+mid+bot+s.foot;
+}
+
+function P09(){
+ const attr=A(DATA.P09_项目属性),quality=A(DATA.P09_订单质量);
+ const s=shell('09','风险预警与根因','合作类订货是自行拓展的 1.9 倍，收入转化率只有 1/40');
+ const kpis=`<div class="kpis">
+  ${kpi('现金流风险','−1,232.9 万','中区 −898.4 万',C.danger,'red',C.danger)}
+  ${kpi('合同条款风险','预付≥30% 3.6%','2024年 37.4%',C.danger,'red',C.danger)}
+  ${kpi('毛利风险','毛利率 11.3%','目标 16.5%，缺 5.2pp',C.danger,'red',C.danger)}
+  ${kpi('费用风险','使用率 82.2%','毛利进度 29.2%',C.warning,'amber',C.warning)}
+  ${kpi('订单质量风险','达标金额 20.5%','达标数量 69.8%',C.warning,'amber',C.warning)}</div>`;
+ const coop=attr.find(a=>a.产业==='集成'&&a.属性==='合作')||{},self=attr.find(a=>a.产业==='集成'&&a.属性==='自行拓展')||{};
+ const cmp=(l,c,ss,neg)=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid ${C.tintLine};font-size:12.5px"><span style="color:${C.sub}">${l}</span><span class="neg">${c}</span><span class="pos">${ss}</span></div>`;
+ const cmpBox=`<div class="box"><h3>合作 vs 自行拓展（集成）<span class="legend"><span style="color:${C.danger}">合作</span><span style="color:${C.success}">自行拓展</span></span></h3>
+  ${cmp('订货',fmt(coop.订货),fmt(self.订货))}${cmp('毛利率',pct(coop.毛利率),pct(self.毛利率))}${cmp('回款转化率',pct(coop.回款转化率),pct(self.回款转化率))}${cmp('收入转化率',pct(coop.收入转化率),pct(self.收入转化率))}${cmp('现金流',signed(coop.现金流),signed(self.现金流))}
+  <div class="banner" style="margin-top:10px">合作类订货是自行拓展的 1.9 倍，收入转化率只有 1/40</div></div>`;
+ let riskRows='';quality.forEach(q=>{const diff=((q.达标数量占比||0)-(q.达标金额占比||0))*100;riskRows+=`<tr class="${q.平台==='联指'?'total':''}"><td>${q.平台}</td><td>${fmt0(q.整体订单量)}</td><td>${fmt0(q.达标订单量)}</td><td>${pct(q.达标数量占比)}</td><td>${pct(q.达标金额占比)}</td><td class="neg">−${diff.toFixed(1)}pp</td></tr>`;});
+ const riskTable=`<div class="box"><h3>订单质量风险矩阵</h3><table><thead><tr><th>平台</th><th>整体订单</th><th>达标订单</th><th>达标数量占比</th><th>达标金额占比</th><th>差距</th></tr></thead><tbody>${riskRows}</tbody></table></div>`;
+ const mid=band(272,340,`<div class="row" style="height:100%"><div style="flex:5">${cmpBox}</div><div style="flex:7">${riskTable}</div></div>`);
+ const diag=`<div class="box"><h3>根因诊断</h3>
+  <div class="chk">◈ <b style="color:${C.primary}">问题描述</b>&nbsp; 合作/过单垫资项目占集成订货 65.1%，收入转化率仅 1.2%</div>
+  <div class="chk">◈ <b style="color:${C.primary}">深层原因</b>&nbsp; 大项目中缺乏不可替代能力，只能以垫资换份额</div>
+  <div class="chk">◈ <b style="color:${C.primary}">影响分析</b>&nbsp; 毛利被合作伙伴拿走 20.3pp；2026年现金流累计 −1,232.9 万</div>
+  <div class="chk">◈ <b style="color:${C.primary}">改进方向</b>&nbsp; 立项红线：预付 <20% 或毛利率低于底线的过单项目不予承接</div>
+  <div class="banner" style="margin-top:8px;background:${C.tintBg};color:${C.primary};border-color:${C.tintLine}">小单达标、大单全部不达标 —— 议价能力在大项目上失效</div></div>`;
+ const bot=band(628,300,diag);
+ return s.open+kpis+mid+bot+s.foot;
+}
+
+function P10(){
+ const K=A(DATA.P01_红绿灯),resp=A(DATA.P10_责任人);
+ const s=shell('10','结论与下阶段任务令','六大指标 Q3 完成率复盘 · 分平台任务令');
+ let mini='';K.forEach(k=>{mini+=kpi(k.指标,pct(k.Q3完成率),'Q3完成率',LIGHT[k.灯],k.灯,LIGHT[k.灯]);});
+ const kpis=`<div class="kpis">${mini}</div>`;
+ const scores=[['合作/过单垫资模式失血',95,'高',C.danger],['合同预付条款恶化（3.6%）',92,'高',C.danger],['毛利率不达标（11.3%）',88,'高',C.danger],['费用与产出倒挂（1.44）',82,'高',C.danger],['中区现金流净流出 851.8万',76,'中',C.warning],['大单毛利率不达标',70,'中',C.warning],['广东费效比 0.31',66,'中',C.warning],['服务业务占比仅 12.1%',58,'低',C.muted]];
+ let sHtml='';scores.forEach((r,i)=>{sHtml+=`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11.5px"><span>${String(i+1).padStart(2,'0')} ${r[0]}</span><span style="color:${r[3]};font-weight:600">${r[1]}</span></div><div style="height:8px;background:${C.tintLine};border-radius:4px;margin-top:2px"><div style="height:100%;width:${r[1]}%;background:${r[3]};border-radius:4px"></div></div></div>`;});
+ const scoreBox=`<div class="box"><h3 style="font-size:14px">问题优先级</h3>${sHtml}</div>`;
+ const diag=[['增长动能','订货 Q3 完成率 35.7%'],['盈利能力','毛利率 11.3%，目标 16.5%'],['现金质量','累计现金流 −1,232.9 万'],['合同质量','预付≥30% 占比 3.6%'],['费用效率','费效比 1.44，目标 5.26'],['业务结构','集成占 87.0%，服务仅 12.1%']];
+ let dHtml='';diag.forEach(d=>{dHtml+=`<div style="padding:7px 0;border-bottom:1px solid ${C.tintLine}"><div style="display:flex;justify-content:space-between;font-size:12px"><span>${d[0]}</span><span class="neg">↓ 待提升</span></div><div style="font-size:10.5px;color:${C.muted}">${d[1]}</div></div>`;});
+ const diagBox=`<div class="box"><h3 style="font-size:14px">综合诊断矩阵</h3>${dHtml}</div>`;
+ const focus=`<div class="box"><h3 style="font-size:14px">下阶段分析重点</h3><div class="chk">◈ 合作类项目专项复盘：拆解毛利流失与垫资规模</div><div class="chk">◈ 合同条款治理：预付比例纳入立项红线</div><div class="chk">◈ 中区现金流穿透：951.6 万合同付款对应项目</div><div class="chk">◈ 服务业务扩张路径：占比从 12.1% 提升</div><div class="chk">◈ 公共费用归属改革：541.8 万占 66.0%</div></div>`;
+ const mid=band(272,340,`<div class="row" style="height:100%"><div style="flex:1">${scoreBox}</div><div style="flex:1">${diagBox}</div><div style="flex:1">${focus}</div></div>`);
+ const measures={'东区作战平台':['提升自行拓展占比，压降过单项目','2026-10-31'],'西区作战平台':['大单毛利专项：达标金额占比仅 12.2%','2026-10-31'],'广东作战平台':['费用冻结＋订货冲刺，费效比 0.31','2026-10-15'],'中区作战平台':['现金流专项，净流出 851.8 万','2026-10-15'],'铁路先遣队':['明确业务定位与产出目标','2026-11-30']};
+ let trows='';resp.forEach(r=>{const m=measures[r.平台]||['—','—'];trows+=`<tr><td>${r.平台.replace('作战平台','')}</td><td>${esc(r.区总||'—')}</td><td class="neg">${fmt(r.订货缺口)}</td><td class="neg">${fmt(r.最终利润)}</td><td style="text-align:left">${m[0]}</td><td>${m[1]}</td></tr>`;});
+ const table=`<div class="box"><h3>下阶段任务令</h3><table><thead><tr><th>平台</th><th>区总</th><th>Q3订货缺口</th><th>最终利润</th><th style="text-align:left">关键任务</th><th>时间</th></tr></thead><tbody>${trows}</tbody></table></div>`;
+ const bot=band(628,300,table);
+ return s.open+kpis+mid+bot+s.foot;
+}
+
+const PAGES=[['P01','封面 · 红绿灯',P01],['P02','经营总览',P02],['P03','核心指标达成',P03],['P04','平台经营表现',P04],['P05','产业与毛利去向',P05],['P06','费用效率诊断',P06],['P07','现金流与合同质量',P07],['P08','省份与项目分布',P08],['P09','风险预警与根因',P09],['P10','结论与任务令',P10]];
+function render(){
+ const stage=document.getElementById('stage');const nav=document.getElementById('navlinks');
+ let navHtml='';PAGES.forEach((p,i)=>navHtml+=`<a href="?p=${i+1}" data-i="${i+1}">${p[0]} ${p[1]}</a>`);nav.innerHTML=navHtml;
+ const q=new URLSearchParams(location.search);const only=parseInt(q.get('p')||'0');
+ if(q.get('embed'))document.body.classList.add('embed');
+ let html='';
+ try{
+  if(only>=1&&only<=10){html=PAGES[only-1][2]();}
+  else{PAGES.forEach(p=>{try{html+=p[2]();}catch(e){html+=`<div class="page"><div style="padding:60px">页面渲染出错：${p[0]} · ${esc(e.message)}</div></div>`;}});}
+ }catch(e){html=`<div style="padding:40px">渲染失败：${esc(e.message)}</div>`;}
+ stage.innerHTML=html;
+ [...nav.children].forEach(a=>{a.classList.toggle('on',only?(+a.dataset.i===only):false);});
+}
+render();
+</script>
+</body>
+</html>

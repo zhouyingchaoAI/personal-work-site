@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 from backend import runtime as rt
+from tests.unit.officedb_testing import db_variant
 
 
 NEWS_TOOLS = {
@@ -119,6 +120,9 @@ class NewsMcpTests(unittest.TestCase):
             auth="Bearer wrong-token",
         )
         self.assertEqual(status, 401)
+
+
+NewsMcpTestsDbMode = db_variant(NewsMcpTests)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 from backend import runtime as rt
+from tests.unit.officedb_testing import db_variant
 
 
 class NewsHistoryTests(unittest.TestCase):
@@ -99,9 +100,9 @@ class NewsHistoryTests(unittest.TestCase):
 
     def test_save_latest_and_list_history_by_date(self):
         with tempfile.TemporaryDirectory() as tmp:
-            old_news_dir = rt.news_dir
+            old_user_data_dir = rt.USER_DATA_DIR
             try:
-                rt.news_dir = lambda: Path(tmp)
+                rt.USER_DATA_DIR = Path(tmp)
                 issue = {
                     "date": "2026-05-21",
                     "generated_at": "2026-05-21T08:30:00",
@@ -124,32 +125,52 @@ class NewsHistoryTests(unittest.TestCase):
                 fetched = rt.news_history_api({"date": "2026-05-21"}, "admin")
                 self.assertTrue(fetched["ok"])
                 self.assertEqual(fetched["issue"]["summary"], "今日轨交资讯摘要")
+
+                item = issue["items"][0]
+                rt.add_news_favorite({"item": item}, "alice")
+                rt.add_news_favorite({"item": item}, "bob")
+                self.assertEqual(len(rt.read_news_favorites("alice")), 1)
+                self.assertEqual(rt.news_favorite_count(item), 2)
+                self.assertEqual(sorted(rt.rebuild_news_stats()[rt.favorite_match_key(item)]), ["alice", "bob"])
+                rt.remove_news_favorite({"title": item["title"], "url": item["url"]}, "bob")
+                self.assertEqual(rt.news_favorite_count(item), 1)
             finally:
-                rt.news_dir = old_news_dir
+                rt.USER_DATA_DIR = old_user_data_dir
 
     def test_empty_issue_is_not_listed_in_history(self):
         with tempfile.TemporaryDirectory() as tmp:
-            empty_issue = {
-                "date": "2026-05-22",
-                "title": "2026-05-22 每日资讯",
-                "summary": "没有解析到可用资讯条目。",
-                "items": [],
-            }
-            (Path(tmp) / "2026-05-22.json").write_text(
-                __import__("json").dumps(empty_issue, ensure_ascii=False), encoding="utf-8"
-            )
+            old_user_data_dir = rt.USER_DATA_DIR
+            try:
+                rt.USER_DATA_DIR = Path(tmp)
+                empty_issue = {
+                    "date": "2026-05-22",
+                    "title": "2026-05-22 每日资讯",
+                    "summary": "没有解析到可用资讯条目。",
+                    "items": [],
+                }
+                rt.office_doc_write("news", rt.news_dir() / "2026-05-22.json", empty_issue)
 
-            self.assertEqual(rt.news_history(directory=Path(tmp)), [])
+                self.assertEqual(rt.news_history(directory=rt.news_dir()), [])
+            finally:
+                rt.USER_DATA_DIR = old_user_data_dir
 
     def test_local_generation_without_items_does_not_persist_empty_issue(self):
         with tempfile.TemporaryDirectory() as tmp:
-            result = rt.local_news_issue([], [], "", False, "tester", Path(tmp))
+            old_user_data_dir = rt.USER_DATA_DIR
+            try:
+                rt.USER_DATA_DIR = Path(tmp)
+                result = rt.local_news_issue([], [], "", False, "tester", rt.news_dir())
 
-            self.assertTrue(result["ok"])
-            self.assertTrue(result["skipped"])
-            self.assertIsNone(result["issue"])
-            self.assertFalse((Path(tmp) / "latest.json").exists())
-            self.assertEqual(list(Path(tmp).glob("2026-*.json")), [])
+                self.assertTrue(result["ok"])
+                self.assertTrue(result["skipped"])
+                self.assertIsNone(result["issue"])
+                self.assertIsNone(rt.latest_news_issue())
+                self.assertEqual(rt.office_doc_list("news", rt.news_dir()), [])
+            finally:
+                rt.USER_DATA_DIR = old_user_data_dir
+
+
+NewsHistoryTestsDbMode = db_variant(NewsHistoryTests)
 
 
 if __name__ == "__main__":

@@ -12,3 +12,10 @@ ui_upgrade.py
 user_data/
 qdrant-data/
 .worktrees/
+.env
+.env
+deploy/.env
+user_data/
+qdrant-data/
+*.dump
+*.tar.gz

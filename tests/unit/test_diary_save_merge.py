@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from backend import runtime as rt
+from tests.unit.officedb_testing import db_variant
 
 
 class DiarySaveMergeTests(unittest.TestCase):
@@ -54,3 +55,6 @@ class DiarySaveMergeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+DiarySaveMergeTestsDbMode = db_variant(DiarySaveMergeTests)

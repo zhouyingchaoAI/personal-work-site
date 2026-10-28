@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="UTF-8"><title>Chart editor verification</title>
+<div id="app"></div>
+<script type="module">
+import { createApp, ref } from 'vue/dist/vue.esm-bundler.js'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import ChartStyleEditor from '../../src/views/CrmAssistantView/ChartStyleEditor.vue'
+import { useChartLayout } from '../../src/views/CrmAssistantView/useChartLayout.ts'
+import { reportChart } from '../../src/views/CrmAssistantView/businessReportCharts.ts'
+import '../../src/views/CrmAssistantView/chartAppearance.css'
+createApp({
+  components: { ChartStyleEditor },
+  setup() {
+    const root = ref(null), allowed = ref(true), scope = ref('editor-browser-fixture')
+    const editor = useChartLayout(root, allowed, scope)
+    editor.editing.value = true
+    window.editorTest = { ...editor, allowed, scope }
+    const chart = reportChart([{名称:'东区',金额:100},{名称:'西区',金额:-20},{名称:'中区',金额:null}], [['名称','区域','text'],['金额','金额']], '验证金额')
+    return { root, allowed, chart, ...editor }
+  },
+  template: `<main ref="root" class="business-analysis">
+    <nav><button :disabled="!canUndo" @click="undo">撤销</button><button :disabled="!canRedo" @click="redo">重做</button><button @click="editing=!editing">预览切换</button></nav>
+    <ChartStyleEditor v-if="allowed && editing" :count="selected.length" :appearance="selectedStyle" @change="applyStyle" @select-all="selectAll" @clear="clearSelection" />
+    <section class="br-kpis"><article v-for="name in ['订货','回款','毛利']" :key="name" class="br-kpi" :data-chart-title="name"><span>{{name}}</span><strong>123.4</strong><p>年度达成 · 万元</p><svg width="100" height="30"><text x="0" y="20">坐标标签</text></svg><div v-if="name==='订货'" v-html="chart"></div></article></section>
+  </main>`
+}).use(ElementPlus).mount('#app')
+</script>
+<style>
+body{background:#f1f6fc;font-family:Arial,sans-serif;margin:20px}.br-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.br-kpi{padding:16px;background:white;border:1px solid #ccc;border-radius:10px}.br-kpi>strong{display:block;font-size:30px}.chart-layout-tools{display:flex;justify-content:flex-end;gap:8px}.chart-layout-resize{position:absolute;right:0;bottom:0;width:10px;height:10px}button{padding:6px 12px;margin:4px}.chart-layout-stack{display:flex;flex-direction:column}.chart-layout-flow{display:flex;flex-wrap:wrap;gap:12px}
+</style></html>

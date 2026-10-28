@@ -33,6 +33,31 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(person['department'],'服务解决方案中心 / 服务交付部')
         self.assertEqual(person['position'],'交付工程师')
 
+    def test_battle_roster_saves_three_levels_and_exact_unit_scope(self):
+        roster = {
+            'version': 0,
+            'management': ['manager'],
+            'units': [
+                {'id': 'east-zhejiang-north', 'leaders': ['alice'], 'roles': {'客户经理/销售工程师': ['alice']}},
+            ],
+        }
+        saved = r.crm_battle_roster_save(roster, r.find_user('root'))
+        self.assertEqual(saved['version'], 1)
+        self.assertEqual(r.crm_capabilities(r.find_user('manager'))['data_scope'], 'all')
+        alice = r.crm_capabilities(r.find_user('alice'))
+        self.assertEqual(alice['data_scope'], 'regions')
+        self.assertEqual(alice['battle_units'], ['east-zhejiang-north'])
+        self.assertEqual(r.crm_battle_roster_level('alice'), 'region')
+        self.assertEqual(r.crm_battle_roster_level('manager'), 'company')
+
+    def test_battle_roster_rejects_unknown_accounts_and_non_superadmin(self):
+        payload = {'version': 0, 'management': [], 'units': [{'id': 'east-zhejiang-north', 'leaders': ['missing'], 'roles': {}}]}
+        with self.assertRaises(ValueError):
+            r.crm_battle_roster_save(payload, r.find_user('root'))
+        payload['units'][0]['leaders'] = ['alice']
+        with self.assertRaises(PermissionError):
+            r.crm_battle_roster_save(payload, r.find_user('manager'))
+
     def test_liaison_region_override_can_be_set_to_region_non_region_and_reset(self):
         root = r.find_user('root')
         r.crm_liaison_region_save({'username':'alice','region':'广东区'}, root)

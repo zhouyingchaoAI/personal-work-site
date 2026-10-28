@@ -33,6 +33,29 @@ class InternalOrganizationTests(unittest.TestCase):
         self.assertNotIn('password', json.dumps(d))
         self.assertEqual(len(d['members']), 3)
 
+    def test_multiple_memberships_preserve_accounts_and_validate_targets(self):
+        draft = self.draft()
+        target = next(node['id'] for node in draft['nodes'] if node['name']=='乙公司')
+        draft['memberships'] = {'alice': [target, target, draft['assignments']['alice']]}
+        saved = r.internal_organization_save(draft, 'root')
+        member = next(member for member in saved['members'] if member['username']=='alice')
+        self.assertEqual(member['node_ids'], [target])
+        self.assertEqual(json.loads(self.path.read_text())['users'], self.initial['users'])
+        with self.assertRaises(ValueError):
+            r.internal_organization_save(draft, 'root')
+        bad = self.draft()
+        bad['memberships'] = {'alice': ['own:missing']}
+        before = self.path.read_bytes()
+        with self.assertRaises(ValueError):
+            r.internal_organization_save(bad, 'root')
+        self.assertEqual(self.path.read_bytes(), before)
+        retained = r.internal_organization_save(self.draft(), 'root')
+        self.assertEqual(next(member for member in retained['members'] if member['username']=='alice')['node_ids'], [target])
+        remove = self.draft()
+        remove['memberships'] = {'alice': []}
+        r.internal_organization_save(remove, 'root')
+        self.assertEqual(json.loads(self.path.read_text())['users'], self.initial['users'])
+
     def test_save_deep_hierarchy_empty_nodes_and_identity(self):
         d = self.draft()
         parent = next(n['id'] for n in d['nodes'] if n['name']=='乙公司')
